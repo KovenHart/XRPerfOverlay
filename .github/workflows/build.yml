@@ -63,7 +63,7 @@ jobs:
         run: ./scripts/package.ps1
 
       - name: Paquet joint à l'exécution
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: XRPerfOverlay-${{ steps.version.outputs.version }}-win64
           path: |
@@ -72,7 +72,7 @@ jobs:
           if-no-files-found: error
 
       - name: Images de contrôle du panneau
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: apercus-du-panneau
           path: build/preview
