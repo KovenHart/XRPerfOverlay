@@ -1,0 +1,33 @@
+// Ressource de version de la DLL : visible dans les proprietes du fichier (onglet Details) et lue
+// par XRPerfSensors. Les numeros viennent du fichier VERSION (voir layer/CMakeLists.txt).
+// Fichier en ASCII seulement : le compilateur de ressources lit la page de code du systeme.
+#include <winver.h>
+#include "version_info.h"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION XRPO_VERSION_MAJOR, XRPO_VERSION_MINOR, XRPO_VERSION_PATCH, 0
+PRODUCTVERSION XRPO_VERSION_MAJOR, XRPO_VERSION_MINOR, XRPO_VERSION_PATCH, 0
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_DLL
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040C04B0"
+        BEGIN
+            VALUE "CompanyName", "XR Perf Overlay"
+            VALUE "FileDescription", "XR Perf Overlay - API layer OpenXR"
+            VALUE "FileVersion", XRPO_VERSION_TEXT
+            VALUE "InternalName", "XR_APILAYER_NOVENDOR_perf_overlay"
+            VALUE "OriginalFilename", "XR_APILAYER_NOVENDOR_perf_overlay.dll"
+            VALUE "ProductName", "XR Perf Overlay"
+            VALUE "ProductVersion", XRPO_VERSION_TEXT
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x040C, 1200
+    END
+END

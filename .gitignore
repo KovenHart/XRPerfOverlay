@@ -1,0 +1,10 @@
+# Dossiers de compilation (à la racine du projet ou dans le projet C#). Le dossier
+# layer/external/openvr/bin, fourni avec les sources, ne doit pas être ignoré.
+/build/
+/dist/
+/release/
+/sessions/
+/sensors/bin/
+/sensors/obj/
+.vs/
+build.log

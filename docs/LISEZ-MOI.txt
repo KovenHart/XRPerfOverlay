@@ -1,0 +1,93 @@
+﻿XR PERF OVERLAY
+===============
+
+Panneau de performances dans le casque pour les jeux OpenXR (dont les jeux lancés avec UEVR) et
+les jeux SteamVR (OpenVR) :
+FPS, temps d'image CPU et GPU, charge, température et fréquence du processeur et de la carte
+graphique, mémoire vidéo. Un rapport est écrit à chaque session de jeu.
+
+
+CE QU'IL FAUT
+-------------
+- Windows 10 ou 11, 64 bits.
+- Un jeu OpenXR en Direct3D 11 ou 12 (Vulkan et OpenGL : pas de panneau, mais le rapport est écrit),
+  ou un jeu SteamVR (OpenVR), avec SteamVR ouvert.
+- Rien d'autre : le programme est déjà compilé et le runtime .NET est inclus.
+- Facultatif : le pilote PawnIO (https://pawnio.eu/), seulement pour la température et la fréquence
+  du processeur. Sans lui, elles s'affichent « -- » ; tout le reste fonctionne. Pour l'installer :
+  winget install namazso.PawnIO   (puis relancer XRPerfSensors)
+
+
+INSTALLATION OU MISE À JOUR
+---------------------------
+1. Extrayez toute l'archive (clic droit sur le .zip, « Extraire tout »).
+2. Dans le dossier extrait, double-cliquez sur Installer.bat.
+   - Windows peut afficher « Windows a protégé votre ordinateur » ou « L'éditeur n'a pas pu être
+     vérifié » : le programme n'est pas signé. Cliquez sur « Informations complémentaires » puis
+     « Exécuter quand même » (ou « Exécuter »).
+   - Répondez Oui à la demande d'autorisation d'administrateur : elle sert à déclarer la layer
+     auprès d'OpenXR.
+3. Choisissez si XRPerfSensors (le petit programme qui lit les capteurs) démarre avec Windows.
+
+Le programme s'installe dans C:\XRPerfOverlay (ou à la place d'une installation existante).
+Lors d'une mise à jour, vos réglages et vos rapports sont conservés. Le dossier extrait peut être
+supprimé une fois l'installation terminée.
+
+
+UTILISATION
+-----------
+Lancez un jeu OpenXR : le panneau apparaît dans le casque.
+
+  Ctrl + Alt + O                     afficher / masquer le panneau
+  Ctrl + Alt + P                     changer d'emplacement
+  Ctrl + Alt + R                     remettre à zéro AVG / MIN / MAX
+  Ctrl + Alt + Page préc. / suiv.    agrandir / réduire
+  Ctrl + Alt + Début / Fin           plus opaque / plus transparent
+  Ctrl + Alt + F                     afficher / masquer la fenêtre capturée
+  Ctrl + Alt + G                     poser la fenêtre capturée devant vous
+
+Icône XRPerfSensors près de l'horloge :
+  - double-clic : réglages (emplacement, taille, couleurs, présentation, panneau sur le bureau
+    pour OBS, mesure du temps GPU, rapports) ;
+  - clic droit > Rapports de session : liste, analyse, courbes et comparaison des sessions.
+    La lecture « Simple » explique chaque partie en phrases, avec des conseils ; « Détaillé »
+    donne tous les chiffres.
+
+Un temps GPU précédé de « ~ » est une estimation (charge de la carte x durée d'une image).
+
+Montre (réglages, onglet Montre) : heure, temps de session, batterie des manettes et FPS, au poignet
+ou devant les yeux, en trois styles. Au poignet, elle n'apparaît que quand vous le regardez (option).
+Le panneau peut aussi être accroché à une main (onglet Dans le casque). Ces deux options se mettent en
+place au lancement du jeu : si vous les activez en cours de partie, relancez le jeu.
+
+Jeux SteamVR (OpenVR) : le panneau, la montre et les rapports y fonctionnent aussi, grâce au petit
+programme XRPerfVR lancé par XRPerfSensors. Il s'ajoute à SteamVR quand celui-ci est ouvert et ne le
+démarre jamais. Option « Aussi dans les jeux SteamVR (OpenVR) », onglet Dans le casque.
+
+Fenêtre du bureau dans le casque (réglages, onglet Fenêtre) : le chat d'un stream, Discord ou toute
+autre fenêtre ouverte, affichée en lecture seule. Choisissez la fenêtre dans la liste (l'aperçu montre
+ce qui sera affiché, recadrage compris), puis cochez « Afficher la fenêtre dans le casque ». Posée dans
+l'espace, elle reste à sa place quand vous tournez la tête : Ctrl+Alt+G la pose devant vous. Elle peut
+aussi suivre une main. Ne réduisez pas la fenêtre capturée : Windows ne la dessine plus (elle peut rester
+derrière d'autres). Sous Windows 10, une bordure jaune l'entoure pendant la capture.
+
+
+DÉSINSTALLATION
+---------------
+Lancez uninstall.bat dans le dossier d'installation (C:\XRPerfOverlay), puis supprimez ce dossier.
+
+
+EN CAS DE PROBLÈME
+------------------
+- Journal : %LOCALAPPDATA%\XRPerfOverlay\XRPerfOverlay.log (une ligne par lancement de jeu, avec
+  le numéro de version).
+- « Capteurs absents » dans le panneau : XRPerfSensors n'est pas lancé
+  (C:\XRPerfOverlay\sensors\XRPerfSensors.exe).
+- Un jeu se comporte bizarrement : lancez uninstall.bat pour retirer la layer, et regardez le journal.
+- Les jeux protégés par un anti-triche peuvent refuser les API layers OpenXR.
+
+Pour signaler un problème, indiquez le numéro de version (dans le titre de la fenêtre de réglages,
+ou dans le fichier VERSION du dossier d'installation), le jeu, le casque et le runtime OpenXR, et
+joignez le journal.
+
+Documentation complète : README.md. Licence : LICENSE.txt (MIT). Composants tiers : THIRD-PARTY.md.

@@ -1,0 +1,6 @@
+// Genere par CMake a partir du fichier VERSION : ne pas modifier a la main.
+#pragma once
+#define XRPO_VERSION_TEXT "@XRPO_VERSION@"
+#define XRPO_VERSION_MAJOR @XRPO_VERSION_MAJOR@
+#define XRPO_VERSION_MINOR @XRPO_VERSION_MINOR@
+#define XRPO_VERSION_PATCH @XRPO_VERSION_PATCH@

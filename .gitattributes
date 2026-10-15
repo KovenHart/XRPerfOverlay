@@ -1,0 +1,16 @@
+# Fins de ligne fixées dans le dépôt, quelle que soit la configuration de Git de chacun : les scripts
+# Windows et le .ini restent en CRLF (un .bat en fins de ligne Unix peut mal s'exécuter), le reste en LF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.ini text eol=crlf
+docs/*.txt text eol=crlf
+
+# Fichiers binaires : jamais modifiés.
+*.dll binary
+*.lib binary
+*.exe binary
+*.png binary
+*.ico binary
+*.zip binary

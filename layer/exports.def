@@ -1,0 +1,5 @@
+LIBRARY XR_APILAYER_NOVENDOR_perf_overlay
+EXPORTS
+    xrNegotiateLoaderApiLayerInterface
+    xrpoRenderPreview
+    xrpoRenderWatchPreview

@@ -1,0 +1,90 @@
+# Compilation automatique de XR Perf Overlay sur une machine Windows de GitHub.
+#
+# - À chaque envoi (push) ou demande de fusion (pull request) : compile la layer (MSVC) et
+#   XRPerfSensors, lance les tests, construit le paquet de distribution et le joint au résultat
+#   de l'exécution (onglet Actions > l'exécution > Artifacts).
+# - À chaque étiquette de la forme v1.2.3 : en plus, crée un brouillon de version (Releases) avec
+#   le paquet. Il reste à le relire et à cliquer sur « Publish release ».
+#   L'étiquette doit correspondre au fichier VERSION :  git tag v1.0.0  puis  git push origin v1.0.0
+name: Compilation et paquet
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # nécessaire seulement pour créer le brouillon de version
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Récupération des sources
+        uses: actions/checkout@v4
+
+      - name: SDK .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Numéro de version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -TotalCount 1).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION invalide : '$version'" }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "L'étiquette $env:GITHUB_REF_NAME ne correspond pas au fichier VERSION ($version) : attendu v$version."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "XR Perf Overlay $version"
+
+      - name: Layer OpenXR (C++, MSVC)
+        shell: pwsh
+        run: |
+          cmake -S layer -B build/layer -A x64 -DXRPO_BUILD_TESTS=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build/layer --config Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Tests (statistiques, rapport, dessin du panneau)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/preview | Out-Null
+          ./build/layer/Release/xrpo_preview.exe build/preview
+          if ($LASTEXITCODE -ne 0) { throw "Tests en échec (code $LASTEXITCODE)." }
+
+      # Windows PowerShell 5.1, comme sur les PC des utilisateurs (Creer-paquet.bat).
+      - name: Paquet de distribution
+        shell: powershell
+        run: ./scripts/package.ps1
+
+      - name: Paquet joint à l'exécution
+        uses: actions/upload-artifact@v4
+        with:
+          name: XRPerfOverlay-${{ steps.version.outputs.version }}-win64
+          path: |
+            release/*.zip
+            release/*.sha256
+          if-no-files-found: error
+
+      - name: Images de contrôle du panneau
+        uses: actions/upload-artifact@v4
+        with:
+          name: apercus-du-panneau
+          path: build/preview
+          if-no-files-found: warn
+
+      - name: Brouillon de version
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $files = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*.zip' -or $_.Name -like '*.sha256' } | ForEach-Object { $_.FullName })
+          gh release create $env:GITHUB_REF_NAME @files --draft --title "XR Perf Overlay $version" --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
