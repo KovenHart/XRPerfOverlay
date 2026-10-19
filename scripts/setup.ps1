@@ -24,6 +24,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:Relaunched = $false
 
+# Langue des messages : français pour un Windows en français, anglais sinon (comme XRPerfSensors).
+$script:English = ([System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -ne 'fr')
+function T([string]$French, [string]$English) { if ($script:English) { return $English } return $French }
+
 $LayerDll = 'XR_APILAYER_NOVENDOR_perf_overlay.dll'
 $LayerJson = 'XR_APILAYER_NOVENDOR_perf_overlay.json'
 $IniName = 'XRPerfOverlay.ini'
@@ -57,6 +61,19 @@ function Get-RegisteredFolder {
         $hklm.Close()
     }
     return $found
+}
+
+# Moteur WebView2 d'Edge (fenêtre de XRPerfSensors) : présent sur Windows 11 et sur les Windows 10 à jour.
+function Test-WebView2 {
+    $id = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+    foreach ($key in @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$id", "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$id",
+                       "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$id")) {
+        try {
+            $version = (Get-ItemProperty -LiteralPath $key -Name pv -ErrorAction Stop).pv
+            if ($version -and $version -ne '0.0.0.0') { return $true }
+        } catch { }
+    }
+    return $false
 }
 
 function Test-AutoStartTask {
@@ -197,7 +214,9 @@ function Find-UnregisteredFolder([string]$DefaultFolder) {
 # Liste ce qui manque dans le dossier compilé (liste vide = complet).
 function Get-MissingSourceFiles([string]$SourceFolder) {
     $required = @($LayerDll, $LayerJson, $IniName) + $ScriptFiles
-    foreach ($name in @('XRPerfSensors.exe', 'XRPerfSensors.dll', 'XRPerfSensors.deps.json', 'XRPerfSensors.runtimeconfig.json')) {
+    # Fenêtre de XRPerfSensors : son interface (ui\) et le lien avec le moteur WebView2.
+    foreach ($name in @('XRPerfSensors.exe', 'XRPerfSensors.dll', 'XRPerfSensors.deps.json', 'XRPerfSensors.runtimeconfig.json',
+                        'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', (Join-Path 'ui' 'index.html'), (Join-Path 'ui' 'app.js'))) {
         $required += (Join-Path 'sensors' $name)
     }
     $missing = @()
@@ -221,13 +240,13 @@ function Assert-SensorsFolderReplaceable([string]$TargetFolder) {
     if (-not (Test-Path -LiteralPath $targetSensors)) { return }
     $item = Get-Item -LiteralPath $targetSensors -Force
     if (-not $item.PSIsContainer -or ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
-        throw "Dans le dossier d'installation, « sensors » n'est pas un dossier ordinaire (fichier ou lien) : $targetSensors. Choisissez un autre dossier avec l'option -Target. Rien n'a été modifié."
+        throw (T "Dans le dossier d'installation, « sensors » n'est pas un dossier ordinaire (fichier ou lien) : $targetSensors. Choisissez un autre dossier avec l'option -Target. Rien n'a été modifié." "In the installation folder, « sensors » is not an ordinary folder (file or link): $targetSensors. Choose another folder with the -Target option. Nothing was changed.")
     }
     $ours = (Test-Path -LiteralPath (Join-Path $TargetFolder $LayerDll) -PathType Leaf) -or
             (Test-Path -LiteralPath (Join-Path $TargetFolder $LayerJson) -PathType Leaf) -or
             (Test-Path -LiteralPath (Join-Path $targetSensors 'XRPerfSensors.exe') -PathType Leaf)
     if (-not $ours) {
-        throw "Le dossier choisi contient déjà un sous-dossier « sensors » qui ne vient pas de XR Perf Overlay : $targetSensors. Choisissez un dossier vide ou une installation existante. Rien n'a été modifié."
+        throw (T "Le dossier choisi contient déjà un sous-dossier « sensors » qui ne vient pas de XR Perf Overlay : $targetSensors. Choisissez un dossier vide ou une installation existante. Rien n'a été modifié." "The chosen folder already contains a « sensors » subfolder that does not come from XR Perf Overlay: $targetSensors. Choose an empty folder or an existing installation. Nothing was changed.")
     }
 }
 
@@ -279,7 +298,7 @@ function Install-Files([string]$SourceFolder, [string]$TargetFolder) {
         try {
             Remove-Item -LiteralPath $oldSensors -Recurse -Force
         } catch {
-            Write-Host "  (l'ancien dossier $oldSensors n'a pas pu être supprimé ; vous pouvez l'effacer à la main)"
+            Write-Host (T "  (l'ancien dossier $oldSensors n'a pas pu être supprimé ; vous pouvez l'effacer à la main)" "  (the old folder $oldSensors could not be deleted; you can delete it by hand)")
         }
     }
     return $keptIni
@@ -306,7 +325,7 @@ function Start-Elevated([string]$SourceFolder) {
         $onNetworkDrive = ($drive.DriveType -eq [System.IO.DriveType]::Network)
     } catch { }
     if ($onNetworkDrive) {
-        throw "Le dossier extrait se trouve sur un lecteur réseau. Copiez-le sur un disque de ce PC (Téléchargements, par exemple), puis relancez Installer.bat."
+        throw (T "Le dossier extrait se trouve sur un lecteur réseau. Copiez-le sur un disque de ce PC (Téléchargements, par exemple), puis relancez Installer.bat." "The extracted folder is on a network drive. Copy it to a disk of this PC (Downloads, for example), then run Installer.bat again.")
     }
 
     # Le nom du compte est relevé ici, avant l'élévation : si l'invite est validée avec un autre
@@ -319,13 +338,13 @@ function Start-Elevated([string]$SourceFolder) {
     try {
         Start-Process powershell -Verb RunAs -ArgumentList $arguments
     } catch {
-        Write-Host "Installation annulée : l'autorisation d'administrateur a été refusée ou n'a pas pu être demandée." -ForegroundColor Yellow
+        Write-Host (T "Installation annulée : l'autorisation d'administrateur a été refusée ou n'a pas pu être demandée." "Installation cancelled: administrator permission was refused or could not be requested.") -ForegroundColor Yellow
         Write-Host "  ($($_.Exception.Message))"
-        Write-Host "Elle est nécessaire pour enregistrer la layer auprès d'OpenXR. Relancez Installer.bat pour réessayer."
+        Write-Host (T "Elle est nécessaire pour enregistrer la layer auprès d'OpenXR. Relancez Installer.bat pour réessayer." "It is needed to register the layer with OpenXR. Run Installer.bat again to retry.")
         return $false
     }
     $script:Relaunched = $true
-    Write-Host "L'installation continue dans la nouvelle fenêtre."
+    Write-Host (T "L'installation continue dans la nouvelle fenêtre." "Installation continues in the new window.")
     return $true
 }
 
@@ -334,8 +353,8 @@ function Read-AutoStartChoice {
     if ($AutoStart -match '^(non|n|no|0)$') { return $false }
     if (Test-AutoStartTask) { return $true }  # déjà choisi lors d'une installation précédente
     Write-Host ''
-    Write-Host 'XRPerfSensors fournit les températures, charges, fréquences et la VRAM au panneau.'
-    $answer = Read-Host 'Le lancer automatiquement à chaque ouverture de session Windows ? [O/n]'
+    Write-Host (T 'XRPerfSensors fournit les températures, charges, fréquences et la VRAM au panneau.' 'XRPerfSensors provides temperatures, loads, clocks and VRAM to the panel.')
+    $answer = Read-Host (T 'Le lancer automatiquement à chaque ouverture de session Windows ? [O/n]' 'Start it automatically each time you sign in to Windows? [Y/n]')
     return -not ($answer -match '^\s*n')
 }
 
@@ -352,9 +371,9 @@ function Resolve-TargetFolder([string]$SourceFolder) {
 
     if ($Target) {
         $folder = Get-FullPath $Target
-        if ($folder.Length -le 3) { throw "Le dossier d'installation ne peut pas être la racine d'un disque ($folder) : indiquez un sous-dossier." }
+        if ($folder.Length -le 3) { throw (T "Le dossier d'installation ne peut pas être la racine d'un disque ($folder) : indiquez un sous-dossier." "The installation folder cannot be the root of a drive ($folder): give a subfolder.") }
         if (-not (Test-SamePath $folder $SourceFolder) -and (Test-ProjectFolder $folder $SourceFolder)) {
-            throw "Le dossier choisi ($folder) est celui des sources de XR Perf Overlay, ou le contient : y installer mélangerait le programme aux fichiers nécessaires à la compilation. Choisissez un autre dossier. Rien n'a été modifié."
+            throw (T "Le dossier choisi ($folder) est celui des sources de XR Perf Overlay, ou le contient : y installer mélangerait le programme aux fichiers nécessaires à la compilation. Choisissez un autre dossier. Rien n'a été modifié." "The chosen folder ($folder) is, or contains, the XR Perf Overlay sources: installing there would mix the program with the files needed to build it. Choose another folder. Nothing was changed.")
         }
     } elseif ($existing) {
         $folder = $existing
@@ -371,17 +390,17 @@ function Resolve-TargetFolder([string]$SourceFolder) {
 
 # Retourne $true si l'installation est allée au bout.
 function Invoke-Setup {
-    if (-not $Source) { throw "Dossier compilé non précisé (option -Source). Lancez Installer.bat plutôt que ce script." }
-    if (-not (Test-Path -LiteralPath $Source -PathType Container)) { throw "Dossier compilé introuvable : $Source" }
+    if (-not $Source) { throw (T "Dossier compilé non précisé (option -Source). Lancez Installer.bat plutôt que ce script." "Built folder not given (-Source option). Run Installer.bat rather than this script.") }
+    if (-not (Test-Path -LiteralPath $Source -PathType Container)) { throw ((T "Dossier compilé introuvable : " "Built folder not found: ") + $Source) }
     $sourceFolder = Get-FullPath $Source
     $missing = Get-MissingSourceFiles $sourceFolder
     if ($missing.Count -gt 0) {
-        throw ("Le dossier compilé est incomplet ($sourceFolder). Il manque : " + ($missing -join ', ') +
-               ". Relancez Installer.bat et regardez build.log si la compilation échoue.")
+        throw ((T "Le dossier compilé est incomplet ($sourceFolder). Il manque : " "The built folder is incomplete ($sourceFolder). Missing: ") + ($missing -join ', ') +
+               (T ". Relancez Installer.bat et regardez build.log si la compilation échoue." ". Run Installer.bat again and look at build.log if the build fails."))
     }
 
     if (-not (Test-IsAdmin)) {
-        if ($Elevated) { throw "Les droits administrateur n'ont pas été obtenus." }
+        if ($Elevated) { throw (T "Les droits administrateur n'ont pas été obtenus." "Administrator rights were not obtained.") }
         return (Start-Elevated $sourceFolder)
     }
 
@@ -398,8 +417,8 @@ function Invoke-Setup {
     $version = Get-SourceVersion $sourceFolder
     Write-Host ''
     if ($version) { Write-Host "XR Perf Overlay $version" }
-    if ($existing) { Write-Host "Installation existante trouvée : $existing" }
-    Write-Host "Dossier d'installation : $targetFolder"
+    if ($existing) { Write-Host ((T "Installation existante trouvée : " "Existing installation found: ") + $existing) }
+    Write-Host ((T "Dossier d'installation : " "Installation folder: ") + $targetFolder)
 
     $withAutoStart = Read-AutoStartChoice
 
@@ -407,18 +426,18 @@ function Invoke-Setup {
     if (-not $inPlace) { Assert-SensorsFolderReplaceable $targetFolder }
 
     Write-Host ''
-    Write-Host 'Arrêt de XRPerfSensors...'
+    Write-Host (T 'Arrêt de XRPerfSensors...' 'Stopping XRPerfSensors...')
     $sensorsWereRunning = [bool](Stop-Sensors)
     if (-not $inPlace) {
         $installedSensors = Join-Path (Join-Path $targetFolder 'sensors') 'XRPerfSensors.exe'
         if (-not (Wait-FileUnlocked $installedSensors)) {
-            throw "XRPerfSensors ne s'est pas arrêté. Quittez-le (clic droit sur son icône, près de l'horloge, puis Quitter) et relancez Installer.bat. Aucun fichier n'a été modifié."
+            throw (T "XRPerfSensors ne s'est pas arrêté. Quittez-le (clic droit sur son icône, près de l'horloge, puis Quitter) et relancez Installer.bat. Aucun fichier n'a été modifié." "XRPerfSensors did not stop. Exit it (right-click its icon near the clock, then Exit) and run Installer.bat again. No file was changed.")
         }
         # XRPerfSensors charge lui aussi la DLL (pour son aperçu) : le contrôle se fait donc après son
         # arrêt. Si elle reste utilisée, c'est qu'un jeu OpenXR encore ouvert la garde chargée.
         if (-not (Wait-FileUnlocked (Join-Path $targetFolder $LayerDll) 10)) {
             if ($sensorsWereRunning) { Restart-Sensors $targetFolder }
-            throw "La DLL de l'overlay ne peut pas être remplacée : un jeu ou un programme VR l'utilise encore (ou le fichier est protégé en écriture). Fermez le jeu, ainsi que SteamVR ou le logiciel du casque s'il reste ouvert, puis relancez Installer.bat. Rien n'a été modifié."
+            throw (T "La DLL de l'overlay ne peut pas être remplacée : un jeu ou un programme VR l'utilise encore (ou le fichier est protégé en écriture). Fermez le jeu, ainsi que SteamVR ou le logiciel du casque s'il reste ouvert, puis relancez Installer.bat. Rien n'a été modifié." "The overlay DLL cannot be replaced: a game or VR program is still using it (or the file is write-protected). Close the game, and SteamVR or the headset software if it is still open, then run Installer.bat again. Nothing was changed.")
         }
     }
 
@@ -426,7 +445,7 @@ function Invoke-Setup {
     $carriedIni = $false
     try {
         if ($inPlace) {
-            Write-Host 'Les fichiers compilés sont déjà dans le dossier d''installation : aucune copie.'
+            Write-Host (T 'Les fichiers compilés sont déjà dans le dossier d''installation : aucune copie.' 'The built files are already in the installation folder: nothing to copy.')
         } else {
             # Nouveau dossier choisi alors qu'une installation existe ailleurs : ses réglages suivent.
             $targetIni = Join-Path $targetFolder $IniName
@@ -438,50 +457,54 @@ function Invoke-Setup {
                     $carriedIni = $true
                 }
             }
-            Write-Host 'Copie des fichiers...'
+            Write-Host (T 'Copie des fichiers...' 'Copying files...')
             $keptIni = Install-Files $sourceFolder $targetFolder
         }
 
-        Write-Host 'Enregistrement auprès d''OpenXR...'
+        Write-Host (T 'Enregistrement auprès d''OpenXR...' 'Registering with OpenXR...')
         Register-Layer $targetFolder $withAutoStart $account | Out-Null
         if (-not $withAutoStart) {
-            Write-Host 'Lancement de XRPerfSensors...'
+            Write-Host (T 'Lancement de XRPerfSensors...' 'Starting XRPerfSensors...')
             Start-Sensors $targetFolder | Out-Null
         }
     } catch {
-        throw ("$($_.Exception.Message)`n`nL'installation n'est pas terminée et XRPerfSensors est arrêté. Vos réglages et vos résumés de session ne sont pas touchés. " +
-               "Corrigez la cause indiquée ci-dessus puis relancez Installer.bat : il reprendra proprement.")
+        throw ("$($_.Exception.Message)`n`n" + (T "L'installation n'est pas terminée et XRPerfSensors est arrêté. Vos réglages et vos résumés de session ne sont pas touchés. Corrigez la cause indiquée ci-dessus puis relancez Installer.bat : il reprendra proprement." "Installation is not finished and XRPerfSensors is stopped. Your settings and session summaries are untouched. Fix the cause shown above, then run Installer.bat again: it will resume cleanly."))
     }
     $sensorsRunning = Test-SensorsRunning
 
     Write-Host ''
-    Write-Host 'Installation terminée.' -ForegroundColor Green
+    Write-Host (T 'Installation terminée.' 'Installation finished.') -ForegroundColor Green
     if ($version) { Write-Host "  Version        : $version" }
-    Write-Host "  Dossier        : $targetFolder"
+    Write-Host ((T "  Dossier        : " "  Folder         : ") + $targetFolder)
     if ($insideProject) {
-        Write-Host '                   (il se trouve dans un dossier de sources extrait de l''archive : ne supprimez pas ce dossier)'
+        Write-Host (T '                   (il se trouve dans un dossier de sources extrait de l''archive : ne supprimez pas ce dossier)' '                   (it is inside a source folder extracted from the archive: do not delete that folder)')
     }
     if ($carriedIni) {
-        Write-Host "  Réglages       : repris de l'ancienne installation ($existing) ; $IniTemplateName montre les options de cette version."
-        Write-Host "                   Les résumés de session déjà écrits restent dans l'ancien dossier."
+        Write-Host (T "  Réglages       : repris de l'ancienne installation ($existing) ; $IniTemplateName montre les options de cette version." "  Settings       : carried over from the previous installation ($existing); $IniTemplateName shows the options of this version.")
+        Write-Host (T "                   Les résumés de session déjà écrits restent dans l'ancien dossier." "                   Session summaries already written stay in the old folder.")
     } elseif ($keptIni) {
-        Write-Host "  Réglages       : votre $IniName a été conservé ; $IniTemplateName montre les options de cette version."
+        Write-Host (T "  Réglages       : votre $IniName a été conservé ; $IniTemplateName montre les options de cette version." "  Settings       : your $IniName was kept; $IniTemplateName shows the options of this version.")
     } else {
-        Write-Host "  Réglages       : $IniName (à modifier avec le Bloc-notes)."
+        Write-Host (T "  Réglages       : $IniName (à modifier avec le Bloc-notes)." "  Settings       : $IniName (edit it with Notepad).")
     }
     if (-not $sensorsRunning) {
-        Write-Host "  Capteurs       : XRPerfSensors n'a pas démarré. Lancez sensors\XRPerfSensors.exe depuis le dossier d'installation." -ForegroundColor Yellow
+        Write-Host (T "  Capteurs       : XRPerfSensors n'a pas démarré. Lancez sensors\XRPerfSensors.exe depuis le dossier d'installation." "  Sensors        : XRPerfSensors did not start. Run sensors\XRPerfSensors.exe from the installation folder.") -ForegroundColor Yellow
     } elseif ($withAutoStart) {
-        Write-Host '  Capteurs       : XRPerfSensors est lancé et démarrera avec Windows.'
+        Write-Host (T '  Capteurs       : XRPerfSensors est lancé et démarrera avec Windows.' '  Sensors        : XRPerfSensors is running and will start with Windows.')
     } else {
-        Write-Host '  Capteurs       : XRPerfSensors est lancé ; à relancer vous-même après un redémarrage (sensors\XRPerfSensors.exe).'
+        Write-Host (T '  Capteurs       : XRPerfSensors est lancé ; à relancer vous-même après un redémarrage (sensors\XRPerfSensors.exe).' '  Sensors        : XRPerfSensors is running; start it yourself after a restart (sensors\XRPerfSensors.exe).')
     }
     if ($withAutoStart -and -not (Test-SamePath $account $current)) {
-        Write-Host "                   Attention : l'autorisation a été donnée avec un autre compte ($current) que le vôtre ($account)." -ForegroundColor Yellow
-        Write-Host "                   Le démarrage automatique ne fonctionne que si votre compte est administrateur de ce PC." -ForegroundColor Yellow
+        Write-Host (T "                   Attention : l'autorisation a été donnée avec un autre compte ($current) que le vôtre ($account)." "                   Note: permission was given with another account ($current) than yours ($account).") -ForegroundColor Yellow
+        Write-Host (T "                   Le démarrage automatique ne fonctionne que si votre compte est administrateur de ce PC." "                   Automatic start only works if your account is an administrator of this PC.") -ForegroundColor Yellow
     }
-    Write-Host '  Dans le casque : Ctrl+Alt+O affiche ou masque le panneau.'
-    Write-Host "  Désinstaller   : uninstall.bat dans le dossier d'installation."
+    if (-not (Test-WebView2)) {
+        Write-Host (T "  Fenêtre        : le moteur WebView2 de Microsoft, qui affiche la fenêtre de XRPerfSensors, n'est pas installé." "  Window         : Microsoft's WebView2 engine, which displays the XRPerfSensors window, is not installed.") -ForegroundColor Yellow
+        Write-Host (T "                   Installez-le depuis https://developer.microsoft.com/microsoft-edge/webview2/ (le panneau du casque fonctionne sans)." "                   Install it from https://developer.microsoft.com/microsoft-edge/webview2/ (the headset panel works without it).") -ForegroundColor Yellow
+    }
+    Write-Host (T '  Dans le casque : Ctrl+Alt+O affiche ou masque le panneau.' '  In the headset : Ctrl+Alt+O shows or hides the panel.')
+    Write-Host (T '  Interface      : double-clic sur l''icône de XRPerfSensors, près de l''horloge.' '  Interface      : double-click the XRPerfSensors icon, near the clock.')
+    Write-Host (T "  Désinstaller   : uninstall.bat dans le dossier d'installation." "  Uninstall      : uninstall.bat in the installation folder.")
     return $true
 }
 
@@ -493,11 +516,11 @@ function Invoke-Main {
         $ok = [bool](Invoke-Setup)
     } catch {
         Write-Host ''
-        Write-Host "ERREUR : $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host ((T "ERREUR : " "ERROR: ") + $_.Exception.Message) -ForegroundColor Red
     }
     # On laisse le temps de lire le résultat, sauf dans la fenêtre de départ quand l'installation se
     # poursuit dans une autre (celle ouverte par la demande d'autorisation).
-    if (-not $script:Relaunched) { Read-Host 'Appuyez sur Entrée pour fermer' | Out-Null }
+    if (-not $script:Relaunched) { Read-Host (T 'Appuyez sur Entrée pour fermer' 'Press Enter to close') | Out-Null }
     if ($ok) { exit 0 } else { exit 3 }
 }
 

@@ -21,6 +21,8 @@ constexpr const char* kPlacementNames[] = {"wrist_back", "wrist_inside", "above"
 constexpr const char* kWatchStyleNames[] = {"classic", "digital", "sport"};
 // Dans l'ordre de l'énumération WindowAnchor.
 constexpr const char* kWindowAnchorNames[] = {"left_hand", "right_hand", "world"};
+// Dans l'ordre de l'énumération ReportMode.
+constexpr const char* kReportModeNames[] = {"auto", "manual", "off"};
 
 // Indice du nom dans la liste (comparaison exacte, en minuscules), ou `fallback` s'il est inconnu.
 template <size_t N>
@@ -113,6 +115,12 @@ inline void ApplySettings(Config& c, const SettingsBlock& s) {
     w.along = clamped(s.windowAlong, kMinHandAlong, kMaxHandAlong, w.along);
     w.lift = clamped(s.windowLift, kMinHandLift, kMaxHandLift, w.lift);
     w.distance = clamped(s.windowDistance, kMinWindowDistance, kMaxWindowDistance, w.distance);
+
+    // Langue : XRPerfSensors envoie la langue effective (1 = français, 2 = anglais) ; 0 laisse celle du .ini.
+    if (s.language == 1) c.english = false;
+    else if (s.language == 2) c.english = true;
+    // Rapports : 1 à 3 = automatique, manuel, aucun ; 0 (ou inconnu) laisse celui du .ini.
+    if (s.reportMode >= 1 && s.reportMode <= static_cast<uint32_t>(ReportMode::Count)) c.reportMode = static_cast<ReportMode>(s.reportMode - 1);
 }
 
 // Réglages reçus pendant une partie : comme ApplySettings, sauf pour les réglages que les raccourcis

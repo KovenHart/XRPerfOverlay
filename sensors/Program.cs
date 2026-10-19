@@ -1,6 +1,7 @@
 // XRPerfSensors : lit les capteurs du PC (LibreHardwareMonitor) et les publie deux fois par
 // seconde dans une mémoire partagée que la layer OpenXR affiche dans le casque.
-// Il peut aussi afficher le panneau dans une fenêtre du bureau (voir PanelWindow.cs).
+// Sa fenêtre principale (MainWindow.cs, interface dans le dossier ui) règle l'overlay et montre les
+// rapports ; il peut aussi afficher le panneau dans une fenêtre du bureau (voir PanelWindow.cs).
 //
 // Tourne en dehors du jeu : s'il plante ou n'est pas lancé, le jeu n'est pas affecté et
 // l'overlay continue d'afficher les FPS.
@@ -201,8 +202,8 @@ namespace XRPerfSensors
             }
         }
 
-        public string CpuName => _cpu?.Name ?? "processeur non détecté";
-        public string GpuName => _gpu?.Name ?? "carte graphique non détectée";
+        public string CpuName => _cpu?.Name ?? Loc.T("processeur non détecté", "processor not detected");
+        public string GpuName => _gpu?.Name ?? Loc.T("carte graphique non détectée", "graphics card not detected");
 
         public Readings Read()
         {
@@ -282,7 +283,7 @@ namespace XRPerfSensors
         }
     }
 
-    /// <summary>Icône dans la zone de notification + fil de lecture des capteurs.</summary>
+    /// <summary>Icône dans la zone de notification, fil de lecture des capteurs, et services de la fenêtre principale.</summary>
     internal sealed class TrayApp : ApplicationContext
     {
         private const int PeriodMs = 500;
@@ -294,16 +295,20 @@ namespace XRPerfSensors
         private volatile Readings _latest;
         private volatile string _error;
 
-        // Fenêtre du bureau (créée à la demande).
+        // Fenêtre miroir du panneau sur le bureau (créée à la demande).
         private readonly Settings _settings;
-        private readonly ContextMenuStrip _menu;
-        private readonly ToolStripMenuItem _panelItem;
+        private ContextMenuStrip _menu;
+        private ToolStripMenuItem _panelItem;
         private PanelShare _panelShare;
         private PanelWindow _panelWindow;
 
         // Réglages de l'overlay : lus et écrits dans XRPerfOverlay.ini (dossier parent de ce programme),
         // envoyés en direct à la layer, et illustrés par l'aperçu hors jeu.
         private readonly string _iniPath;
+        private readonly string _layerDll;
+        private readonly string _layerManifest;  // fichier .json de la layer : nom de son inscription OpenXR
+        private bool _layerBusy;                 // activation ou désactivation en cours (invite UAC ouverte)
+        private ToolStripMenuItem _layerItem;
         private readonly string _settingsUnavailable; // non nul : pourquoi les réglages du casque ne sont pas modifiables
         private OverlaySettings _overlay;
         // Réglages tels que lus dans le .ini ou enregistrés pour la dernière fois : sert à savoir lesquels
@@ -311,10 +316,13 @@ namespace XRPerfSensors
         private OverlaySettings _baseline;
         private readonly SettingsShare _settingsShare;
         private readonly OverlayPreview _preview;
-        private SettingsWindow _settingsWindow;
-        private ReportsWindow _reportsWindow;
+        private MainWindow _main;
         private readonly string _installFolder;
+        private readonly string _layerVersion;
         private readonly System.Windows.Forms.Timer _saveTimer;
+        // Réglages du PC (XRPerfSensors.ini) changés dans l'interface : écrits une fois le curseur relâché,
+        // pas à chaque pas d'un glissement.
+        private readonly System.Windows.Forms.Timer _desktopSaveTimer;
         // XRPerfVR : panneau, montre et rapports dans les jeux SteamVR (OpenVR).
         private readonly VrCompanion _vr;
         // Fenêtre du bureau capturée pour le casque (null si la mémoire partagée n'a pas pu être créée).
@@ -325,25 +333,27 @@ namespace XRPerfSensors
         public TrayApp()
         {
             _settings = Settings.Load();
-
-            var menu = new ContextMenuStrip();
-            _menu = menu;
-            menu.Items.Add(new ToolStripMenuItem("XRPerfSensors " + AppVersion.Text + " - capteurs pour XR Perf Overlay") { Enabled = false });
+            Loc.Set(_settings.Language);
 
             // L'installation range ce programme dans <dossier>\sensors, à côté de la DLL et de son .ini.
             string exeFolder = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             string installFolder = Path.GetDirectoryName(exeFolder) ?? exeFolder;
             _installFolder = installFolder;
-            string layerDll = Path.Combine(installFolder, "XR_APILAYER_NOVENDOR_perf_overlay.dll");
+            _layerDll = Path.Combine(installFolder, "XR_APILAYER_NOVENDOR_perf_overlay.dll");
+            _layerManifest = Path.Combine(installFolder, LayerRegistry.ManifestName);
             _iniPath = Path.Combine(installFolder, "XRPerfOverlay.ini");
-            if (!File.Exists(layerDll))
+            if (!File.Exists(_layerDll))
             {
-                _settingsUnavailable = "Réglages du casque indisponibles : XRPerfSensors n'est pas dans le sous-dossier « sensors » " +
-                                       "d'une installation de XR Perf Overlay (DLL introuvable dans " + installFolder + ").";
+                _settingsUnavailable = Loc.T("XRPerfSensors n'est pas dans le sous-dossier « sensors » d'une installation de XR Perf Overlay (DLL introuvable dans ",
+                                             "XRPerfSensors is not in the « sensors » subfolder of an XR Perf Overlay installation (DLL not found in ") + installFolder + ").";
             }
             _overlay = _settingsUnavailable == null ? OverlaySettings.Load(_iniPath) : new OverlaySettings();
+            // La langue choisie ici vaut aussi pour le panneau et les rapports : le .ini la reçoit si elle diffère.
+            bool languageDiffers = _overlay.Language != Loc.IndexOf(_settings.Language);
+            _overlay.Language = Loc.IndexOf(_settings.Language);
+            if (languageDiffers && _settingsUnavailable == null) _overlay.Save(_iniPath);
             _baseline = _overlay.Clone();
-            _preview = new OverlayPreview(layerDll);
+            _preview = new OverlayPreview(_layerDll);
             try
             {
                 _settingsShare = new SettingsShare();
@@ -355,45 +365,36 @@ namespace XRPerfSensors
             }
             _saveTimer = new System.Windows.Forms.Timer { Interval = 400 };
             _saveTimer.Tick += (s, e) => FlushOverlaySave();
-
-            _panelItem = new ToolStripMenuItem("Panneau sur le bureau (aperçu, miroir pour OBS)") { CheckOnClick = true };
-            _panelItem.Click += (s, e) => SetDesktopPanel(_panelItem.Checked);
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Réglages...", null, (s, e) => ShowSettings());
-            menu.Items.Add("Rapports de session...", null, (s, e) => ShowReports());
-            menu.Items.Add(_panelItem);
-            if (!LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled)
-            {
-                menu.Items.Add("Pilote PawnIO absent : installer (température / fréquence CPU)...", null,
-                    (s, e) => OpenUrl("https://pawnio.eu/"));
-            }
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Quitter", null, (s, e) => ExitThread());
+            _desktopSaveTimer = new System.Windows.Forms.Timer { Interval = 400 };
+            _desktopSaveTimer.Tick += (s, e) => FlushDesktopSave();
 
             _icon = new NotifyIcon
             {
                 // Nom complet : LibreHardwareMonitor a aussi une classe "SystemInformation".
                 Icon = AppIcon.Load(System.Windows.Forms.SystemInformation.SmallIconSize),
                 Text = "XRPerfSensors " + AppVersion.Text,
-                ContextMenuStrip = menu,
                 Visible = true,
             };
-            _icon.DoubleClick += (s, e) => ShowSettings();
+            BuildMenu();
+            _icon.DoubleClick += (s, e) => ShowMain(null);
 
             // DLL et programme d'installations différentes (copie à la main d'une partie seulement) : le
             // panneau du bureau et les réglages en direct peuvent ne pas fonctionner.
-            string layerVersion = _settingsUnavailable == null ? AppVersion.OfFile(layerDll) : "";
-            if (layerVersion.Length > 0 && AppVersion.Text != "dev" && layerVersion != AppVersion.Text)
+            _layerVersion = _settingsUnavailable == null ? AppVersion.OfFile(_layerDll) : "";
+            if (_layerVersion.Length > 0 && AppVersion.Text != "dev" && _layerVersion != AppVersion.Text)
             {
                 _icon.ShowBalloonTip(10000, "XRPerfSensors",
-                    "La layer installée (version " + layerVersion + ") et XRPerfSensors (version " + AppVersion.Text + ") ne viennent pas de la même " +
-                    "version. Relancez Installer.bat pour tout mettre à jour.", ToolTipIcon.Warning);
+                    string.Format(Loc.T("La layer installée (version {0}) et XRPerfSensors (version {1}) ne viennent pas de la même version. Relancez Installer.bat pour tout mettre à jour.",
+                                        "The installed layer (version {0}) and XRPerfSensors (version {1}) come from different versions. Run Installer.bat again to update everything."),
+                                  _layerVersion, AppVersion.Text), ToolTipIcon.Warning);
             }
             else if (!LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled)
             {
                 _icon.ShowBalloonTip(10000, "XRPerfSensors",
-                    "Le pilote PawnIO n'est pas installé : la température et la fréquence du processeur seront indisponibles. " +
-                    "Installez-le depuis pawnio.eu (ou : winget install namazso.PawnIO) puis relancez ce programme.",
+                    Loc.T("Le pilote PawnIO n'est pas installé : la température et la fréquence du processeur seront indisponibles. " +
+                          "Installez-le depuis pawnio.eu (ou : winget install namazso.PawnIO) puis relancez ce programme.",
+                          "The PawnIO driver is not installed: CPU temperature and clock will be unavailable. " +
+                          "Install it from pawnio.eu (or: winget install namazso.PawnIO) then restart this program."),
                     ToolTipIcon.Warning);
             }
 
@@ -423,7 +424,310 @@ namespace XRPerfSensors
             _uiTimer.Start();
         }
 
-        /// <summary>Affiche ou masque la fenêtre du bureau, et mémorise le choix.</summary>
+        // --- Services de la fenêtre principale -----------------------------------------------------------
+
+        public OverlaySettings Overlay { get { return _overlay; } }
+        public Settings Desktop { get { return _settings; } }
+        /// <summary>Non nul : les réglages du casque ne peuvent pas être enregistrés, et pourquoi.</summary>
+        public string Unavailable { get { return _settingsUnavailable; } }
+        public WindowCapture Capture { get { return _capture; } }
+        public Readings Latest { get { return _latest; } }
+        public string SensorError { get { return _error; } }
+        public string LayerVersion { get { return _layerVersion; } }
+        /// <summary>L'aperçu du panneau est possible (DLL de la layer présente).</summary>
+        public bool PreviewAvailable { get { return File.Exists(_layerDll); } }
+
+        /// <summary>Aperçu du panneau (RGBA, 640 x 320) avec les réglages et les capteurs actuels ; hauteur dessinée, 0 si indisponible.</summary>
+        public int RenderPreview(byte[] pixels)
+        {
+            return _preview.Render(_overlay, _latest, pixels);
+        }
+
+        /// <summary>Aperçu de la montre (RGBA) ; côté de l'image, 0 si indisponible.</summary>
+        public int RenderWatch(byte[] pixels)
+        {
+            return _preview.RenderWatch(_overlay, pixels);
+        }
+
+        /// <summary>Lecture de l'image du panneau publiée par un jeu (la layer ne la publie que tant que quelqu'un la lit).</summary>
+        public PanelShare PanelReader()
+        {
+            try
+            {
+                if (_panelShare == null) _panelShare = new PanelShare();
+                _panelShare.Heartbeat();
+                return _panelShare;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>La fenêtre principale ne lit plus l'image : la layer peut arrêter de la publier si le miroir est fermé.</summary>
+        public void PanelReaderIdle()
+        {
+            if (_panelShare != null && (_panelWindow == null || !_panelWindow.Visible)) _panelShare.StopWatching();
+        }
+
+        /// <summary>Ouvre la fenêtre principale (ou la ramène au premier plan), sur une page donnée.</summary>
+        public void ShowMain(string page)
+        {
+            try
+            {
+                // Relecture du .ini : il a pu changer en jeu (raccourcis clavier). Un enregistrement en
+                // attente passe d'abord, pour ne pas relire une version périmée.
+                if (_main == null || _main.IsDisposed)
+                {
+                    ReloadOverlayFromIni();
+                    _main = new MainWindow(this, page);
+                    _main.FormClosed += (s, e) =>
+                    {
+                        // Fermée : détruite, pour libérer le moteur WebView2. La capture n'a plus d'aperçu à montrer.
+                        // (Une fenêtre non modale est détruite par sa fermeture.)
+                        _main = null;
+                        PanelReaderIdle();
+                        UpdateCapture();
+                    };
+                    _main.Show();
+                }
+                else
+                {
+                    if (page != null) _main.Navigate(page);
+                    if (_main.WindowState == FormWindowState.Minimized) _main.WindowState = FormWindowState.Normal;
+                    _main.Show();
+                }
+                _main.Activate();
+            }
+            catch (Exception ex)
+            {
+                _icon.ShowBalloonTip(8000, "XRPerfSensors", Loc.T("Impossible d'ouvrir la fenêtre : ", "Could not open the window: ") + ex.Message, ToolTipIcon.Error);
+            }
+        }
+
+        /// <summary>
+        /// Relit le .ini (il a pu changer en jeu, par les raccourcis clavier), sauf si un changement fait ici
+        /// attend encore d'y être écrit. Retourne true si les réglages ont été relus.
+        /// </summary>
+        public bool ReloadOverlayFromIni()
+        {
+            FlushOverlaySave();
+            if (_settingsUnavailable != null || _overlayDirty) return false;
+            int language = _overlay.Language;
+            _overlay = OverlaySettings.Load(_iniPath);
+            _overlay.Language = language;
+            _baseline = _overlay.Clone();
+            return true;
+        }
+
+        // Dossiers où la layer écrit les rapports : celui du .ini (par défaut "sessions" à côté de la DLL),
+        // et celui de secours quand il n'est pas accessible en écriture.
+        public IList<string> ReportFolders()
+        {
+            var folders = new List<string>();
+            string configured = _settingsUnavailable == null ? OverlaySettings.Load(_iniPath).SummaryFolder : "";
+            // Un chemin relatif dépendrait du dossier de travail du jeu : seul un chemin complet est suivi.
+            folders.Add(configured.Length > 0 && Path.IsPathRooted(configured) ? configured : Path.Combine(_installFolder, "sessions"));
+            folders.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XRPerfOverlay", "sessions"));
+            return folders.Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToList();
+        }
+
+        // Un réglage du casque a changé : envoi immédiat à la layer (jeu en cours), puis enregistrement dans
+        // le .ini après un court délai, pour ne pas l'écrire à chaque cran d'un curseur.
+        /// <summary>État de l'inscription de la layer auprès d'OpenXR (lu dans le registre).</summary>
+        public LayerRegistry.State LayerState { get { return LayerRegistry.Read(_layerManifest); } }
+        public bool LayerBusy { get { return _layerBusy; } }
+
+        /// <summary>
+        /// Active ou désactive la layer dans les jeux OpenXR (pris en compte au prochain lancement d'un
+        /// jeu). Un refus ou un échec est signalé dans la fenêtre si elle est ouverte, sinon par une bulle.
+        /// </summary>
+        public async void SetLayerEnabled(bool enabled)
+        {
+            if (_layerBusy) return;
+            _layerBusy = true;
+            LayerChanged();
+            LayerRegistry.Outcome outcome;
+            try
+            {
+                outcome = await LayerRegistry.SetAsync(enabled, _layerManifest);
+            }
+            catch (Exception)
+            {
+                outcome = LayerRegistry.Outcome.Failed;
+            }
+            _layerBusy = false;
+            LayerChanged();
+            if (outcome == LayerRegistry.Outcome.Done) return;
+            string text = outcome == LayerRegistry.Outcome.Cancelled
+                ? Loc.T("Autorisation refusée : la layer n'a pas été modifiée.", "Permission refused: the layer was not changed.")
+                : outcome == LayerRegistry.Outcome.Missing
+                ? Loc.T("La layer n'est pas inscrite auprès d'OpenXR : relancez Installer.bat.", "The layer is not registered with OpenXR: run Installer.bat again.")
+                : Loc.T("La layer n'a pas pu être modifiée (registre inaccessible).", "The layer could not be changed (registry not accessible).");
+            if (_main != null && !_main.IsDisposed && _main.Visible) _main.PostToast(text);
+            else _icon.ShowBalloonTip(6000, "XRPerfSensors", text, ToolTipIcon.Warning);
+        }
+
+        private void LayerChanged()
+        {
+            LayerRegistry.State state = LayerState;
+            if (_layerItem != null)
+            {
+                _layerItem.Checked = state == LayerRegistry.State.Enabled;
+                _layerItem.Enabled = state != LayerRegistry.State.Missing && !_layerBusy;
+            }
+            if (_main != null && !_main.IsDisposed) _main.PostLayer();
+        }
+
+        public void OverlayChanged()
+        {
+            if (_settingsUnavailable != null) return;
+            if (_settingsShare != null) _settingsShare.Publish(_overlay, true);
+            UpdateVrCompanion();
+            UpdateCapture();
+            _overlayDirty = true;
+            _saveTimer.Stop();
+            _saveTimer.Start();
+        }
+
+        /// <summary>Panneau et apparence remis aux valeurs d'origine (la montre, la fenêtre et les mesures ne changent pas).</summary>
+        public void ResetOverlayDefaults()
+        {
+            if (_settingsUnavailable != null) return;
+            var fresh = new OverlaySettings();
+            OverlaySettings o = _overlay;
+            o.Visible = fresh.Visible; o.Position = fresh.Position; o.Distance = fresh.Distance; o.OffsetX = fresh.OffsetX; o.OffsetY = fresh.OffsetY;
+            o.Width = fresh.Width; o.Opacity = fresh.Opacity; o.GlobalOpacity = fresh.GlobalOpacity; o.FaceViewer = fresh.FaceViewer;
+            o.Clock = fresh.Clock; o.HeadsetInfo = fresh.HeadsetInfo; o.PanelSession = fresh.PanelSession; o.PanelBattery = fresh.PanelBattery;
+            o.Layout = fresh.Layout; o.Theme = fresh.Theme;
+            o.CustomBackground = fresh.CustomBackground; o.CustomText = fresh.CustomText; o.CustomAccent = fresh.CustomAccent;
+            o.Anchor = fresh.Anchor; o.HandPlacement = fresh.HandPlacement; o.GazeOnly = fresh.GazeOnly; o.HandAlong = fresh.HandAlong; o.HandLift = fresh.HandLift;
+            OverlayChanged();
+        }
+
+        /// <summary>La langue a changé : menu, fenêtre miroir, panneau du casque et rapports suivent.</summary>
+        public void LanguageChanged()
+        {
+            Loc.Set(_settings.Language);
+            BuildMenu();
+            if (_panelWindow != null && !_panelWindow.IsDisposed) _panelWindow.Invalidate();
+            if (_settingsUnavailable == null)
+            {
+                _overlay.Language = Loc.IndexOf(_settings.Language);
+                OverlayChanged();
+            }
+        }
+
+        // XRPerfVR tourne si l'option est active (et si l'installation est complète).
+        private void UpdateVrCompanion()
+        {
+            bool wanted = _settingsUnavailable == null && _overlay.OpenVR;
+            bool gaveUp = _vr.GaveUp;
+            _vr.Update(wanted);
+            if (!gaveUp && _vr.GaveUp)
+            {
+                _icon.ShowBalloonTip(8000, "XRPerfSensors",
+                    Loc.T("XRPerfVR (panneau dans les jeux SteamVR) s'arrête sans cesse : il n'est plus relancé. Le journal XRPerfOverlay.log, " +
+                          "dans %LOCALAPPDATA%\\XRPerfOverlay, en donne la cause.",
+                          "XRPerfVR (panel in SteamVR games) keeps stopping: it is no longer restarted. The XRPerfOverlay.log file, " +
+                          "in %LOCALAPPDATA%\\XRPerfOverlay, gives the reason."), ToolTipIcon.Warning);
+            }
+        }
+
+        // Capture de fenêtre : lancée tant qu'un jeu VR affiche la fenêtre, ou que son aperçu est à l'écran.
+        public void UpdateCapture()
+        {
+            if (_capture == null) return;
+            bool preview = _main != null && !_main.IsDisposed && _main.WindowPreviewShown;
+            try
+            {
+                _capture.Update(_settingsUnavailable == null && _overlay.WindowEnabled, _settings, preview);
+            }
+            catch (Exception)
+            {
+                // Bibliothèque de capture défaillante : la fenêtre n'est simplement pas affichée.
+            }
+        }
+
+        /// <summary>La fenêtre choisie ou les réglages de capture ont changé.</summary>
+        public void CaptureChanged()
+        {
+            SaveDesktopSoon();
+            UpdateCapture();
+        }
+
+        /// <summary>Enregistre les réglages du PC un peu plus tard (regroupe les changements rapprochés).</summary>
+        public void SaveDesktopSoon()
+        {
+            _desktopSaveDirty = true;
+            _desktopSaveTimer.Stop();
+            _desktopSaveTimer.Start();
+        }
+
+        private bool _desktopSaveDirty;
+
+        private void FlushDesktopSave()
+        {
+            _desktopSaveTimer.Stop();
+            if (!_desktopSaveDirty) return;
+            _desktopSaveDirty = false;
+            SavePanelPosition();
+        }
+
+        private void FlushOverlaySave()
+        {
+            _saveTimer.Stop();
+            if (!_overlayDirty || _settingsUnavailable != null) return;
+            _overlayDirty = false;
+            // Raccourcis utilisés en jeu pendant que la fenêtre restait ouverte : leur effet, déjà dans le
+            // .ini, n'est pas écrasé par l'état affiché ici.
+            if (_overlay.MergeHotkeyState(OverlaySettings.Load(_iniPath), _baseline))
+            {
+                if (_settingsShare != null) _settingsShare.Publish(_overlay, false);
+                if (_main != null && !_main.IsDisposed) _main.OverlayReloaded();
+            }
+            _baseline = _overlay.Clone();
+            if (!_overlay.Save(_iniPath) && !_saveErrorShown)
+            {
+                _saveErrorShown = true;
+                _icon.ShowBalloonTip(8000, "XRPerfSensors", Loc.T("Impossible d'enregistrer les réglages dans ", "Could not save the settings to ") + _iniPath, ToolTipIcon.Warning);
+            }
+        }
+
+        // --- Menu de l'icône et fenêtre miroir -------------------------------------------------------------
+
+        private void BuildMenu()
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add(new ToolStripMenuItem("XRPerfSensors " + AppVersion.Text) { Enabled = false });
+            menu.Items.Add(new ToolStripSeparator());
+            var open = new ToolStripMenuItem(Loc.T("Ouvrir XR Perf Overlay", "Open XR Perf Overlay"), null, (s, e) => ShowMain("dashboard"));
+            open.Font = new Font(open.Font, FontStyle.Bold);
+            menu.Items.Add(open);
+            menu.Items.Add(Loc.T("Rapports de session", "Session reports"), null, (s, e) => ShowMain("reports"));
+            _panelItem = new ToolStripMenuItem(Loc.T("Miroir du panneau sur le bureau (OBS)", "Panel mirror on the desktop (OBS)")) { CheckOnClick = true, Checked = _settings.DesktopPanel };
+            _panelItem.Click += (s, e) => SetDesktopPanel(_panelItem.Checked);
+            menu.Items.Add(_panelItem);
+            // Layer OpenXR : désactivée, elle n'est plus chargée du tout dans les jeux OpenXR.
+            _layerItem = new ToolStripMenuItem(Loc.T("Layer OpenXR activée", "OpenXR layer enabled"));
+            _layerItem.Click += (s, e) => SetLayerEnabled(!_layerItem.Checked);
+            menu.Items.Add(_layerItem);
+            menu.Opening += (s, e) => LayerChanged();
+            if (!LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled)
+            {
+                menu.Items.Add(Loc.T("Pilote PawnIO absent : installer (température / fréquence CPU)...", "PawnIO driver missing: install it (CPU temperature / clock)..."), null,
+                    (s, e) => OpenUrl("https://pawnio.eu/"));
+            }
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(Loc.T("Quitter", "Exit"), null, (s, e) => ExitThread());
+            ContextMenuStrip old = _menu;
+            _menu = menu;
+            _icon.ContextMenuStrip = menu;
+            if (_panelWindow != null && !_panelWindow.IsDisposed) _panelWindow.ContextMenuStrip = menu;
+            if (old != null) old.Dispose();
+        }
+
+        /// <summary>Affiche ou masque la fenêtre miroir, et mémorise le choix.</summary>
         private void SetDesktopPanel(bool show)
         {
             if (show)
@@ -434,7 +738,7 @@ namespace XRPerfSensors
                     if (_panelWindow == null || _panelWindow.IsDisposed)
                     {
                         _panelWindow = new PanelWindow(_panelShare) { TopMost = _settings.TopMost, ContextMenuStrip = _menu };
-                        // Sans jeu OpenXR en cours, la fenêtre montre un aperçu des réglages actuels.
+                        // Sans jeu VR en cours, la fenêtre montre un aperçu des réglages actuels.
                         _panelWindow.SetPreviewSource(pixels => _preview.Render(_overlay, _latest, pixels));
                         // Position mémorisée, si elle tombe encore sur un écran branché.
                         var bounds = new Rectangle(_settings.X, _settings.Y, _panelWindow.Width, _panelWindow.Height);
@@ -451,11 +755,11 @@ namespace XRPerfSensors
                             {
                                 _settings.Anchor = 0;
                                 _panelWindow.SetAppearance(_settings.Scale, _settings.Opacity, _settings.Anchor);
-                                if (_settingsWindow != null) _settingsWindow.LoadDesktop();
+                                if (_main != null && !_main.IsDisposed) _main.PostDesktop();
                             }
                             SavePanelPosition();
                         };
-                        // Fenêtre masquée par Alt+F4 : la case du menu et celle des réglages suivent.
+                        // Fenêtre masquée par Alt+F4 : la case du menu et celle de l'interface suivent.
                         _panelWindow.VisibleChanged += (s, e) =>
                         {
                             if (!_panelWindow.Visible && _panelItem.Checked)
@@ -463,7 +767,7 @@ namespace XRPerfSensors
                                 _panelItem.Checked = false;
                                 _settings.DesktopPanel = false;
                                 _settings.Save();
-                                if (_settingsWindow != null) _settingsWindow.LoadDesktop();
+                                if (_main != null && !_main.IsDisposed) _main.PostDesktop();
                             }
                         };
                     }
@@ -472,7 +776,7 @@ namespace XRPerfSensors
                 catch (Exception ex)
                 {
                     show = false;
-                    _icon.ShowBalloonTip(8000, "XRPerfSensors", "Impossible d'afficher le panneau sur le bureau : " + ex.Message, ToolTipIcon.Error);
+                    _icon.ShowBalloonTip(8000, "XRPerfSensors", Loc.T("Impossible d'afficher le panneau sur le bureau : ", "Could not show the panel on the desktop: ") + ex.Message, ToolTipIcon.Error);
                 }
             }
             else if (_panelWindow != null)
@@ -483,137 +787,11 @@ namespace XRPerfSensors
             _panelItem.Checked = show;
             _settings.DesktopPanel = show;
             _settings.Save();
-            if (_settingsWindow != null) _settingsWindow.LoadDesktop();
+            if (_main != null && !_main.IsDisposed) _main.PostDesktop();
         }
 
-        /// <summary>Ouvre la fenêtre de réglages (menu de l'icône ou double-clic).</summary>
-        private void ShowSettings()
-        {
-            try
-            {
-                // Relecture du .ini : il a pu changer en jeu (raccourcis clavier). Un enregistrement en
-                // attente passe d'abord, pour ne pas relire une version périmée.
-                FlushOverlaySave();
-                if (_settingsUnavailable == null) _overlay = OverlaySettings.Load(_iniPath);
-                _baseline = _overlay.Clone();
-                if (_settingsWindow == null || _settingsWindow.IsDisposed)
-                    _settingsWindow = new SettingsWindow(_overlay, _settings, OnOverlayChanged, OnDesktopChanged, OnSettingsActivated, ShowReports,
-                        _settingsUnavailable, (overlay, pixels) => _preview.RenderWatch(overlay, pixels), _capture, UpdateCapture);
-                else
-                    _settingsWindow.LoadFrom(_overlay);
-                _settingsWindow.Show();
-                if (_settingsWindow.WindowState == FormWindowState.Minimized) _settingsWindow.WindowState = FormWindowState.Normal;
-                _settingsWindow.Activate();
-            }
-            catch (Exception ex)
-            {
-                _icon.ShowBalloonTip(8000, "XRPerfSensors", "Impossible d'ouvrir les réglages : " + ex.Message, ToolTipIcon.Error);
-            }
-        }
-
-        /// <summary>Ouvre la fenêtre des rapports de session.</summary>
-        private void ShowReports()
-        {
-            try
-            {
-                if (_reportsWindow == null || _reportsWindow.IsDisposed) _reportsWindow = new ReportsWindow(ReportFolders, _settings);
-                _reportsWindow.Show();
-                if (_reportsWindow.WindowState == FormWindowState.Minimized) _reportsWindow.WindowState = FormWindowState.Normal;
-                _reportsWindow.Activate();
-                _reportsWindow.RefreshReports(false); // sans effet si l'activation vient de le faire
-            }
-            catch (Exception ex)
-            {
-                _icon.ShowBalloonTip(8000, "XRPerfSensors", "Impossible d'ouvrir les rapports : " + ex.Message, ToolTipIcon.Error);
-            }
-        }
-
-        // Dossiers où la layer écrit les rapports : celui du .ini (par défaut "sessions" à côté de la DLL),
-        // et celui de secours quand il n'est pas accessible en écriture.
-        private IList<string> ReportFolders()
-        {
-            var folders = new List<string>();
-            string configured = _settingsUnavailable == null ? OverlaySettings.Load(_iniPath).SummaryFolder : "";
-            // Un chemin relatif dépendrait du dossier de travail du jeu : seul un chemin complet est suivi.
-            folders.Add(configured.Length > 0 && Path.IsPathRooted(configured) ? configured : Path.Combine(_installFolder, "sessions"));
-            folders.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XRPerfOverlay", "sessions"));
-            return folders.Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToList();
-        }
-
-        // La fenêtre de réglages revient au premier plan : le .ini a pu changer entre-temps en jeu
-        // (raccourcis clavier). On le relit, sauf si un changement fait ici attend encore d'y être écrit.
-        private void OnSettingsActivated()
-        {
-            if (_settingsUnavailable != null || _overlayDirty || _settingsWindow == null || _settingsWindow.IsDisposed) return;
-            _overlay = OverlaySettings.Load(_iniPath);
-            _baseline = _overlay.Clone();
-            _settingsWindow.LoadFrom(_overlay);
-        }
-
-        // Un réglage du casque a changé dans la fenêtre : envoi immédiat à la layer (jeu en cours),
-        // puis enregistrement dans le .ini après un court délai, pour ne pas l'écrire à chaque cran d'un curseur.
-        private void OnOverlayChanged()
-        {
-            if (_settingsUnavailable != null) return;
-            if (_settingsShare != null) _settingsShare.Publish(_overlay, true);
-            UpdateVrCompanion();
-            UpdateCapture();
-            _overlayDirty = true;
-            _saveTimer.Stop();
-            _saveTimer.Start();
-        }
-
-        // XRPerfVR tourne si l'option est active (et si l'installation est complète).
-        private void UpdateVrCompanion()
-        {
-            bool wanted = _settingsUnavailable == null && _overlay.OpenVR;
-            bool gaveUp = _vr.GaveUp;
-            _vr.Update(wanted);
-            if (!gaveUp && _vr.GaveUp)
-            {
-                _icon.ShowBalloonTip(8000, "XRPerfSensors",
-                    "XRPerfVR (panneau dans les jeux SteamVR) s'arrête sans cesse : il n'est plus relancé. Le journal XRPerfOverlay.log, " +
-                    "dans %LOCALAPPDATA%\\XRPerfOverlay, en donne la cause.", ToolTipIcon.Warning);
-            }
-        }
-
-        // Capture de fenêtre : lancée tant qu'un jeu VR affiche la fenêtre, ou que son aperçu est à l'écran.
-        private void UpdateCapture()
-        {
-            if (_capture == null) return;
-            bool preview = _settingsWindow != null && !_settingsWindow.IsDisposed && _settingsWindow.WindowPreviewShown;
-            try
-            {
-                _capture.Update(_settingsUnavailable == null && _overlay.WindowEnabled, _settings, preview);
-            }
-            catch (Exception)
-            {
-                // Bibliothèque de capture défaillante : la fenêtre n'est simplement pas affichée.
-            }
-        }
-
-        private void FlushOverlaySave()
-        {
-            _saveTimer.Stop();
-            if (!_overlayDirty || _settingsUnavailable != null) return;
-            _overlayDirty = false;
-            // Raccourcis utilisés en jeu pendant que la fenêtre de réglages restait ouverte : leur effet, déjà
-            // dans le .ini, n'est pas écrasé par l'état affiché ici.
-            if (_overlay.MergeHotkeyState(OverlaySettings.Load(_iniPath), _baseline))
-            {
-                if (_settingsShare != null) _settingsShare.Publish(_overlay, false);
-                if (_settingsWindow != null && !_settingsWindow.IsDisposed) _settingsWindow.LoadFrom(_overlay);
-            }
-            _baseline = _overlay.Clone();
-            if (!_overlay.Save(_iniPath) && !_saveErrorShown)
-            {
-                _saveErrorShown = true;
-                _icon.ShowBalloonTip(8000, "XRPerfSensors", "Impossible d'enregistrer les réglages dans " + _iniPath, ToolTipIcon.Warning);
-            }
-        }
-
-        // Un réglage de la fenêtre du bureau a changé dans la fenêtre de réglages.
-        private void OnDesktopChanged()
+        /// <summary>Un réglage de la fenêtre miroir a changé dans l'interface.</summary>
+        public void DesktopChanged()
         {
             bool shown = _panelWindow != null && _panelWindow.Visible;
             if (_settings.DesktopPanel != shown) SetDesktopPanel(_settings.DesktopPanel);
@@ -623,7 +801,7 @@ namespace XRPerfSensors
                 if (_panelWindow.TopMost != _settings.TopMost) _panelWindow.TopMost = _settings.TopMost;
                 _panelWindow.SetAppearance(_settings.Scale, _settings.Opacity, _settings.Anchor);
             }
-            SavePanelPosition();
+            SaveDesktopSoon();
         }
 
         private void SavePanelPosition()
@@ -663,13 +841,13 @@ namespace XRPerfSensors
             string text;
             if (_error != null)
             {
-                text = "XRPerfSensors - erreur : " + _error;
+                text = "XRPerfSensors - " + Loc.T("erreur : ", "error: ") + _error;
             }
             else
             {
                 Readings r = _latest;
                 text = r == null
-                    ? "XRPerfSensors - démarrage..."
+                    ? "XRPerfSensors - " + Loc.T("démarrage...", "starting...")
                     : string.Format("XRPerfSensors {4}\nCPU {0} %  {1} °C\nGPU {2} %  {3} °C", Show(r.CpuLoad), Show(r.CpuTemp), Show(r.GpuLoad), Show(r.GpuTemp),
                                     AppVersion.Text);
             }
@@ -682,7 +860,7 @@ namespace XRPerfSensors
             return float.IsNaN(value) ? "--" : Math.Round(value).ToString("0");
         }
 
-        private static void OpenUrl(string url)
+        public static void OpenUrl(string url)
         {
             try
             {
@@ -703,12 +881,17 @@ namespace XRPerfSensors
             _worker.Join(3000);
             FlushOverlaySave();
             _saveTimer.Dispose();
-            // La fenêtre de réglages est retirée d'abord, et oubliée : masquer la fenêtre du bureau,
-            // plus bas, ne doit plus chercher à la mettre à jour.
-            SettingsWindow settingsWindow = _settingsWindow;
-            _settingsWindow = null;
-            if (settingsWindow != null) settingsWindow.Dispose();
-            if (_reportsWindow != null) _reportsWindow.Dispose();
+            FlushDesktopSave();
+            _desktopSaveTimer.Dispose();
+            // La fenêtre principale est retirée d'abord, et oubliée : masquer la fenêtre miroir, plus bas,
+            // ne doit plus chercher à la mettre à jour.
+            MainWindow main = _main;
+            _main = null;
+            if (main != null && !main.IsDisposed)
+            {
+                main.Close();
+                main.Dispose();
+            }
             if (_settingsShare != null) _settingsShare.Dispose();
             if (_panelWindow != null)
             {
@@ -722,6 +905,7 @@ namespace XRPerfSensors
             if (_panelShare != null) _panelShare.Dispose();
             _icon.Visible = false;
             _icon.Dispose();
+            if (_menu != null) _menu.Dispose();
             base.ExitThreadCore();
         }
     }
@@ -729,16 +913,20 @@ namespace XRPerfSensors
     internal static class Program
     {
         [STAThread]
-        private static void Main()
+        private static int Main(string[] args)
         {
+            // Instance relancée en administrateur pour activer ou désactiver la layer : une écriture, puis fin.
+            if (args.Length == 2 && args[0] == LayerRegistry.CommandArgument) return LayerRegistry.RunCommand(args[1]);
+
             // Une seule instance à la fois.
             using (var single = new Mutex(true, @"Local\XRPerfOverlay.SensorsApp", out bool first))
             {
-                if (!first) return;
+                if (!first) return 0;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new TrayApp());
             }
+            return 0;
         }
     }
 }

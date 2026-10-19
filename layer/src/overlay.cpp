@@ -29,8 +29,6 @@ const double kImplausibleSeconds = 10.0;
 const int kMaxUploadErrors = 5;
 const int kMaxRejections = 3;
 const int kMaxWaitTimeouts = 240;
-const double kSummaryMinSeconds = 15.0;  // en dessous, la session ne laisse pas de résumé
-const double kSummaryPeriod = 15.0;      // intervalle entre deux réécritures du résumé
 // XRPerfSensors enregistre le .ini une fraction de seconde après un changement : un changement plus
 // récent que cette marge avant notre lecture du .ini peut ne pas s'y trouver.
 const unsigned long long kSettingsGraceMs = 2000;
@@ -127,13 +125,13 @@ void Overlay::onSessionCreated(XrSession session, const XrSessionCreateInfo* cre
 
     // Mesures et résumé de session : indépendants de l'affichage, donc actifs aussi sans panneau.
     finishSummary();
+    m_recording = m_recordManual = false;
     m_sessionStats.reset();
     m_sessionStart = nowSeconds();
     m_lastSummaryWrite = m_sessionStart;
     m_lastSample = -1.0;
     m_outRate.reset();
     m_lastOutSample = -1.0;
-    m_startText = LocalTimeText();
     m_gameText = Narrow(CurrentExeName(false));
     m_apiText = m_gfx ? m_gfx->name() : "autre (Vulkan, OpenGL...)";
     m_renderSize.store(0, std::memory_order_relaxed);
@@ -148,7 +146,9 @@ void Overlay::onSessionCreated(XrSession session, const XrSessionCreateInfo* cre
         if (m_gpuText.empty()) m_gpuText = MainGpuName();
         Log("Materiel : processeur \"%s\", carte graphique \"%s\".", m_cpuText.c_str(), m_gpuText.c_str());
     }
-    if (m_config.summaryEnabled) openSummary();
+    // Rapport : en mode automatique, l'enregistrement couvre toute la session.
+    if (m_reportControl.begin(m_config.reportMode, Hotkeys::comboDown(m_config.keyRecord))) startRecording(m_sessionStart, false);
+    if (m_config.reportMode == ReportMode::Manual) Log("Rapports en mode manuel : Ctrl+Alt+touche %d pour demarrer / arreter.", m_config.keyRecord);
 
     // Mesure du temps GPU : seulement si elle est demandée dans le .ini et possible avec cette API.
     m_timingActive = false;
@@ -255,10 +255,12 @@ void Overlay::writeSummary(double now, bool finished) {
         info.cpu = m_cpuText.c_str();
         info.gpu = m_gpuText.c_str();
     }
-    info.startText = m_startText.c_str();
+    info.startText = m_recordStartText.c_str();
     info.nowText = nowText.c_str();
     info.finished = finished;
-    info.wallSeconds = now - m_sessionStart;
+    info.wallSeconds = now - m_recordStart;
+    info.english = m_config.english;
+    info.manual = m_recordManual;
     const std::string text = m_sessionStats.format(info);
     if (!m_summary.kept()) {
         m_summary.keep();
@@ -268,16 +270,48 @@ void Overlay::writeSummary(double now, bool finished) {
     m_lastSummaryWrite = now;
 }
 
-// Dernière écriture puis fermeture. Une session trop courte ne laisse aucun fichier.
-void Overlay::finishSummary() {
-    if (!m_summary.isOpen()) return;
-    if (m_sessionStats.activeSeconds() >= kSummaryMinSeconds) writeSummary(nowSeconds(), true);
+// Dernière écriture puis fermeture. Un enregistrement trop court ne laisse aucun fichier.
+bool Overlay::finishSummary() {
+    if (!m_summary.isOpen()) return false;
+    const double now = nowSeconds();
+    const bool keep = KeepReport(m_recordManual, m_sessionStats.activeSeconds(), now - m_recordStart);
+    if (keep) writeSummary(now, true);
     m_summary.close();
+    return keep;
+}
+
+void Overlay::startRecording(double now, bool manual) {
+    m_sessionStats.restart();  // le rapport ne compte que la durée de l'enregistrement
+    m_recording = true;
+    m_recordManual = manual;
+    m_recordStart = now;
+    m_recordStartText = LocalTimeText();
+    m_lastSummaryWrite = now;
+    openSummary();
+    if (manual) Log("Enregistrement manuel demarre.");
+}
+
+void Overlay::stopRecording(double now) {
+    if (!m_recording) return;
+    const bool kept = finishSummary();
+    if (m_recordManual) {
+        m_reportControl.stoppedManual(now, kept, now - m_recordStart);
+        Log(kept ? "Enregistrement manuel arrete : rapport ecrit." : "Enregistrement manuel arrete : trop court, pas de rapport.");
+    }
+    m_recording = m_recordManual = false;
+}
+
+// Mode des rapports (changeable en jeu depuis XRPerfSensors) et raccourci du mode manuel.
+void Overlay::updateRecording(double now) {
+    const ReportControl::Step step = m_reportControl.update(m_config.reportMode, m_recording, Hotkeys::comboDown(m_config.keyRecord));
+    if (step.stop) stopRecording(now);
+    if (step.start) startRecording(now, step.manual);
 }
 
 void Overlay::onSessionDestroying() {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_hotkeys.takePending()) SaveState(m_config);
+    stopRecording(nowSeconds());
     finishSummary();
     destroyResources();
     m_gfx.reset();
@@ -568,6 +602,10 @@ void Overlay::sample(double now) {
     // Ligne session / batterie (option). La batterie vient du runtime, comme pour la montre.
     data.statusElements = m_config.panelElements;
     data.sessionSeconds = now - m_sessionStart;
+    // Témoin d'enregistrement manuel (en cours, rapport écrit, trop court).
+    data.recordState = m_reportControl.indicator(now, m_recording && m_recordManual, m_recordStart, data.recordSeconds);
+    // Pour XRPerfVR, s'il affiche le panneau de ce jeu à la place de la layer (Vulkan, OpenGL).
+    m_presence.setRecord(data.recordState, static_cast<float>(data.recordSeconds));
     if ((data.statusElements & kWatchBattery) && m_hands) {
         for (int hand = 0; hand < 2; ++hand) {
             float level = 0.f;
@@ -582,12 +620,14 @@ void Overlay::sample(double now) {
     // Apparence. La courbe n'est préparée que pour la présentation qui l'affiche.
     data.layout = m_config.layout;
     data.theme = ThemeOf(m_config);
+    data.english = m_config.english;
     if (data.layout == Layout::Graph) {
         m_history.columns(now, data.graphFrameMs, data.graphCpuMs, data.graphGpuMs);
         data.graphValid = true;
     }
 
-    m_sessionStats.onSample(data, stats.fullSecond, now);
+    // Cadence sur une seconde : seulement quand cette seconde est tout entière dans l'enregistrement.
+    m_sessionStats.onSample(data, stats.fullSecond && now - m_recordStart >= 1.0, now);
     if (m_config.watch.enabled) sampleWatch(now, data, stats.valid, stats.fps);
 
     // Fenêtre du bureau : même panneau, toujours opaque, quel que soit le réglage dans le casque.
@@ -743,7 +783,10 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
         m_lastOutSample = now;
     }
     if (m_lastSample < 0.0 || (now - m_lastSample) * 1000.0 >= m_config.refreshMs) sample(now);
-    if (m_summary.isOpen() && now - m_lastSummaryWrite >= kSummaryPeriod && m_sessionStats.activeSeconds() >= kSummaryMinSeconds)
+    // Rapport : le raccourci est relevé par la layer dès qu'elle écrit le rapport, même sans affichage.
+    updateRecording(now);
+    if (m_summary.isOpen() && now - m_lastSummaryWrite >= kReportPeriod &&
+        m_sessionStats.activeSeconds() >= (m_recordManual ? kManualReportMinSeconds : kReportMinSeconds))
         writeSummary(now, false);
 
     // Affichage abandonné pour la session : XRPerfVR peut prendre le relais dans un jeu SteamVR.
@@ -1061,6 +1104,7 @@ void Overlay::sampleWatch(double now, const PanelData& data, bool fpsValid, floa
     w.style = m_config.watch.style;
     w.elements = m_config.watch.elements;
     w.theme = data.theme;
+    w.english = m_config.english;
     const int seconds = LocalClockSeconds();
     w.hour = seconds / 3600;
     w.minute = (seconds / 60) % 60;

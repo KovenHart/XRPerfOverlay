@@ -25,8 +25,6 @@ const double kConnectRetrySeconds = 30.0;   // après un échec de connexion
 const double kSceneCheckSeconds = 0.5;      // jeu au premier plan
 const double kSceneGraceSeconds = 2.0;      // un nouveau jeu est suivi après ce délai (la layer a le temps de se signaler)
 const double kLayerCheckSeconds = 1.0;      // la layer OpenXR est-elle apparue dans le jeu suivi ?
-const double kSummaryMinSeconds = 15.0;     // en dessous, la session ne laisse pas de rapport (comme la layer)
-const double kSummaryPeriod = 15.0;
 const double kOffsetWindowSeconds = 10.0;   // recalage de l'horloge de SteamVR
 const double kSceneLostSeconds = 2.0;       // jeu absent du premier plan depuis ce temps : fin de la session
 const double kOverlayRetrySeconds = 30.0;   // nouvel essai de création des calques
@@ -178,8 +176,14 @@ void VrHost::run(double now) {
         if (m_hotkeys.saveDue(now)) SaveState(m_config);
     }
     if (m_lastSample < 0.0 || (now - m_lastSample) * 1000.0 >= m_config.refreshMs) sample(now);
-    if (m_session.report && m_summary.isOpen() && now - m_lastSummaryWrite >= kSummaryPeriod &&
-        m_sessionStats.activeSeconds() >= kSummaryMinSeconds)
+    // Rapport : seulement si XRPerfVR l'écrit (sinon la layer relève elle-même le raccourci).
+    if (m_session.report) {
+        const ReportControl::Step step = m_reportControl.update(m_config.reportMode, m_recording, Hotkeys::comboDown(m_config.keyRecord));
+        if (step.stop) stopRecording(now);
+        if (step.start) startRecording(now, step.manual);
+    }
+    if (m_session.report && m_summary.isOpen() && now - m_lastSummaryWrite >= kReportPeriod &&
+        m_sessionStats.activeSeconds() >= (m_recordManual ? kManualReportMinSeconds : kReportMinSeconds))
         writeSummary(now, false);
     display(now);
 }
@@ -277,7 +281,6 @@ void VrHost::beginSession(uint32_t pid, double now) {
     m_sessionStart = now;
     m_lastSummaryWrite = now;
     m_nextLayerCheck = now + kLayerCheckSeconds;
-    m_startText = LocalTimeText();
     m_gameText = name.empty() ? "?" : name;
     m_headsetText = m_config.headsetName.empty() ? m_info.headset : m_config.headsetName;
     m_cpuText.clear();
@@ -286,7 +289,8 @@ void VrHost::beginSession(uint32_t pid, double now) {
         m_cpuText = CpuModelName();
         m_gpuText = MainGpuName();
     }
-    if (m_session.report && m_config.summaryEnabled) openSummary();
+    m_recording = m_recordManual = false;
+    if (m_reportControl.begin(m_config.reportMode, Hotkeys::comboDown(m_config.keyRecord)) && m_session.report) startRecording(now, false);
     if (m_session.mirror) m_panelShare.reset(new PanelShare());
     Log("XRPerfVR : jeu \"%s\" (processus %lu) : %s, %s.", m_gameText.c_str(), static_cast<unsigned long>(pid),
         m_session.display ? (m_overlaysReady ? "panneau et montre affiches par XRPerfVR" : "calques indisponibles")
@@ -297,6 +301,7 @@ void VrHost::beginSession(uint32_t pid, double now) {
 void VrHost::endSession(double now) {
     if (!m_session.active) return;
     if (m_hotkeys.takePending()) SaveState(m_config);
+    stopRecording(now);
     finishSummary(now);
     hideAll();
     m_panelShare.reset();  // la fenêtre du bureau sait tout de suite que le jeu est terminé
@@ -318,6 +323,7 @@ void VrHost::checkLayer(double now) {
         return;
     }
     if (measures && m_session.report) {
+        stopRecording(now);
         finishSummary(now);
         m_session.report = false;
         m_session.mirror = false;
@@ -463,6 +469,16 @@ void VrHost::sample(double now) {
     // Ligne session / batterie (option) : batterie lue auprès de SteamVR.
     data.statusElements = m_config.panelElements;
     data.sessionSeconds = now - m_sessionStart;
+    data.recordState = m_reportControl.indicator(now, m_recording && m_recordManual, m_recordStart, data.recordSeconds);
+    // Rapport écrit par la layer (jeu OpenXR en Vulkan ou OpenGL) : son témoin, sur le panneau d'XRPerfVR.
+    if (!m_session.report) {
+        int state = 0;
+        float seconds = 0.f;
+        if (m_vr.layerRecord(m_session.pid, state, seconds) && state >= kRecordNone && state <= kRecordTooShort) {
+            data.recordState = state;
+            data.recordSeconds = seconds;
+        }
+    }
     if (data.statusElements & kWatchBattery) {
         for (int hand = 0; hand < 2; ++hand) {
             float level = 0.f;
@@ -476,12 +492,13 @@ void VrHost::sample(double now) {
 
     data.layout = m_config.layout;
     data.theme = ThemeOf(m_config);
+    data.english = m_config.english;
     if (data.layout == Layout::Graph) {
         m_history.columns(now, data.graphFrameMs, data.graphCpuMs, data.graphGpuMs);
         data.graphValid = true;
     }
 
-    m_sessionStats.onSample(data, stats.fullSecond, now);
+    m_sessionStats.onSample(data, stats.fullSecond && now - m_recordStart >= 1.0, now);
     if (m_config.watch.enabled) sampleWatch(now, data, stats.valid, stats.fps);
 
     if (m_panelShare && m_panelShare->wanted()) {
@@ -499,6 +516,7 @@ void VrHost::sampleWatch(double now, const PanelData& data, bool fpsValid, float
     w.style = m_config.watch.style;
     w.elements = m_config.watch.elements;
     w.theme = data.theme;
+    w.english = m_config.english;
     const int seconds = LocalClockSeconds();
     w.hour = seconds / 3600;
     w.minute = (seconds / 60) % 60;
@@ -720,10 +738,12 @@ void VrHost::writeSummary(double now, bool finished) {
         info.cpu = m_cpuText.c_str();
         info.gpu = m_gpuText.c_str();
     }
-    info.startText = m_startText.c_str();
+    info.startText = m_recordStartText.c_str();
     info.nowText = nowText.c_str();
     info.finished = finished;
-    info.wallSeconds = now - m_sessionStart;
+    info.wallSeconds = now - m_recordStart;
+    info.english = m_config.english;
+    info.manual = m_recordManual;
     const std::string text = m_sessionStats.format(info);
     if (!m_summary.kept()) {
         m_summary.keep();
@@ -733,10 +753,33 @@ void VrHost::writeSummary(double now, bool finished) {
     m_lastSummaryWrite = now;
 }
 
-void VrHost::finishSummary(double now) {
-    if (!m_summary.isOpen()) return;
-    if (m_session.report && m_sessionStats.activeSeconds() >= kSummaryMinSeconds) writeSummary(now, true);
+bool VrHost::finishSummary(double now) {
+    if (!m_summary.isOpen()) return false;
+    const bool keep = m_session.report && KeepReport(m_recordManual, m_sessionStats.activeSeconds(), now - m_recordStart);
+    if (keep) writeSummary(now, true);
     m_summary.close();
+    return keep;
+}
+
+void VrHost::startRecording(double now, bool manual) {
+    m_sessionStats.restart();  // le rapport ne compte que la durée de l'enregistrement
+    m_recording = true;
+    m_recordManual = manual;
+    m_recordStart = now;
+    m_recordStartText = LocalTimeText();
+    m_lastSummaryWrite = now;
+    openSummary();
+    if (manual) Log("XRPerfVR : enregistrement manuel demarre.");
+}
+
+void VrHost::stopRecording(double now) {
+    if (!m_recording) return;
+    const bool kept = finishSummary(now);
+    if (m_recordManual) {
+        m_reportControl.stoppedManual(now, kept, now - m_recordStart);
+        Log(kept ? "XRPerfVR : enregistrement manuel arrete, rapport ecrit." : "XRPerfVR : enregistrement manuel arrete, trop court.");
+    }
+    m_recording = m_recordManual = false;
 }
 
 }  // namespace xrpo

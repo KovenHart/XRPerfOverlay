@@ -12,7 +12,9 @@ CE QU'IL FAUT
 - Windows 10 ou 11, 64 bits.
 - Un jeu OpenXR en Direct3D 11 ou 12 (Vulkan et OpenGL : pas de panneau, mais le rapport est écrit),
   ou un jeu SteamVR (OpenVR), avec SteamVR ouvert.
-- Rien d'autre : le programme est déjà compilé et le runtime .NET est inclus.
+- Rien d'autre : le programme est déjà compilé et le runtime .NET est inclus. La fenêtre de
+  XRPerfSensors utilise le moteur WebView2 de Microsoft, présent dans Windows 11 et Windows 10 à jour
+  (l'installateur prévient s'il manque : https://developer.microsoft.com/microsoft-edge/webview2/).
 - Facultatif : le pilote PawnIO (https://pawnio.eu/), seulement pour la température et la fréquence
   du processeur. Sans lui, elles s'affichent « -- » ; tout le reste fonctionne. Pour l'installer :
   winget install namazso.PawnIO   (puis relancer XRPerfSensors)
@@ -45,26 +47,45 @@ Lancez un jeu OpenXR : le panneau apparaît dans le casque.
   Ctrl + Alt + Début / Fin           plus opaque / plus transparent
   Ctrl + Alt + F                     afficher / masquer la fenêtre capturée
   Ctrl + Alt + G                     poser la fenêtre capturée devant vous
+  Ctrl + Alt + S                     rapport en mode manuel : démarrer / arrêter l'enregistrement
 
-Icône XRPerfSensors près de l'horloge :
-  - double-clic : réglages (emplacement, taille, couleurs, présentation, panneau sur le bureau
-    pour OBS, mesure du temps GPU, rapports) ;
-  - clic droit > Rapports de session : liste, analyse, courbes et comparaison des sessions.
-    La lecture « Simple » explique chaque partie en phrases, avec des conseils ; « Détaillé »
-    donne tous les chiffres.
+Icône XRPerfSensors près de l'horloge : double-cliquez dessus (ou clic droit > Ouvrir XR Perf
+Overlay) pour ouvrir la fenêtre du programme. Un menu à gauche mène à chaque page :
+  - Tableau de bord : le panneau tel qu'il apparaît dans le casque, les interrupteurs rapides,
+    le processeur, la carte graphique et la mémoire vidéo en direct, la dernière session ;
+  - Panneau, Apparence, Montre, Fenêtre, Miroir bureau (pour OBS), Mesures : tous les réglages,
+    appliqués aussitôt, même en jeu. La page Panneau a aussi l'interrupteur « Jeux OpenXR (layer) » :
+    désactivée, la layer n'est plus chargée du tout dans les jeux OpenXR (pris en compte au
+    prochain lancement d'un jeu) ;
+  - Rapports : liste des sessions, analyse et courbes sur la même page, comparaison de deux sessions.
+    La lecture « Simple » explique chaque partie en phrases illustrées (grille de 100 images, barres,
+    jauges), avec des conseils ; « Détaillé » donne tous les chiffres ; « Comparaison » superpose
+    deux sessions (Ctrl + clic pour en choisir deux) ;
+  - Interface : langue, couleurs de la fenêtre (comme le panneau, un des six thèmes ou vos trois
+    couleurs), taille du texte, animations, plein écran.
+F11 passe la fenêtre en plein écran, Échap en sort. Fermée, elle ne consomme rien : le programme
+reste dans la zone de notification.
+
+Rapports (page Mesures, « Écrire un rapport ») : à chaque session (par défaut), au raccourci, ou
+jamais. Au raccourci : Ctrl+Alt+S démarre l'enregistrement (point rouge et « REC » en haut du
+panneau), Ctrl+Alt+S de nouveau l'arrête et écrit le rapport de ce passage seulement. Moins de
+5 secondes : rien n'est écrit. Fonctionne aussi dans les jeux SteamVR.
+
+Langue : français ou anglais pour tout (fenêtre, menu de l'icône, panneau et montre dans le casque,
+rapports). Par défaut, celle de Windows. À changer dans la page Interface.
 
 Un temps GPU précédé de « ~ » est une estimation (charge de la carte x durée d'une image).
 
-Montre (réglages, onglet Montre) : heure, temps de session, batterie des manettes et FPS, au poignet
+Montre (page Montre) : heure, temps de session, batterie des manettes et FPS, au poignet
 ou devant les yeux, en trois styles. Au poignet, elle n'apparaît que quand vous le regardez (option).
-Le panneau peut aussi être accroché à une main (onglet Dans le casque). Ces deux options se mettent en
+Le panneau peut aussi être accroché à une main (page Panneau). Ces deux options se mettent en
 place au lancement du jeu : si vous les activez en cours de partie, relancez le jeu.
 
 Jeux SteamVR (OpenVR) : le panneau, la montre et les rapports y fonctionnent aussi, grâce au petit
 programme XRPerfVR lancé par XRPerfSensors. Il s'ajoute à SteamVR quand celui-ci est ouvert et ne le
-démarre jamais. Option « Aussi dans les jeux SteamVR (OpenVR) », onglet Dans le casque.
+démarre jamais. Option « Aussi dans les jeux SteamVR (OpenVR) », page Panneau.
 
-Fenêtre du bureau dans le casque (réglages, onglet Fenêtre) : le chat d'un stream, Discord ou toute
+Fenêtre du bureau dans le casque (page Fenêtre) : le chat d'un stream, Discord ou toute
 autre fenêtre ouverte, affichée en lecture seule. Choisissez la fenêtre dans la liste (l'aperçu montre
 ce qui sera affiché, recadrage compris), puis cochez « Afficher la fenêtre dans le casque ». Posée dans
 l'espace, elle reste à sa place quand vous tournez la tête : Ctrl+Alt+G la pose devant vous. Elle peut
@@ -83,11 +104,16 @@ EN CAS DE PROBLÈME
   le numéro de version).
 - « Capteurs absents » dans le panneau : XRPerfSensors n'est pas lancé
   (C:\XRPerfOverlay\sensors\XRPerfSensors.exe).
+- Rien dans un jeu OpenXR et bandeau « layer OpenXR désactivée » dans XRPerfSensors : réactivez-la
+  (lien du bandeau, page Panneau ou menu de l'icône), puis relancez le jeu.
+- La fenêtre de XRPerfSensors reste vide ou signale que WebView2 manque : installez WebView2
+  (https://developer.microsoft.com/microsoft-edge/webview2/). Le reste du programme fonctionne sans.
 - Un jeu se comporte bizarrement : lancez uninstall.bat pour retirer la layer, et regardez le journal.
 - Les jeux protégés par un anti-triche peuvent refuser les API layers OpenXR.
 
-Pour signaler un problème, indiquez le numéro de version (dans le titre de la fenêtre de réglages,
+Pour signaler un problème, indiquez le numéro de version (en bas du menu de la fenêtre de XRPerfSensors,
 ou dans le fichier VERSION du dossier d'installation), le jeu, le casque et le runtime OpenXR, et
 joignez le journal.
 
-Documentation complète : README.md. Licence : LICENSE.txt (MIT). Composants tiers : THIRD-PARTY.md.
+English: README-EN.txt.
+Documentation complète : README.md (en anglais : README.en.md). Licence : LICENSE.txt (MIT). Composants tiers : THIRD-PARTY.md.

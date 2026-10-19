@@ -53,7 +53,7 @@ static_assert(sizeof(PanelShareHeader) == 32, "la disposition doit rester identi
 //    par XRPerfSensors dans XRPerfOverlay.ini, que la layer lit au lancement d'un jeu.
 constexpr wchar_t kSettingsBlockName[] = L"Local\\XRPerfOverlay.Settings";
 constexpr uint32_t kSettingsBlockMagic = 0x53505258;  // "XRPS"
-constexpr uint32_t kSettingsBlockVersion = 3;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée
+constexpr uint32_t kSettingsBlockVersion = 5;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports
 
 struct SettingsBlock {
     uint32_t magic;             // offset 0
@@ -103,9 +103,13 @@ struct SettingsBlock {
     float windowAlong;          // 172 : mètres
     float windowLift;           // 176 : mètres
     float windowDistance;       // 180 : mètres, distance à laquelle Ctrl+Alt+G la pose devant soi
-};                              // 184 octets
+    // Langue des textes du panneau, de la montre et des rapports (version 4).
+    uint32_t language;          // 184 : 0 = celle de Windows, 1 = français, 2 = anglais
+    // Rapports de session (version 5) ; la taille reste un multiple de 8, à cause de changeTickMs.
+    uint32_t reportMode;        // 188 : 0 = celui du .ini, 1 = automatique, 2 = manuel (Ctrl+Alt+S), 3 = aucun
+};                              // 192 octets
 
-static_assert(sizeof(SettingsBlock) == 184, "la disposition doit rester identique a celle de SettingsWindow.cs");
+static_assert(sizeof(SettingsBlock) == 192, "la disposition doit rester identique a celle de OverlaySettings.cs");
 
 // 4. Image d'une fenêtre du bureau (un chat, par exemple), capturée par XRPerfSensors.exe (bibliothèque
 //    XRPerfCapture.dll) et affichée dans le casque par la layer ou par XRPerfVR. La mémoire est créée par

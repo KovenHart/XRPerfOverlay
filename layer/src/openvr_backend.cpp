@@ -121,6 +121,7 @@ class OpenVrBackend final : public VrBackend {
 
     bool layerMeasures(uint32_t pid) override { return LayerMeasuresIn(pid); }
     bool layerDisplays(uint32_t pid) override { return LayerDisplaysIn(pid); }
+    bool layerRecord(uint32_t pid, int& state, float& seconds) override { return LayerRecordIn(pid, state, seconds); }
 
     bool connect() override {
         if (!loadLibrary()) return false;

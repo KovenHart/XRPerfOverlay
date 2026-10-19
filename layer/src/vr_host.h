@@ -22,6 +22,7 @@
 #include "session_stats.h"
 #include "settings_reader.h"
 #include "stats.h"
+#include "report_control.h"
 #include "summary_file.h"
 #include "vr_backend.h"
 #include "window_share.h"
@@ -82,7 +83,11 @@ class VrHost {
     void setShown(VrOverlay overlay, bool shown);
     void openSummary();
     void writeSummary(double now, bool finished);
-    void finishSummary(double now);
+    // Dernière écriture puis fermeture ; retourne true si le rapport est gardé (assez long).
+    bool finishSummary(double now);
+    // Enregistrement d'un rapport (voir report_control.h) : toute la session, ou entre deux appuis.
+    void startRecording(double now, bool manual);
+    void stopRecording(double now);
 
     VrBackend& m_vr;
     const std::wstring m_iniFolder;
@@ -167,7 +172,12 @@ class VrHost {
     SummaryFile m_summary;
     double m_sessionStart = 0.0;
     double m_lastSummaryWrite = 0.0;
-    std::string m_gameText, m_startText, m_headsetText, m_cpuText, m_gpuText;
+    std::string m_gameText, m_headsetText, m_cpuText, m_gpuText;
+    ReportControl m_reportControl;
+    bool m_recording = false;     // un rapport est en cours d'enregistrement
+    bool m_recordManual = false;  // ... démarré par le raccourci
+    double m_recordStart = 0.0;
+    std::string m_recordStartText;
 };
 
 }  // namespace xrpo

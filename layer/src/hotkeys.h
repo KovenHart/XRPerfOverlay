@@ -104,6 +104,10 @@ class Hotkeys {
         return pending;
     }
 
+    // Ctrl+Alt+`virtualKey` enfoncés en ce moment (0 : raccourci désactivé). Sert au raccourci des
+    // rapports en mode manuel, relevé par celui qui écrit le rapport.
+    static bool comboDown(int virtualKey) { return virtualKey > 0 && pressed(VK_CONTROL) && pressed(VK_MENU) && pressed(virtualKey); }
+
   private:
     static bool pressed(int virtualKey) { return virtualKey > 0 && (GetAsyncKeyState(virtualKey) & 0x8000) != 0; }
 

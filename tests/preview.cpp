@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -19,6 +20,7 @@
 #include "../layer/src/vr_matrix.h"
 #include "../layer/src/panel.h"
 #include "../layer/src/preview_api.h"
+#include "../layer/src/report_control.h"
 #include "../layer/src/session_stats.h"
 #include "../layer/src/settings_apply.h"
 #include "../layer/src/stats.h"
@@ -754,6 +756,180 @@ static void testWindow() {
     std::printf("tests de la fenetre capturee : OK\n");
 }
 
+
+// Langue : le bloc de réglages choisit le français ou l'anglais ; panneau, montre et résumé suivent.
+static void testLanguage(const std::string& dir) {
+    Config c;
+    SettingsBlock s = {};
+    s.magic = kSettingsBlockMagic; s.version = kSettingsBlockVersion;
+    s.width = 0.36f; s.globalOpacity = 1.f; s.distance = 1.f; s.watchSize = 0.06f; s.watchOpacity = 1.f;
+    s.windowWidth = 0.4f; s.windowDistance = 0.8f;
+    c.english = true;
+    s.language = 0; ApplySettings(c, s); assert(c.english);        // 0 : la langue en cours ne change pas
+    s.language = 1; ApplySettings(c, s); assert(!c.english);
+    s.language = 2; ApplySettings(c, s); assert(c.english);
+    s.language = 7; ApplySettings(c, s); assert(c.english);        // valeur inconnue : ignorée
+
+    // Panneau : le décor est refait quand la langue change, et l'image diffère.
+    PanelData d;
+    FillPreviewData(d, 5.0);
+    d.sensorsOk = true; d.cpuLoad = 35.f; d.gpuLoad = 73.f; d.vramUsedMB = 20000.f; d.vramTotalMB = 32000.f; d.showInfo = true;
+    d.statusElements = kWatchSession | kWatchBattery; d.sessionSeconds = 100.0;
+    Panel panel;
+    panel.render(d, 1.f, 1.f);
+    std::vector<uint8_t> french(panel.pixels(), panel.pixels() + static_cast<size_t>(Panel::kWidth) * Panel::kHeight * 4);
+    d.english = true;
+    panel.render(d, 1.f, 1.f);
+    assert(std::memcmp(french.data(), panel.pixels(), french.size()) != 0);
+    writePpm(panel, dir + "/panel_english.ppm", 96, 128, 112, Panel::kHeight);
+    Panel fresh;
+    fresh.render(d, 1.f, 1.f);
+    assert(!std::memcmp(fresh.pixels(), panel.pixels(), french.size()));   // même image qu'un panneau neuf : décor refait
+    d.english = false;
+    panel.render(d, 1.f, 1.f);
+    assert(!std::memcmp(french.data(), panel.pixels(), french.size()));
+
+    // Aperçu : la langue vient du bloc.
+    std::vector<uint8_t> px(french.size());
+    s.headsetInfo = 1; s.layout = 0; s.language = 2;
+    assert(xrpoRenderPreview(&s, nullptr, 5.0, 600, "", px.data(), static_cast<uint32_t>(px.size())) > 0);
+    std::vector<uint8_t> pxFrench(px.size());
+    s.language = 1;
+    assert(xrpoRenderPreview(&s, nullptr, 5.0, 600, "", pxFrench.data(), static_cast<uint32_t>(pxFrench.size())) > 0);
+    assert(px != pxFrench);
+
+    // Montre : lettres des manettes G / D ou L / R.
+    WatchData w; w.style = WatchStyle::Sport; w.battery[0] = 0.5f; w.battery[1] = 0.9f; w.hour = 12;
+    WatchFace face;
+    face.render(w, 1.f);
+    std::vector<uint8_t> wf(face.pixels(), face.pixels() + static_cast<size_t>(WatchFace::kSize) * WatchFace::kSize * 4);
+    w.english = true;
+    face.render(w, 1.f);
+    assert(std::memcmp(wf.data(), face.pixels(), wf.size()) != 0);
+
+    // Résumé en anglais : intitulés lus par sensors/SessionReport.cs.
+    SessionStats st;
+    PanelData p;
+    p.fpsValid = true; p.targetFps = 72.f; p.sensorsOk = true; p.cpuLoad = 30.f; p.gpuLoad = 80.f; p.vramUsedMB = 10000.f; p.vramTotalMB = 24000.f;
+    double t = 100.0;
+    for (int second = 0; second < 180; ++second) {
+        for (int i = 0; i < 72; ++i) { t += 1.0 / 72.0; st.onFrame(t, 8.f); }
+        for (int k = 0; k < 4; ++k) { p.fps = 72.f; p.gpuFrameEstimateMs = p.gpuFrameMs = 11.f; st.onSample(p, true, t); }
+    }
+    SessionInfo info;
+    info.game = "Game.exe"; info.api = "Direct3D 11"; info.startText = "2026-10-18 09:00:00"; info.nowText = "2026-10-18 09:03:00";
+    info.finished = true; info.wallSeconds = 180.0; info.english = true; info.cpu = "CPU X"; info.gpu = "";
+    const std::string en = st.format(info);
+    assert(has(en, "XR Perf Overlay - session summary\r\n") && has(en, "Game             : Game.exe\r\n") && has(en, "Graphics card    : --\r\n"));
+    assert(has(en, "Duration         : 3 min 00 s, of which ") && has(en, "\r\nFRAMES PER SECOND\r\n") && has(en, "  Target         : 72, held 100 % of the time\r\n"));
+    assert(has(en, "FRAME TIME (ms)            average       max\r\n") && has(en, "  GPU (estimated)        ") && has(en, "GRAPHICS CARD  "));
+    assert(has(en, "  VRAM (GB)  ") && has(en, "FRAME TIME DISTRIBUTION   (frame budget to hold 72 : 13.9 ms)\r\n") && has(en, "  Within budget           : 100.0 %\r\n"));
+    assert(has(en, "MINUTE BY MINUTE   (GPU ms : estimated)\r\n") && has(en, "FPS avg") && en.find("Jeu ") == std::string::npos);
+    assert(en.find("\xC3\xA9") == std::string::npos);   // aucun mot français accentué
+    writeFile(dir + "/resume_english.txt", en);
+    info.english = false;
+    assert(has(st.format(info), "IMAGES PAR SECONDE"));
+    std::printf("tests de la langue : OK\n");
+}
+
+// Rapports : mode automatique, manuel (raccourci) ou aucun, et changement de mode en jeu.
+static void testReportControl(const std::string& dir) {
+    assert(NameIndex(kReportModeNames, "manual", 0) == 1 && NameIndex(kReportModeNames, "off", 0) == 2 && NameIndex(kReportModeNames, "x", -1) == -1);
+    assert(sizeof(kReportModeNames) / sizeof(kReportModeNames[0]) == static_cast<size_t>(ReportMode::Count));
+    // Bloc de réglages : 0 laisse le mode du .ini, 1 à 3 le choisissent, au-delà ignoré.
+    Config cfg;
+    SettingsBlock b = {};
+    b.width = cfg.width; b.globalOpacity = cfg.globalOpacity; b.distance = cfg.distance;
+    ApplySettings(cfg, b);
+    assert(cfg.reportMode == ReportMode::Auto);
+    b.reportMode = 2; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Manual);
+    b.reportMode = 3; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
+    b.reportMode = 9; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
+    b.reportMode = 0; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
+    assert(offsetof(SettingsBlock, reportMode) == 188 && sizeof(SettingsBlock) == 192);
+
+    // Automatique : enregistre dès le début, le raccourci ne fait rien.
+    ReportControl rc;
+    assert(rc.begin(ReportMode::Auto, false));
+    ReportControl::Step st = rc.update(ReportMode::Auto, true, true);
+    assert(!st.start && !st.stop);
+    // Passage en manuel en cours de jeu : l'enregistrement automatique s'arrête, rien ne repart.
+    st = rc.update(ReportMode::Manual, true, false);
+    assert(st.stop && !st.start);
+    // Appui : démarre (manuel) ; touche maintenue : rien ; relâchée puis appui : arrêt.
+    st = rc.update(ReportMode::Manual, false, true);
+    assert(st.start && st.manual && !st.stop);
+    st = rc.update(ReportMode::Manual, true, true);
+    assert(!st.start && !st.stop);
+    double secs = 0.0;
+    assert(rc.indicator(10.0, true, 7.0, secs) == kRecordRunning && secs == 3.0);
+    st = rc.update(ReportMode::Manual, true, false);
+    assert(!st.start && !st.stop);
+    st = rc.update(ReportMode::Manual, true, true);
+    assert(st.stop && !st.start);
+    rc.stoppedManual(20.0, true, 13.0);
+    assert(rc.indicator(22.0, false, 50.0, secs) == kRecordSaved && secs == 13.0);   // durée figée à l'arrêt
+    assert(rc.indicator(20.0 + kRecordNoticeSeconds + 0.1, false, 0.0, secs) == kRecordNone && secs == 0.0);
+    rc.stoppedManual(30.0, false, 2.0);
+    assert(rc.indicator(31.0, false, 0.0, secs) == kRecordTooShort);
+    // Rapport gardé : manuel, 5 s de durée avec des images (même en pause une partie du temps) ; automatique, 15 s d'images.
+    assert(KeepReport(true, 1.0, 6.0) && !KeepReport(true, 0.0, 60.0) && !KeepReport(true, 4.0, 4.9));
+    assert(KeepReport(false, 15.0, 15.0) && !KeepReport(false, 14.0, 600.0));
+    // Retour en automatique : un enregistrement repart ; aucun : il s'arrête.
+    st = rc.update(ReportMode::Auto, false, false);
+    assert(st.start && !st.manual && !st.stop);
+    st = rc.update(ReportMode::Off, true, false);
+    assert(st.stop && !st.start);
+    st = rc.update(ReportMode::Off, false, true);
+    assert(!st.start && !st.stop);
+    // Session commencée touche enfoncée (en manuel) : il faut la relâcher avant qu'elle compte.
+    assert(!rc.begin(ReportMode::Manual, true));
+    st = rc.update(ReportMode::Manual, false, true);
+    assert(!st.start);
+
+    // Nouveau rapport en cours de session : la mise à l'écart de la mesure GPU reste notée.
+    {
+        SessionStats r;
+        for (int i = 0; i <= 90; ++i) r.onFrame(i / 90.0, 5.f);
+        r.rejectGpuMeasure(0.4f, 9.f, 90.f);
+        r.restart();
+        assert(r.activeSeconds() == 0.0);
+        SessionInfo ri; ri.finished = true;
+        for (int i = 0; i <= 90; ++i) r.onFrame(2.0 + i / 90.0, 5.f);
+        assert(has(r.format(ri), "Mesure réelle du temps GPU écartée"));
+    }
+
+    // Ligne d'en-tête d'un rapport manuel, dans les deux langues.
+    SessionStats stats;
+    for (int i = 0; i <= 900; ++i) stats.onFrame(i / 90.0, 5.f);
+    SessionInfo info;
+    info.manual = true; info.finished = true; info.wallSeconds = 10.0;
+    assert(has(stats.format(info), "Enregistrement   : manuel"));
+    info.english = true;
+    assert(has(stats.format(info), "Recording        : manual"));
+    info.manual = false;
+    assert(stats.format(info).find("Recording") == std::string::npos);
+
+    // Témoin sur le panneau, dans les trois présentations.
+    Panel panel;
+    PanelData d;
+    FillPreviewData(d, 100.0);
+    d.recordState = kRecordRunning; d.recordSeconds = 83.0;
+    for (int layout = 0; layout < 3; ++layout) {
+        d.layout = static_cast<Layout>(layout);
+        panel.render(d, 0.82f);
+        writePpm(panel, dir + "/panel_rec_" + std::to_string(layout) + ".ppm", 96, 128, 112, Panel::contentHeight(d));
+    }
+    d.layout = Layout::Compact;
+    d.recordState = kRecordSaved; d.recordSeconds = 4000.0;
+    panel.render(d, 0.82f);
+    writePpm(panel, dir + "/panel_rec_saved.ppm", 96, 128, 112, Panel::contentHeight(d));
+    d.recordState = kRecordTooShort; d.english = true;
+    panel.render(d, 0.82f);
+    writePpm(panel, dir + "/panel_rec_short.ppm", 96, 128, 112, Panel::contentHeight(d));
+    std::printf("tests des rapports manuels : OK\n");
+}
+
 int main(int argc, char** argv) {
     testStats();
     testAsciiText();
@@ -768,6 +944,8 @@ int main(int argc, char** argv) {
     testPoseMath();
     testVrMath();
     testWindow();
+    testLanguage(argc > 1 ? argv[1] : ".");
+    testReportControl(argc > 1 ? argv[1] : ".");
     const std::string dir = argc > 1 ? argv[1] : ".";
     Panel panel;
 

@@ -282,11 +282,27 @@ void drawHeader(Canvas& cv, const PanelData& d) {
         // Avec génération d'images : cadence réellement envoyée au casque, à côté de celle du jeu.
         std::snprintf(buf, sizeof(buf), "%.0f", static_cast<double>(d.outFps));
         x = cv.text(kFontValue, x + 16, baseline - kFontValue.ascent, buf, th.accent);
-        cv.text(kFontLabel, x + 6, baseline - kFontLabel.ascent, "avec FG", th.muted);
+        cv.text(kFontLabel, x + 6, baseline - kFontLabel.ascent, d.english ? "with FG" : "avec FG", th.muted);
     }
+    const int topLine = baseline - kFontValue.ascent - kFontLabel.cellH - 2;
+    int topX = labelX;
     if (d.targetFps > 0.f) {
-        std::snprintf(buf, sizeof(buf), "cible %.0f", static_cast<double>(d.targetFps));
-        cv.text(kFontLabel, labelX, baseline - kFontValue.ascent - kFontLabel.cellH - 2, buf, th.muted);
+        std::snprintf(buf, sizeof(buf), d.english ? "target %.0f" : "cible %.0f", static_cast<double>(d.targetFps));
+        topX = cv.text(kFontLabel, labelX, topLine, buf, th.muted) + 18;
+    }
+    // Enregistrement d'un rapport en mode manuel : point et durée, puis l'issue quelques secondes.
+    if (d.recordState >= 1 && d.recordState <= 3) {
+        const Color dot = d.recordState == 1 ? th.bad : (d.recordState == 2 ? th.good : th.warn);
+        const float r = 5.f;
+        cv.disc(static_cast<float>(topX) + r, static_cast<float>(topLine) + kFontLabel.cellH * 0.5f, r, dot);
+        const int seconds = d.recordSeconds > 0.0 ? static_cast<int>(d.recordSeconds) : 0;
+        if (d.recordState == 3)
+            std::snprintf(buf, sizeof(buf), "< 5 s");
+        else if (seconds < 3600)
+            std::snprintf(buf, sizeof(buf), d.recordState == 1 ? "REC %02d:%02d" : "OK %02d:%02d", seconds / 60, seconds % 60);
+        else
+            std::snprintf(buf, sizeof(buf), d.recordState == 1 ? "REC %dh%02d" : "OK %dh%02d", seconds / 3600, (seconds / 60) % 60);
+        cv.text(kFontLabel, topX + static_cast<int>(2 * r) + 6, topLine, buf, d.recordState == 1 ? th.text : dot);
     }
 
     // AVG / MIN / MAX
@@ -317,7 +333,7 @@ void drawClassicBody(Canvas& cv, const PanelData& d) {
 
     // Ligne VRAM (ou message si les capteurs ne répondent pas).
     if (!d.sensorsOk) {
-        cv.text(kFontLabel, kPad, kRowVram + 4, "Capteurs absents : lancer XRPerfSensors.exe", th.warn);
+        cv.text(kFontLabel, kPad, kRowVram + 4, d.english ? "No sensors: start XRPerfSensors.exe" : "Capteurs absents : lancer XRPerfSensors.exe", th.warn);
         return;
     }
     int x = cv.text(kFontValue, kPad, kRowVram, "VRAM", th.accent);
@@ -326,9 +342,9 @@ void drawClassicBody(Canvas& cv, const PanelData& d) {
     const int usedRight = x + 14 + 5 * kFontValue.cellW;  // place pour "99.9" + marge
     cv.textRight(kFontValue, usedRight, kRowVram, buf, th.text);
     if (vramOk)
-        std::snprintf(buf, sizeof(buf), "/ %.1f Go", static_cast<double>(d.vramTotalMB / 1024.f));
+        std::snprintf(buf, sizeof(buf), d.english ? "/ %.1f GB" : "/ %.1f Go", static_cast<double>(d.vramTotalMB / 1024.f));
     else
-        std::snprintf(buf, sizeof(buf), "Go");
+        std::snprintf(buf, sizeof(buf), d.english ? "GB" : "Go");
     x = cv.text(kFontLabel, usedRight + 8, kRowVram + (kFontValue.ascent - kFontLabel.ascent), buf, th.muted);
 
     if (vramOk) {
@@ -420,7 +436,7 @@ void drawGraph(Canvas& cv, const PanelData& d) {
         cv.textRight(kFontLabel, kGraphLeft + kGraphWidth, y - kFontLabel.cellH, buf, th.muted);
     }
     // Légende, en haut à gauche de la courbe.
-    int legend = cv.text(kFontLabel, kGraphLeft, kGraphTop - 2, "temps d'image", th.accent);
+    int legend = cv.text(kFontLabel, kGraphLeft, kGraphTop - 2, d.english ? "frame time" : "temps d'image", th.accent);
     legend = cv.text(kFontLabel, legend + 2 * kFontLabel.cellW, kGraphTop - 2, "CPU", th.text);
     cv.text(kFontLabel, legend + 2 * kFontLabel.cellW, kGraphTop - 2, d.gpuMeasured ? "GPU" : "GPU (est.)", th.gpu);
 }
@@ -455,9 +471,9 @@ void drawGraphBody(Canvas& cv, const PanelData& d) {
         // raccourci se met à sa droite.
         if (d.gpuMeasured) {
             smallRow(cv, th, kSmallRowGpu, "GPU", d.gpuLoad, d.gpuFrameMs, d.gpuTemp, d.gpuMHz, d.targetFps, kGpuTempWarn, kGpuTempBad, false, false);
-            cv.text(kFontLabel, kSmallFrame + 3 * kFontLabel.cellW, kSmallRowGpu, "Capteurs absents (XRPerfSensors)", th.warn);
+            cv.text(kFontLabel, kSmallFrame + 3 * kFontLabel.cellW, kSmallRowGpu, d.english ? "No sensors (XRPerfSensors)" : "Capteurs absents (XRPerfSensors)", th.warn);
         } else {
-            cv.text(kFontLabel, kPad, kSmallRowGpu, "Capteurs absents : lancer XRPerfSensors.exe", th.warn);
+            cv.text(kFontLabel, kPad, kSmallRowGpu, d.english ? "No sensors: start XRPerfSensors.exe" : "Capteurs absents : lancer XRPerfSensors.exe", th.warn);
         }
         return;
     }
@@ -467,14 +483,14 @@ void drawGraphBody(Canvas& cv, const PanelData& d) {
         std::snprintf(buf, sizeof(buf), "%.1f/%.1f", static_cast<double>(d.vramUsedMB / 1024.f), static_cast<double>(d.vramTotalMB / 1024.f));
     else
         fmt(buf, sizeof(buf), "%.1f", d.vramUsedMB / 1024.f);
-    smallCell(cv, th, Panel::kWidth - kPad, kSmallRowGpu, buf, "Go", th.text);
+    smallCell(cv, th, Panel::kWidth - kPad, kSmallRowGpu, buf, d.english ? "GB" : "Go", th.text);
 }
 
 // --- Casque et résolution de rendu, sous le reste -------------------------------------------------
 void drawInfo(Canvas& cv, const PanelData& d, int y) {
     const Theme& th = d.theme;
     char buf[64];
-    const char suffix[] = " par oeil";  // l'atlas ne contient que l'ASCII
+    const char* suffix = d.english ? " per eye" : " par oeil";  // l'atlas ne contient que l'ASCII
     int right = Panel::kWidth - kPad;
     cv.textRight(kFontLabel, right, y, suffix, th.muted);
     right -= Canvas::textWidth(kFontLabel, suffix);
@@ -499,7 +515,7 @@ void drawInfo(Canvas& cv, const PanelData& d, int y) {
     size_t length = 0;
     while (length < sizeof(d.headset) && d.headset[length]) ++length;
     if (length == 0) {
-        cv.text(kFontLabel, kPad, y, "Casque inconnu", th.muted);
+        cv.text(kFontLabel, kPad, y, d.english ? "Unknown headset" : "Casque inconnu", th.muted);
     } else {
         char name[sizeof(d.headset) + 1];
         const size_t shown = length <= room ? length : (room > 2 ? room - 2 : 0);
@@ -572,8 +588,8 @@ void batteryPair(Canvas& cv, const WatchData& d, int cx, int y) {
     const Theme& th = d.theme;
     const int gaugeWidth = kFontLabel.cellW + 6 + 43 + 8 + 4 * kFontLabel.cellW;  // lettre, pile, "100%"
     const int gap = 14, left = cx - (2 * gaugeWidth + gap) / 2;
-    batteryGauge(cv, th, left, y, "G", d.battery[0], d.charging[0]);
-    batteryGauge(cv, th, left + gaugeWidth + gap, y, "D", d.battery[1], d.charging[1]);
+    batteryGauge(cv, th, left, y, d.english ? "L" : "G", d.battery[0], d.charging[0]);
+    batteryGauge(cv, th, left + gaugeWidth + gap, y, d.english ? "R" : "D", d.battery[1], d.charging[1]);
 }
 
 // "72 FPS" centré : chiffre en couleur de cadence, unité en gris.
@@ -628,14 +644,14 @@ void drawStatus(Canvas& cv, const PanelData& d, int y) {
         const bool known = !std::isnan(d.battery[0]) || !std::isnan(d.battery[1]);
         if (!known) {
             // Runtime qui ne donne pas la batterie (Pimax OpenXR...) : dit simplement, à droite.
-            cv.textRight(kFontLabel, Panel::kWidth - kPad, y, "batterie indisponible", th.muted);
+            cv.textRight(kFontLabel, Panel::kWidth - kPad, y, d.english ? "battery unavailable" : "batterie indisponible", th.muted);
             return;
         }
         // Deux piles alignées à droite, comme sur la montre.
         const int gaugeWidth = kFontLabel.cellW + 6 + 43 + 8 + 4 * kFontLabel.cellW;
         const int gap = 18, left = Panel::kWidth - kPad - (2 * gaugeWidth + gap);
-        batteryGauge(cv, th, left, y, "G", d.battery[0], d.charging[0]);
-        batteryGauge(cv, th, left + gaugeWidth + gap, y, "D", d.battery[1], d.charging[1]);
+        batteryGauge(cv, th, left, y, d.english ? "L" : "G", d.battery[0], d.charging[0]);
+        batteryGauge(cv, th, left + gaugeWidth + gap, y, d.english ? "R" : "D", d.battery[1], d.charging[1]);
     }
 }
 
@@ -668,7 +684,7 @@ void drawClassicWatch(Canvas& cv, const WatchData& d) {
                 std::snprintf(buf, sizeof(buf), "--");
             else
                 std::snprintf(buf, sizeof(buf), "%d%%", static_cast<int>(level * 100.f + 0.5f));
-            cv.textCenter(kFontLabel, cx, 140, hand == 0 ? "G" : "D", th.muted);
+            cv.textCenter(kFontLabel, cx, 140, hand == 0 ? (d.english ? "L" : "G") : (d.english ? "R" : "D"), th.muted);
             cv.textCenter(kFontLabel, cx, 162, buf, std::isnan(level) ? th.muted : (d.charging[hand] ? th.accent : batteryColor(th, level)));
         }
     }
@@ -762,10 +778,10 @@ void Panel::buildBase(const PanelData& d, int opacity, int scale) {
     if (d.layout != Layout::Compact) cv.fillRect(kPad, 88, kWidth - 2 * kPad, 1, th.line);
     if (d.layout == Layout::Classic) {
         const int headTop = 98;
-        cv.textRight(kFontLabel, kColLoad, headTop, "CHARGE", th.muted);
+        cv.textRight(kFontLabel, kColLoad, headTop, d.english ? "LOAD" : "CHARGE", th.muted);
         cv.textRight(kFontLabel, kColFrame, headTop, "FRAMETIME", th.muted);
         cv.textRight(kFontLabel, kColTemp, headTop, "TEMP.", th.muted);
-        cv.textRight(kFontLabel, kColFreq, headTop, "FREQ.", th.muted);
+        cv.textRight(kFontLabel, kColFreq, headTop, d.english ? "CLOCK" : "FREQ.", th.muted);
         hardwareRowBase(cv, th, kRowCpu, "CPU");
         hardwareRowBase(cv, th, kRowGpu, "GPU");
         cv.fillRect(kPad, 200, kWidth - 2 * kPad, 1, th.line);
@@ -786,6 +802,7 @@ void Panel::buildBase(const PanelData& d, int opacity, int scale) {
     m_baseStatus = d.statusElements;
     m_baseLayout = d.layout;
     m_baseTheme = th;
+    m_baseEnglish = d.english;
 }
 
 void Panel::render(const PanelData& d, float bgOpacity, float globalOpacity) {
@@ -796,7 +813,7 @@ void Panel::render(const PanelData& d, float bgOpacity, float globalOpacity) {
     if (globalOpacity > 1.f) globalOpacity = 1.f;
     const int scale = static_cast<int>(globalOpacity * 256.f + 0.5f);
     if (m_base.size() != m_px.size() || opacity != m_baseOpacity || scale != m_baseScale || d.showInfo != m_baseInfo ||
-        d.statusElements != m_baseStatus || d.layout != m_baseLayout || std::memcmp(&d.theme, &m_baseTheme, sizeof(Theme)) != 0)
+        d.statusElements != m_baseStatus || d.layout != m_baseLayout || d.english != m_baseEnglish || std::memcmp(&d.theme, &m_baseTheme, sizeof(Theme)) != 0)
         buildBase(d, opacity, scale);
     std::memcpy(m_px.data(), m_base.data(), m_px.size());
 

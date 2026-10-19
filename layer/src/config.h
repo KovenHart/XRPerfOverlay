@@ -55,6 +55,10 @@ struct WindowConfig {
     Pose world;
 };
 
+// Rapports de session : un par session (automatique), seulement entre deux appuis sur Ctrl+Alt+S
+// (manuel), ou aucun. L'ordre est celui des noms du .ini et de la liste de XRPerfSensors.
+enum class ReportMode { Auto = 0, Manual, Off, Count };
+
 // Bornes des réglages modifiables en jeu.
 constexpr float kMinWidth = 0.10f, kMaxWidth = 1.50f;
 constexpr float kMinGlobalOpacity = 0.20f, kMaxGlobalOpacity = 1.0f;
@@ -87,6 +91,7 @@ struct Config {
     int keyOpacityDown = 0x23;  // Fin (End)
     int keyWindowToggle = 'F';  // fenêtre capturée : afficher / masquer
     int keyWindowPlace = 'G';   // fenêtre capturée : la poser devant soi
+    int keyRecord = 'S';        // rapport en mode manuel : démarrer / arrêter l'enregistrement
     std::vector<std::wstring> exclude;  // noms d'exécutables à ignorer (en minuscules)
     bool clock = true;                  // afficher l'heure dans le panneau
     bool headsetInfo = true;            // ligne "casque et résolution de rendu" en bas du panneau
@@ -97,10 +102,13 @@ struct Config {
     Rgb customText = {240, 243, 248};
     Rgb customAccent = {150, 190, 240};
     std::string headsetName;            // nom à afficher à la place de celui annoncé par le runtime (ASCII)
+    // Textes du panneau, de la montre et des rapports en anglais (sinon en français). Dans le .ini :
+    // language = auto (langue de Windows : français pour un Windows en français, anglais sinon), fr ou en.
+    bool english = false;
     // Mesure de la cadence après génération d'images : -1 = automatique (seulement si un outil de
     // génération d'images connu est chargé sous notre layer), 1 = toujours, 0 = jamais.
     int measureOutput = -1;
-    bool summaryEnabled = true;         // écrire un résumé texte par session
+    ReportMode reportMode = ReportMode::Auto;  // quand écrire un rapport de session
     bool summaryHardware = true;        // modèles du processeur et de la carte graphique dans le résumé
     bool gpuTiming = false;             // mesurer le temps GPU par horodatages (sinon : estimation seule)
     std::wstring summaryFolder;         // dossier des résumés (par défaut : "sessions" à côté de la DLL)

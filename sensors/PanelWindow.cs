@@ -391,14 +391,14 @@ namespace XRPerfSensors
                     new Rectangle(0, 0, PanelShare.PanelWidth, _contentHeight), GraphicsUnit.Pixel);
                 if (_previewing)
                 {
-                    TextRenderer.DrawText(g, "Aperçu avec des FPS d'exemple - aucun jeu OpenXR en cours", Font,
+                    TextRenderer.DrawText(g, Loc.T("Aperçu avec des FPS d'exemple - aucun jeu VR en cours", "Preview with sample FPS - no VR game running"), Font,
                         new Rectangle(0, ClientSize.Height - caption, ClientSize.Width, caption), Color.FromArgb(128, 136, 150),
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
                 }
             }
             else
             {
-                TextRenderer.DrawText(g, "XR Perf Overlay - en attente d'un jeu OpenXR...", Font, new Rectangle(Point.Empty, ClientSize),
+                TextRenderer.DrawText(g, Loc.T("XR Perf Overlay - en attente d'un jeu VR...", "XR Perf Overlay - waiting for a VR game..."), Font, new Rectangle(Point.Empty, ClientSize),
                     Color.FromArgb(142, 152, 170),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             }
@@ -505,7 +505,7 @@ namespace XRPerfSensors
         }
     }
 
-    /// <summary>Réglages de la fenêtre du bureau, mémorisés dans %LOCALAPPDATA%\XRPerfOverlay\XRPerfSensors.ini.</summary>
+    /// <summary>Réglages propres à ce PC (fenêtre miroir, capture, interface), mémorisés dans %LOCALAPPDATA%\XRPerfOverlay\XRPerfSensors.ini.</summary>
     internal sealed class Settings
     {
         public const int MinScale = 25, MaxScale = 300; // taille de la fenêtre, en % du panneau
@@ -527,6 +527,18 @@ namespace XRPerfSensors
         public int CaptureFps = 5;          // images par seconde
         public int CaptureOpacity = 100;    // %
         public int CropLeft, CropTop, CropRight, CropBottom;  // part retirée de chaque côté, en %
+
+        // Interface (fenêtre principale, ui/app.js).
+        public static readonly string[] UiThemes = { "panel", "dark", "light", "contrast", "green", "amber", "violet", "custom" };
+        public const int MinUiScale = 85, MaxUiScale = 130;
+        public string Language = "auto";       // "auto" (langue de Windows), "fr" ou "en" (Loc.Names)
+        public string UiTheme = "panel";       // couleurs de l'interface : comme le panneau, un thème, ou personnalisées
+        public string UiBackground = "#0E1116", UiText = "#F0F3F8", UiAccent = "#96BEF0";
+        public int UiScale = 100;              // taille du texte, en %
+        public bool UiAnimations = true;
+        public bool UiStartFullscreen;
+        public int WinX = int.MinValue, WinY = int.MinValue, WinWidth = 1280, WinHeight = 820; // fenêtre principale
+        public bool WinMaximized;
 
         private static string FilePath
         {
@@ -550,6 +562,12 @@ namespace XRPerfSensors
                     // Textes (titre de fenêtre, programme) : gardés tels quels.
                     if (key == "capture_title") { settings.CaptureTitle = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "capture_process") { settings.CaptureProcess = line.Substring(equals + 1).Trim(); continue; }
+                    string text = line.Substring(equals + 1).Trim();
+                    if (key == "language") { if (Array.IndexOf(Loc.Names, text) >= 0) settings.Language = text; continue; }
+                    if (key == "ui_theme") { if (Array.IndexOf(UiThemes, text) >= 0) settings.UiTheme = text; continue; }
+                    if (key == "ui_background") { if (IsColor(text)) settings.UiBackground = text; continue; }
+                    if (key == "ui_text") { if (IsColor(text)) settings.UiText = text; continue; }
+                    if (key == "ui_accent") { if (IsColor(text)) settings.UiAccent = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
                     {
@@ -567,6 +585,14 @@ namespace XRPerfSensors
                         case "crop_top": if (value >= 0 && value <= MaxCrop) settings.CropTop = value; break;
                         case "crop_right": if (value >= 0 && value <= MaxCrop) settings.CropRight = value; break;
                         case "crop_bottom": if (value >= 0 && value <= MaxCrop) settings.CropBottom = value; break;
+                        case "ui_scale": if (value >= MinUiScale && value <= MaxUiScale) settings.UiScale = value; break;
+                        case "ui_animations": settings.UiAnimations = value != 0; break;
+                        case "ui_fullscreen": settings.UiStartFullscreen = value != 0; break;
+                        case "win_x": settings.WinX = value; break;
+                        case "win_y": settings.WinY = value; break;
+                        case "win_width": if (value >= 600 && value <= 20000) settings.WinWidth = value; break;
+                        case "win_height": if (value >= 400 && value <= 20000) settings.WinHeight = value; break;
+                        case "win_maximized": settings.WinMaximized = value != 0; break;
                     }
                 }
             }
@@ -575,6 +601,13 @@ namespace XRPerfSensors
                 // Fichier illisible : réglages par défaut.
             }
             return settings;
+        }
+
+        /// <summary>Couleur « #RRGGBB ».</summary>
+        public static bool IsColor(string text)
+        {
+            return text != null && text.Length == 7 && text[0] == '#' &&
+                   int.TryParse(text.Substring(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int unused);
         }
 
         // Une valeur par ligne : un titre de fenêtre ne doit pas en contenir.
@@ -606,6 +639,19 @@ namespace XRPerfSensors
                     "crop_top=" + CropTop.ToString(CultureInfo.InvariantCulture),
                     "crop_right=" + CropRight.ToString(CultureInfo.InvariantCulture),
                     "crop_bottom=" + CropBottom.ToString(CultureInfo.InvariantCulture),
+                    "language=" + Language,
+                    "ui_theme=" + UiTheme,
+                    "ui_background=" + UiBackground,
+                    "ui_text=" + UiText,
+                    "ui_accent=" + UiAccent,
+                    "ui_scale=" + UiScale.ToString(CultureInfo.InvariantCulture),
+                    "ui_animations=" + (UiAnimations ? 1 : 0),
+                    "ui_fullscreen=" + (UiStartFullscreen ? 1 : 0),
+                    "win_x=" + WinX.ToString(CultureInfo.InvariantCulture),
+                    "win_y=" + WinY.ToString(CultureInfo.InvariantCulture),
+                    "win_width=" + WinWidth.ToString(CultureInfo.InvariantCulture),
+                    "win_height=" + WinHeight.ToString(CultureInfo.InvariantCulture),
+                    "win_maximized=" + (WinMaximized ? 1 : 0),
                 });
             }
             catch (Exception)

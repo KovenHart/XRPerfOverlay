@@ -1,5 +1,7 @@
 # XR Perf Overlay
 
+*English: [README.en.md](README.en.md)*
+
 Un panneau de performances affiché dans le casque pour tous les jeux OpenXR (dont les jeux lancés avec UEVR), et aussi pour les jeux SteamVR qui ne passent pas par OpenXR (OpenVR) :
 
 - **FPS** instantané, moyenne (AVG), minimum et maximum
@@ -15,7 +17,7 @@ Le projet contient deux programmes :
 | Dossier | Rôle |
 |---|---|
 | `layer/` | La *API layer* OpenXR (DLL C++) chargée dans le jeu : mesure les FPS et affiche le panneau. |
-| `sensors/` | `XRPerfSensors.exe` (C#), lancé à part : lit les capteurs du PC et les transmet à la layer. |
+| `sensors/` | `XRPerfSensors.exe` (C#), lancé à part : lit les capteurs du PC et les transmet à la layer ; sa fenêtre (interface dans `sensors/ui/`) règle l'overlay et montre les rapports. |
 | `layer/src/vr_*.cpp` | `XRPerfVR.exe` (C++), lancé par XRPerfSensors : panneau, montre et rapports dans les jeux SteamVR (OpenVR). |
 | `layer/src/window_capture.cpp` | `XRPerfCapture.dll` (C++), chargée par XRPerfSensors : capture de la fenêtre affichée dans le casque. |
 
@@ -26,6 +28,7 @@ Le projet contient deux programmes :
 - Le seul appel graphique est une copie du panneau (640 × 320 pixels au plus, quatre fois par seconde) vers une texture qui appartient à la layer. Aucun état de rendu du jeu n'est lu ni modifié. Le dessin du panneau se fait en mémoire et coûte de l'ordre d'un dixième de milliseconde par mise à jour. Seule exception, et seulement si vous l'activez : la mesure réelle du temps GPU ajoute deux horodatages par image au travail GPU du jeu (voir « Temps GPU : estimation ou mesure »).
 - Si le runtime refuse une image à cause de notre calque, la layer la renvoie aussitôt sans lui ; au troisième refus elle se désactive pour la session. Au moindre problème de son côté, elle s'efface.
 - Les capteurs sont lus dans un programme séparé : rien de risqué (pilote, accès matériel) ne tourne dans le jeu.
+- Elle se désactive d'un clic, sans désinstaller : interrupteur « Jeux OpenXR (layer) » de XRPerfSensors (page Panneau, tableau de bord ou menu de l'icône). Désactivée, elle n'est plus chargée du tout dans les jeux OpenXR (voir « Désactiver la layer »).
 
 ## Deux façons de l'obtenir
 
@@ -79,7 +82,7 @@ Désinstallation : `uninstall.bat` dans le dossier d'installation, puis supprime
 
 ## Version et distribution
 
-**Numéro de version.** Il est écrit à un seul endroit, le fichier `VERSION` à la racine (forme `1.2.3`). La compilation le reporte partout : ressource de version de la DLL (propriétés du fichier, onglet Détails), XRPerfSensors (titre des fenêtres, menu et info-bulle de l'icône), journal de la layer (ligne « Instance OpenXR créée »), en-tête de chaque rapport de session, et fichier `VERSION` du dossier d'installation. Si la DLL et XRPerfSensors installés ne viennent pas de la même version, XRPerfSensors le signale au démarrage.
+**Numéro de version.** Il est écrit à un seul endroit, le fichier `VERSION` à la racine (forme `1.2.3`). La compilation le reporte partout : ressource de version de la DLL (propriétés du fichier, onglet Détails), XRPerfSensors (fenêtre, menu et info-bulle de l'icône), journal de la layer (ligne « Instance OpenXR créée »), en-tête de chaque rapport de session, et fichier `VERSION` du dossier d'installation. Si la DLL et XRPerfSensors installés ne viennent pas de la même version, XRPerfSensors le signale au démarrage.
 
 **Construire le paquet sur son PC.** Double-cliquer sur `Creer-paquet.bat` : il compile (comme `build.bat`), publie XRPerfSensors en mode autonome (runtime .NET inclus ; il faut Internet pour que NuGet le télécharge), puis produit `release\XRPerfOverlay-<version>-win64.zip` et son empreinte SHA-256. Le script `scripts\package.ps1` fait le travail ; il vérifie que la DLL porte bien le numéro du fichier `VERSION`, que XRPerfSensors est bien autonome et que le paquet contient tout ce que l'installateur attend.
 
@@ -88,8 +91,8 @@ Contenu du paquet :
 ```
 XRPerfOverlay-<version>\
   Installer.bat           installation ou mise à jour (rien à compiler)
-  LISEZ-MOI.txt           guide de l'utilisateur
-  README.md, docs\        cette documentation
+  LISEZ-MOI.txt           guide de l'utilisateur (README-EN.txt : le même en anglais)
+  README.md, README.en.md, docs\   cette documentation, en français et en anglais
   LICENSE.txt, THIRD-PARTY.md
   scripts\setup.ps1
   programme\              ce qui est copié dans le dossier d'installation (DLL, .json, .ini, VERSION,
@@ -113,18 +116,27 @@ XRPerfOverlay-<version>\
 | `Ctrl + Alt + Début` / `Fin` | Panneau plus opaque / plus transparent, texte compris (maintenir pour continuer) |
 | `Ctrl + Alt + F` | Afficher / masquer la fenêtre capturée |
 | `Ctrl + Alt + G` | Poser la fenêtre capturée devant soi, là où l'on regarde |
+| `Ctrl + Alt + S` | Rapports en mode manuel : démarrer / arrêter l'enregistrement (voir « Rapports de session ») |
 
 Les raccourcis fonctionnent même si la fenêtre du jeu n'a pas le focus, et les réglages faits en jeu (affichage, emplacement, taille, opacité) sont mémorisés dans `XRPerfOverlay.ini`. Ce fichier commenté permet aussi de régler la fréquence de mise à jour, les touches et la liste de programmes à ignorer.
 
-## Réglages
+## Fenêtre de XRPerfSensors
 
-Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit → **Réglages...**) ouvre la fenêtre de réglages. Chaque changement s'applique tout de suite, y compris dans un jeu en cours, et il est enregistré dans `XRPerfOverlay.ini`.
+Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit → **Ouvrir XR Perf Overlay**) ouvre la fenêtre du programme. Un menu à gauche mène à chaque page ; chaque changement s'applique tout de suite, y compris dans un jeu en cours, et il est enregistré dans `XRPerfOverlay.ini`. `F11` passe en plein écran (ou le bouton en haut à droite), `Échap` en sort.
 
-- **Dans le casque** : afficher ou masquer le panneau, emplacement (quatre coins, haut, bas), taille, opacité de l'ensemble, opacité du fond seul, distance devant les yeux, écarts horizontal et vertical, orientation vers les yeux ; ou bien accroche à une main (gauche ou droite), emplacement sur la main, affichage seulement quand on regarde sa main, ajustements de position.
-- **Apparence** (casque et bureau) : présentation, couleurs, heure, ligne casque / résolution, ligne session / batterie (temps de session et batterie des manettes, en option).
-- **Montre** : afficher la montre, main ou vue, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec un aperçu (voir « Montre et accroche aux manettes »).
-- **Sur le bureau** : afficher la fenêtre miroir, emplacement (libre ou contre un bord de l'écran), taille, opacité, premier plan.
-- **Mesures et rapports** : mesure réelle du temps GPU (sinon estimation), écriture d'un rapport à chaque session, modèles du processeur et de la carte graphique dans les rapports, accès à la fenêtre des rapports. Ces options valent au prochain lancement d'un jeu.
+- **Tableau de bord** : le panneau tel qu'il apparaît dans le casque (l'image du jeu en cours, sinon un aperçu avec des FPS d'exemple), des interrupteurs rapides (layer OpenXR, panneau, montre, fenêtre du bureau, jeux SteamVR, miroir pour OBS), le processeur, la carte graphique et la mémoire vidéo en direct avec leur courbe des deux dernières minutes, la dernière session et les raccourcis clavier. Une pastille en haut indique si un jeu VR tourne.
+- **Panneau** : afficher ou masquer le panneau, accroche (devant les yeux, main gauche ou droite) ; devant les yeux : emplacement (choisi sur un schéma du champ de vision), distance, écarts horizontal et vertical, orientation vers les yeux ; sur la main : emplacement sur la main, affichage seulement quand on regarde sa main, ajustements de position ; taille, opacité de l'ensemble et du fond ; dans les jeux : la layer OpenXR (voir « Désactiver la layer ») et les jeux SteamVR (OpenVR). L'aperçu reste affiché à côté.
+- **Apparence** (casque, montre et miroir) : présentation, couleurs (vignettes des sept jeux), heure, ligne casque / résolution, ligne session / batterie.
+- **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
+- **Fenêtre** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
+- **Miroir du bureau** : la fenêtre miroir pour OBS, son emplacement, sa taille, son opacité, premier plan.
+- **Mesures** : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
+- **Rapports** : voir « Rapports de session ».
+- **Interface** : langue (celle de Windows, français ou anglais), couleurs de la fenêtre (« comme le panneau » du casque, l'un des six thèmes, ou trois couleurs à soi), taille du texte, animations, plein écran et ouverture en plein écran.
+
+La fenêtre est affichée par le moteur **WebView2** d'Edge, fourni avec Windows 11 et les Windows 10 à jour (l'installateur prévient s'il manque). Fermée, elle est détruite et ne consomme plus rien ; le programme continue dans la zone de notification.
+
+**Langue.** Français ou anglais pour tout : la fenêtre et le menu de l'icône, le panneau et la montre dans le casque, et les rapports écrits à partir du changement (la fenêtre des rapports lit les deux langues ; les analyses sont rédigées dans la langue choisie, quelle que soit celle du fichier). Par défaut, celle de Windows : français pour un Windows en français, anglais sinon. Dans le `.ini` : `language=auto`, `fr` ou `en` (section `[overlay]`). L'installateur parle aussi la langue de Windows.
 
 Trois présentations :
 
@@ -136,13 +148,13 @@ Trois présentations :
 
 Dans la présentation graphique, la courbe colorée est le temps entre deux images du jeu (plus bas = plus rapide), le trait fin clair le temps CPU et le trait fin de couleur le temps GPU. Les pointillés marquent le budget d'une image, c'est-à-dire la durée à ne pas dépasser pour tenir la cible (13,9 ms à 72 Hz, 27,8 ms quand une génération d'images bride le jeu à 36) ; la courbe passe au rouge quand elle le dépasse. La légende indique « GPU (est.) » quand le trait GPU est l'estimation : il avance alors par paliers, une valeur par rafraîchissement du panneau. Avec la mesure réelle, il suit chaque image.
 
-Six jeux de couleurs sont proposés (sombre, clair, contraste élevé, vert, ambre, violet), plus un jeu personnalisé dont on choisit le fond, le texte et l'accent.
+Six jeux de couleurs sont proposés (sombre, clair, contraste élevé, vert, ambre, violet), plus un jeu personnalisé dont on choisit le fond, le texte et l'accent. La fenêtre de XRPerfSensors peut reprendre les mêmes.
 
 ![Présentations et couleurs](docs/presentations.png)
 
-**Aperçu sans jeu.** Quand la fenêtre du bureau est affichée et qu'aucun jeu OpenXR ne tourne, elle montre un aperçu : le panneau tel qu'il sera dans le casque, avec vos réglages et vos vrais capteurs, mais des FPS d'exemple (un bandeau « Aperçu » le rappelle sous l'image). L'aperçu est dessiné par la DLL de la layer elle-même, donc par le même code que dans le casque. Dès qu'un jeu démarre, la fenêtre affiche son panneau réel ; pendant un chargement, elle garde la dernière image du jeu, et l'aperçu ne revient qu'une fois le jeu fermé.
+**Aperçu sans jeu.** Quand la fenêtre miroir ou la fenêtre de XRPerfSensors est affichée et qu'aucun jeu VR ne tourne, elle montre un aperçu : le panneau tel qu'il sera dans le casque, avec vos réglages et vos vrais capteurs, mais des FPS d'exemple (un bandeau « Aperçu » le rappelle sous l'image). L'aperçu est dessiné par la DLL de la layer elle-même, donc par le même code que dans le casque. Dès qu'un jeu démarre, la fenêtre affiche son panneau réel ; pendant un chargement, elle garde la dernière image du jeu, et l'aperçu ne revient qu'une fois le jeu fermé.
 
-Les réglages faits dans la fenêtre et ceux faits en jeu au clavier se complètent : le dernier changement l'emporte, et la fenêtre relit le fichier chaque fois qu'elle revient au premier plan.
+Les réglages faits dans XRPerfSensors et ceux faits en jeu au clavier se complètent : le dernier changement l'emporte, et la fenêtre relit le fichier chaque fois qu'elle revient au premier plan.
 
 L'heure s'affiche en bas à droite du panneau (`clock=0` dans le `.ini` pour la retirer).
 
@@ -150,18 +162,24 @@ La dernière ligne du panneau donne le nom du casque et la résolution de rendu 
 
 Couleurs : le FPS est vert quand la cadence du casque est tenue, orange au-dessus de la moitié, rouge en dessous. Un frametime devient orange puis rouge quand il approche puis dépasse le budget d'une image (11,1 ms à 90 Hz). Les températures passent à l'orange puis au rouge (CPU 85 / 95 °C, GPU 80 / 87 °C).
 
+### Désactiver la layer
+
+L'interrupteur **Jeux OpenXR (layer)** (page Panneau, tableau de bord, ou case « Layer OpenXR activée » du menu de l'icône) retire la layer des jeux OpenXR sans la désinstaller : XRPerfSensors passe son inscription OpenXR à « désactivée » (valeur `1` au lieu de `0` dans `HKLM\SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit`, le mécanisme prévu par OpenXR). Le chargeur OpenXR l'ignore alors complètement : elle n'est plus chargée dans les jeux, comme si elle n'était pas installée. Réactiver remet la valeur à `0`. Le changement vaut au prochain lancement d'un jeu.
+
+Écrire dans cette clé demande les droits administrateur, que XRPerfSensors a déjà (Windows les lui accorde à son lancement, pour lire les capteurs) : aucune autre autorisation n'est demandée. Une mise à jour avec `Installer.bat` garde la layer désactivée si elle l'était. Les jeux SteamVR (OpenVR) ont leur propre interrupteur, « Aussi dans les jeux SteamVR » : XRPerfVR ne dépend pas de la layer, et peut afficher le panneau dans un jeu OpenXR lancé à travers SteamVR quand la layer est désactivée.
+
 ## Montre et accroche aux manettes
 
 ![Les trois styles de montre](docs/montres.png)
 
-**La montre** est un second petit calque, indépendant du panneau : l'heure, et au choix le temps de session, la batterie des manettes (gauche et droite) et les FPS (en vert quand la cadence est tenue). Trois styles : classique à aiguilles, numérique, sport (chiffres et couronne des secondes). Elle reprend les couleurs choisies dans l'onglet Apparence. Elle se place :
+**La montre** est un second petit calque, indépendant du panneau : l'heure, et au choix le temps de session, la batterie des manettes (gauche et droite) et les FPS (en vert quand la cadence est tenue). Trois styles : classique à aiguilles, numérique, sport (chiffres et couronne des secondes). Elle reprend les couleurs choisies dans la page Apparence. Elle se place :
 
 - **au poignet** (main gauche ou droite) : sur le dos du poignet comme une vraie montre, sur l'intérieur du poignet, ou au-dessus de la manette ;
 - **devant les yeux**, en bas à droite, si vous préférez, ou si le jeu ne déclare pas de manettes.
 
 Avec l'option **« Seulement quand je regarde mon poignet »** (active par défaut), la montre n'apparaît que quand vous tournez le poignet vers vous et qu'il est dans votre champ de vision ; le reste du temps, elle n'occupe rien. Le cadran est plat, comme sur une vraie montre : un calque OpenXR courbé (cylindre) est fait pour être vu de l'intérieur et s'afficherait mal enroulé autour d'un poignet.
 
-**Le panneau de performances** peut lui aussi être accroché à une main (onglet Dans le casque, « Accroché à »), avec les mêmes emplacements et la même option d'affichage au regard. Dans les deux cas, deux curseurs ajustent la position (le long de l'avant-bras, écart à la main) : les emplacements par défaut sont calculés pour des manettes de taille courante et peuvent demander un réglage selon les vôtres.
+**Le panneau de performances** peut lui aussi être accroché à une main (page Panneau, « Accroché à »), avec les mêmes emplacements et la même option d'affichage au regard. Dans les deux cas, deux curseurs ajustent la position (le long de l'avant-bras, écart à la main) : les emplacements par défaut sont calculés pour des manettes de taille courante et peuvent demander un réglage selon les vôtres.
 
 **Comment la layer obtient la position des mains.** OpenXR ne la donne qu'au travers des « actions », le mécanisme des boutons du jeu. La layer se glisse donc dans trois appels du jeu, sans rien retirer, comme le font OpenXR Toolkit ou OpenKneeboard :
 
@@ -177,7 +195,7 @@ Elle ne déclare **aucun bouton** : elle ne peut rien prendre au jeu. Elle n'ajo
 
 Beaucoup de jeux SteamVR utilisent encore l'ancienne interface de Valve, OpenVR, et non OpenXR : la layer n'y est jamais chargée. Pour eux, `XRPerfSensors` lance un petit programme sans fenêtre, **`XRPerfVR.exe`** (rangé à côté de lui, dans `sensors`), qui apporte les mêmes fonctions :
 
-- **le panneau et la montre**, avec tous les réglages (emplacement, présentation, couleurs, accroche à une main, affichage au regard, raccourcis clavier, changements en direct depuis la fenêtre de réglages) ;
+- **le panneau et la montre**, avec tous les réglages (emplacement, présentation, couleurs, langue, accroche à une main, affichage au regard, raccourcis clavier, changements en direct depuis XRPerfSensors) ;
 - **la batterie des manettes**, lue auprès de SteamVR ;
 - **les rapports de session**, au même format (la fenêtre des rapports les lit avec les autres ; leur en-tête indique « Runtime OpenVR ») ;
 - **la fenêtre du bureau** (miroir pour OBS).
@@ -188,18 +206,18 @@ Beaucoup de jeux SteamVR utilisent encore l'ancienne interface de Valve, OpenVR,
 
 **Limites.** En OpenVR, la taille réelle de l'image du jeu n'est pas visible : la ligne du panneau et le rapport donnent la résolution recommandée par SteamVR (« recomm. »). L'API graphique n'est pas relevée. Sur une main, la position suit le composant « poignée » du modèle de la manette fourni par SteamVR ; si le modèle n'en a pas, le repère de suivi de la manette est utilisé et les curseurs d'ajustement servent à corriger.
 
-Réglage : « Aussi dans les jeux SteamVR (OpenVR) », onglet Dans le casque (section `[openvr]` du `.ini`). La bibliothèque `openvr_api.dll` de Valve (licence BSD) est fournie à côté du programme.
+Réglage : « Aussi dans les jeux SteamVR (OpenVR) », page Panneau (section `[openvr]` du `.ini`). La bibliothèque `openvr_api.dll` de Valve (licence BSD) est fournie à côté du programme.
 
 ## Fenêtre du bureau dans le casque
 
-Une fenêtre ouverte sur le PC, par exemple le chat d'un stream dans un navigateur ou Discord, peut être affichée dans le casque, en lecture seule (pas de clic ni de saisie). Elle se règle dans `XRPerfSensors`, onglet **Fenêtre** : choix de la fenêtre dans la liste des fenêtres ouvertes, aperçu de ce qui sera affiché, emplacement, taille, opacité, nombre d'images par seconde (5 par défaut, assez pour un chat) et recadrage (part retirée de chaque côté, pour ne garder par exemple que la colonne du chat d'une page).
+Une fenêtre ouverte sur le PC, par exemple le chat d'un stream dans un navigateur ou Discord, peut être affichée dans le casque, en lecture seule (pas de clic ni de saisie). Elle se règle dans `XRPerfSensors`, page **Fenêtre** : choix de la fenêtre dans la liste des fenêtres ouvertes, aperçu de ce qui sera affiché, emplacement, taille, opacité, nombre d'images par seconde (5 par défaut, assez pour un chat) et recadrage (part retirée de chaque côté, pour ne garder par exemple que la colonne du chat d'une page).
 
 **Emplacement.** Deux possibilités :
 
 - **posée dans l'espace** (par défaut) : la fenêtre reste à un endroit de la pièce, et l'on peut tourner la tête sans qu'elle bouge. `Ctrl+Alt+G` la pose devant soi, là où l'on regarde, à la distance choisie (0,80 m par défaut), tournée vers soi et droite. Sa position est enregistrée dans `XRPerfOverlay.ini` et reprise d'un jeu à l'autre ; tant qu'elle n'a jamais été posée, elle l'est devant soi à son premier affichage. Elle est fixée dans le repère de la pièce (STAGE en OpenXR, celui de SteamVR) : un recentrage de la vue par le jeu la déplace avec lui ;
 - **sur une main** : comme le panneau, avec les mêmes emplacements (au-dessus de la manette, elle y est posée par son bord inférieur), les mêmes curseurs d'ajustement et l'option « seulement quand je regarde ma main ». Le suivi des manettes se met en place au lancement du jeu ; si le jeu ne déclare pas de manettes, la fenêtre est posée dans l'espace.
 
-**Comment elle est capturée.** `XRPerfSensors` charge `XRPerfCapture.dll`, qui utilise l'API de capture de Windows (celle d'OBS et de Discord, Windows 10 version 1903 ou plus récent). La capture ne tourne que si quelqu'un veut l'image : la layer ou XRPerfVR quand un jeu VR affiche la fenêtre (ils le signalent dans une mémoire partagée), ou l'aperçu de la fenêtre de réglages ; elle s'arrête quelques secondes après. L'image est recadrée, réduite si elle dépasse 1280 x 1280 pixels, puis copiée dans le casque à chaque changement de la fenêtre, au rythme choisi : rien n'est copié tant qu'elle ne change pas. Dans les jeux OpenXR, c'est la layer qui l'affiche (troisième calque, sous le panneau et la montre) ; dans les jeux SteamVR (OpenVR), XRPerfVR.
+**Comment elle est capturée.** `XRPerfSensors` charge `XRPerfCapture.dll`, qui utilise l'API de capture de Windows (celle d'OBS et de Discord, Windows 10 version 1903 ou plus récent). La capture ne tourne que si quelqu'un veut l'image : la layer ou XRPerfVR quand un jeu VR affiche la fenêtre (ils le signalent dans une mémoire partagée), ou l'aperçu de la page Fenêtre ; elle s'arrête quelques secondes après. L'image est recadrée, réduite si elle dépasse 1280 x 1280 pixels, puis copiée dans le casque à chaque changement de la fenêtre, au rythme choisi : rien n'est copié tant qu'elle ne change pas. Dans les jeux OpenXR, c'est la layer qui l'affiche (troisième calque, sous le panneau et la montre) ; dans les jeux SteamVR (OpenVR), XRPerfVR.
 
 **Limites.** Une fenêtre réduite n'est plus dessinée par Windows : la dernière image reste affichée tant qu'elle n'est pas rouverte (elle peut rester derrière d'autres fenêtres). Windows peut entourer la fenêtre capturée d'une bordure jaune pendant la capture : c'est le cas sous Windows 10 ; sous Windows 11, XRPerfCapture demande à s'en passer. Certaines vidéos protégées contre la copie s'affichent en noir. Le texte d'une fenêtre de taille ordinaire est petit dans le casque : agrandir la police du chat (ou zoomer la page) et la largeur de la fenêtre dans les réglages aide beaucoup.
 
@@ -207,7 +225,7 @@ Une fenêtre ouverte sur le PC, par exemple le chat d'un stream dans un navigate
 
 Par défaut, le temps GPU par image est **estimé** : charge de la carte (lue par `XRPerfSensors`) × durée d'une image. Il s'affiche précédé de « ~ » (`~9.4 ms`). Rien n'est ajouté au rendu du jeu, mais la valeur compte tout ce que fait la carte (compositeur du casque, génération d'images, autres programmes), lisse les pics sur environ une seconde, et vaut toujours à peu près la durée d'une image quand la carte est saturée.
 
-L'option **« Mesurer le vrai temps GPU »** (Réglages → onglet « Mesures et rapports », ou `measure=1` dans la section `[gpu]` du `.ini`) chronomètre chaque image sur la carte elle-même : la layer pose un horodatage GPU au début de l'image (`xrBeginFrame`) et un à la fin (`xrEndFrame`), puis relit le résultat quelques images plus tard, sans jamais attendre la carte. Le temps mesuré s'affiche sans « ~ » et remplace l'estimation dans le panneau, la courbe et le rapport ; l'estimation reste notée dans le rapport, pour comparaison. Elle est prise en compte au prochain lancement d'un jeu.
+L'option **« Mesurer le vrai temps GPU »** (page Mesures, ou `measure=1` dans la section `[gpu]` du `.ini`) chronomètre chaque image sur la carte elle-même : la layer pose un horodatage GPU au début de l'image (`xrBeginFrame`) et un à la fin (`xrEndFrame`), puis relit le résultat quelques images plus tard, sans jamais attendre la carte. Le temps mesuré s'affiche sans « ~ » et remplace l'estimation dans le panneau, la courbe et le rapport ; l'estimation reste notée dans le rapport, pour comparaison. Elle est prise en compte au prochain lancement d'un jeu.
 
 - Direct3D 12 : deux petites listes de commandes par image, envoyées sur la file du jeu.
 - Direct3D 11 : requêtes d'horodatage sur le contexte du jeu. Si le jeu a activé la protection multi-fils de Direct3D 11, le repère de début est posé à `xrBeginFrame` ; sinon, pour ne jamais toucher au contexte depuis un autre fil d'exécution que celui qui soumet les images, il est posé à la fin de l'image précédente, et la mesure va alors de la fin d'une image à la fin de la suivante.
@@ -221,20 +239,20 @@ Ce que la mesure représente : l'écart, sur la carte, entre le début et la fin
 
 Le panneau du casque est un calque ajouté par le runtime : il n'apparaît pas dans la fenêtre du jeu ni dans le miroir d'UEVR. Pour l'avoir dans un enregistrement sans passer par un miroir OpenXR (coûteux en FPS), `XRPerfSensors` peut l'afficher dans une petite fenêtre du bureau, à ajouter dans OBS comme seconde source :
 
-1. Clic droit sur l'icône `XRPerfSensors` (zone de notification) → cocher **« Panneau sur le bureau (aperçu, miroir pour OBS) »**, ou cocher « Afficher la fenêtre » dans les réglages. Une fenêtre sans bordure « XR Perf Overlay » apparaît ; elle se déplace à la souris.
+1. Clic droit sur l'icône `XRPerfSensors` (zone de notification) → cocher **« Miroir du panneau sur le bureau (OBS) »**, ou l'activer dans la page Miroir du bureau. Une fenêtre sans bordure « XR Perf Overlay » apparaît ; elle se déplace à la souris.
 2. Dans OBS, capturer le jeu comme d'habitude (capture de jeu ou de fenêtre sur le miroir d'UEVR), puis ajouter une source **« Capture de fenêtre »** sur la fenêtre `XR Perf Overlay`, la placer et la redimensionner au-dessus de l'image du jeu.
 3. Si la source reste noire : `XRPerfSensors` tourne en administrateur, il peut falloir lancer OBS en administrateur aussi, ou changer la méthode de capture de la source.
 
-La fenêtre de réglages propose sa taille (25 à 300 %), son opacité, son emplacement (libre, ou calée contre un bord de l'écran) et « Garder la fenêtre au premier plan » : elle reste alors visible par-dessus le jeu sur l'écran, ce qui suffit pour une capture d'écran entier. Position, taille et choix sont mémorisés.
+La page Miroir du bureau propose sa taille (25 à 300 %), son opacité, son emplacement (libre, ou calée contre un bord de l'écran) et « Garder la fenêtre au premier plan » : elle reste alors visible par-dessus le jeu sur l'écran, ce qui suffit pour une capture d'écran entier. Position, taille et choix sont mémorisés.
 
 La fenêtre montre toujours le panneau avec un fond opaque, même s'il est masqué ou rendu transparent dans le casque ; sa propre opacité se règle à part. Elle prend la hauteur du panneau, selon la présentation choisie. La layer et `XRPerfSensors` doivent venir de la même version, ce dont `Installer.bat` se charge ; avec une DLL et un `XRPerfSensors` de versions différentes, la fenêtre reste en attente. Côté jeu, la layer ne copie l'image du panneau que lorsque la fenêtre est affichée (environ 0,15 ms quatre fois par seconde) ; fenêtre fermée, il n'y a aucun travail supplémentaire.
 
 ## Rapports de session
 
-À chaque session de jeu, la layer écrit un rapport (fichier texte) dans le sous-dossier `sessions\` (à côté de la DLL), nommé d'après la date, l'heure et le jeu, par exemple `2026-10-10_06-50-12_Game-Win64-Shipping.txt`. Il contient :
+À chaque session de jeu (ou, en mode manuel, à chaque enregistrement : voir plus bas), la layer écrit un rapport (fichier texte) dans le sous-dossier `sessions\` (à côté de la DLL), nommé d'après la date, l'heure et le jeu, par exemple `2026-10-10_06-50-12_Game-Win64-Shipping.txt`. Il contient :
 
 - le casque, le runtime OpenXR et sa version, la résolution de rendu par œil (et ses extrêmes si le jeu en a changé en cours de session) ;
-- le modèle du processeur et celui de la carte graphique (option, active par défaut) : le processeur tel que Windows le nomme, et la carte sur laquelle le jeu rend réellement (celle de son périphérique Direct3D ; avec Vulkan ou OpenGL, la carte qui a le plus de mémoire vidéo). La layer les lit elle-même, XRPerfSensors n'est pas nécessaire. L'option se retire dans les réglages (onglet « Mesures et rapports ») ou avec `hardware=0` dans la section `[summary]` du `.ini`, par exemple avant de partager des rapports ;
+- le modèle du processeur et celui de la carte graphique (option, active par défaut) : le processeur tel que Windows le nomme, et la carte sur laquelle le jeu rend réellement (celle de son périphérique Direct3D ; avec Vulkan ou OpenGL, la carte qui a le plus de mémoire vidéo). La layer les lit elle-même, XRPerfSensors n'est pas nécessaire. L'option se retire dans la page Mesures ou avec `hardware=0` dans la section `[summary]` du `.ini`, par exemple avant de partager des rapports ;
 - la durée de la session, le nombre d'images rendues et le nombre de coupures (chargements, pauses) ;
 - les FPS : moyenne, minimum et maximum sur une seconde, 1 % low et 0,1 % low, et la part du temps où la cible a été tenue ;
 - les temps par image (image complète, CPU, GPU mesuré si l'option est active, GPU estimé), en moyenne et au maximum ;
@@ -244,16 +262,26 @@ La fenêtre montre toujours le panneau avec un fond opaque, même s'il est masqu
 
 Le fichier est réécrit toutes les 15 secondes pendant le jeu, puis une dernière fois à la fin de la session. Si le jeu plante ou est fermé brutalement, le fichier garde donc le dernier relevé (ligne « Dernier relevé » au lieu de « Fin »). Une session de moins de 15 secondes ne laisse aucun fichier. Le résumé est produit même quand le panneau est masqué, et aussi pour les jeux Vulkan ou OpenGL, où le panneau lui-même ne s'affiche pas.
 
-Les valeurs des capteurs demandent que `XRPerfSensors.exe` tourne. Le « 1 % low » est la cadence correspondant au temps d'image que 99 % des images n'ont pas dépassé. Les rapports s'activent ou se désactivent dans les réglages (onglet « Mesures et rapports ») ou dans la section `[summary]` de `XRPerfOverlay.ini`, où se change aussi le dossier (chemin complet). Si le dossier n'est pas accessible en écriture, les rapports vont dans `%LOCALAPPDATA%\XRPerfOverlay\sessions`.
+**Quand écrire un rapport.** Page Mesures, « Écrire un rapport » (ou `mode=` dans la section `[summary]` du `.ini`) :
 
-**Fenêtre des rapports.** Clic droit sur l'icône `XRPerfSensors` → **Rapports de session...** (ou le bouton « Ouvrir les rapports... » des réglages). La liste, filtrable par jeu, donne pour chaque session la date, la durée, le FPS moyen, le 1 % low et la part du temps où la cible a été tenue (en gris : fichier illisible ; en ocre : session en cours ou jeu fermé brutalement). Quatre onglets :
+- **À chaque session** (`auto`, par défaut) : un rapport du lancement à la fermeture du jeu, comme décrit ci-dessus.
+- **Au raccourci** (`manual`) : rien n'est écrit tant que vous ne le demandez pas. `Ctrl+Alt+S` démarre un enregistrement : un point rouge et la durée (« REC 01:23 ») s'affichent à côté de la cible, en haut du panneau. `Ctrl+Alt+S` de nouveau l'arrête et écrit le rapport, qui ne couvre que ce passage (« OK » en vert quelques secondes) ; moins de 5 secondes ne laissent aucun fichier (« < 5 s » en orange). Pratique pour comparer un même passage avec des réglages différents. Un enregistrement en cours à la fermeture du jeu est terminé et gardé. Le rapport porte la ligne « Enregistrement : manuel », et la page Rapports l'indique. La touche se change avec `record=` dans la section `[hotkeys]`.
+- **Jamais** (`off`) : aucun rapport ; le panneau reste mesuré et affiché normalement.
 
-- **Analyse**, en deux lectures au choix (boutons « Simple » et « Détaillé » au-dessus de la liste ; le choix est mémorisé) :
-  - **Simple**, pour qui ne connaît pas le vocabulaire : un verdict en couleur (« Très fluide », « Fluide, avec quelques à-coups », « Correct, mais pas toujours fluide », « Souvent saccadé »), une phrase qui le résume, puis ce que vous avez pu ressentir dans le casque (images à temps, en retard, très en retard, dites « sur 100 » ou « sur 1 000 »), ce qui a limité (carte graphique, processeur, ou à-coups ponctuels), températures et mémoire vidéo, la comparaison avec la partie précédente, des pistes concrètes (« Que pouvez-vous essayer ? ») et un petit lexique ;
-  - **Détaillé** : le rapport mis en forme, et des constats tirés de ses chiffres (cible tenue ou non, ce qui semble limiter, à-coups, températures, mémoire vidéo, baisse de cadence au fil de la session, résolution changée par le jeu en cours de partie, écart avec la session précédente du même jeu). Ce sont des indices tirés de moyennes, pas un diagnostic.
-- **Courbes** : le relevé minute par minute en trois graphiques (FPS, temps CPU et GPU avec le budget, températures et charge GPU).
-- **Comparaison** : deux sessions côte à côte, avec l'écart en vert ou en rouge. Par défaut, la session sélectionnée et la précédente du même jeu ; Ctrl + clic pour en choisir deux. Si les deux rapports indiquent un processeur ou une carte graphique différents, ou des réglages différents (résolution de rendu, casque, runtime OpenXR, API graphique), la fenêtre le signale (et l'analyse aussi, dans sa comparaison avec la session précédente) : une session rendue avec 30 % de pixels en plus ne se compare pas directement à une autre.
+Le mode s'applique aussitôt, même en cours de jeu : passer d'« à chaque session » à un autre mode termine le rapport en cours ; revenir à « à chaque session » en commence un nouveau. Il vaut aussi dans les jeux SteamVR (XRPerfVR), où le raccourci et le témoin fonctionnent de la même façon. Le raccourci est relevé par celui qui écrit le rapport : dans un jeu OpenXR en Vulkan ou OpenGL lancé à travers SteamVR, c'est la layer, qui transmet son témoin au panneau affiché par XRPerfVR. Un passage au mode « jamais » en cours de session garde le rapport déjà commencé s'il couvre au moins 15 secondes.
+
+Les valeurs des capteurs demandent que `XRPerfSensors.exe` tourne. Le « 1 % low » est la cadence correspondant au temps d'image que 99 % des images n'ont pas dépassé. Le dossier se change dans la section `[summary]` de `XRPerfOverlay.ini` (chemin complet). Si le dossier n'est pas accessible en écriture, les rapports vont dans `%LOCALAPPDATA%\XRPerfOverlay\sessions`.
+
+Le rapport est écrit dans la langue choisie au moment de l'écriture (voir « Langue »).
+
+**Page Rapports.** Clic droit sur l'icône `XRPerfSensors` → **Rapports de session** (ou la page Rapports de la fenêtre). À gauche, la liste, groupée par jour, filtrable par jeu et par recherche, donne pour chaque session une pastille de couleur (verdict), le FPS moyen, la durée et la part du temps où la cible a été tenue (un point ocre : session en cours ou jeu fermé brutalement). Les flèches du clavier passent d'une session à l'autre. À droite, quatre lectures :
+
+- **Simple**, pour qui ne connaît pas le vocabulaire : un verdict en couleur (« Très fluide », « Fluide, avec quelques à-coups », « Correct, mais pas toujours fluide », « Souvent saccadé ») avec un anneau qui montre la part du temps où la cible a été tenue, puis chaque explication illustrée : ce que vous avez pu ressentir, avec une grille de 100 images (à temps, un peu en retard, plus du double du temps prévu) ; ce qui a limité, avec deux barres (le temps de préparation d'une image par le processeur face au budget, la part du temps où la carte graphique était occupée), la plus chargée marquée « limite » ; températures et mémoire vidéo, avec des jauges et leur zone à risque ; la comparaison avec la partie précédente, en barres ; des pistes concrètes et un petit lexique.
+- **Détaillé** : des constats tirés des chiffres (cible tenue ou non, ce qui semble limiter, à-coups, températures, mémoire vidéo, baisse de cadence au fil de la session, résolution changée par le jeu, écart avec la session précédente du même jeu), puis tous les chiffres et la répartition des temps d'image en barre. Ce sont des indices tirés de moyennes, pas un diagnostic.
+- **Comparaison** : deux sessions côte à côte. Par défaut, la session sélectionnée et la précédente du même jeu ; Ctrl + clic pour en choisir deux. Un tableau des chiffres clés avec, pour chacun, une barre d'écart verte (A fait mieux) ou rouge (A fait moins bien), grise pour les charges et la mémoire, qui ne sont ni mieux ni moins bien en soi ; les deux grilles de 100 images ; et les courbes de A et B superposées (FPS, temps CPU, temps GPU, charge et température de la carte graphique, mémoire vidéo). Si les deux rapports indiquent un matériel ou des réglages différents (résolution de rendu, casque, runtime, API graphique), la page le signale : une session rendue avec 30 % de pixels en plus ne se compare pas directement à une autre.
 - **Texte** : le fichier tel quel.
+
+En lecture simple ou détaillée, **les courbes du relevé minute par minute sont sur la même page que l'analyse** : à côté sur un écran large, en dessous sur une fenêtre étroite. Cinq graphiques : FPS (moyenne et minimum, avec la cible), temps CPU et GPU (avec le budget), charges, températures, mémoire vidéo. Au survol, un trait vertical suit la souris et donne les valeurs de la minute ; au clavier, les flèches font de même.
 
 Les boutons ouvrent le rapport dans le Bloc-notes ou son dossier dans l'Explorateur, et **Supprimer** (ou la touche Suppr) envoie les rapports sélectionnés à la corbeille, après confirmation. Sur un disque sans corbeille (lecteur réseau, clé USB), Windows les supprime définitivement.
 
@@ -293,15 +321,18 @@ Ce qui a été vérifié avant livraison, et ce qui ne l'a pas été :
 - La layer C++ compile et se lie pour Windows 64 bits (compilation croisée clang / MinGW-w64, avertissements traités comme des erreurs).
 - Sa logique OpenXR a été exécutée contre un faux chargeur et un faux runtime (boucle normale, raccourcis, image de swapchain pas prête, refus du calque par le runtime, destruction et recréation de session, session Vulkan, programme exclu), sous AddressSanitizer.
 - La montre et l'accroche aux manettes passent par le banc de test : déclarations des commandes (ajout pour une manette, rien pour une manette de jeu), groupe d'actions ajouté à celui du jeu, mises à jour, deux calques, main non suivie, affichage au regard, panneau sur une main, nouvelle session, jeu sans actions, groupe refusé par le runtime, extension de batterie demandée, refusée ou absente. Les trois styles de montre sont dessinés et comparés, et les positions sur la main vérifiées par le calcul (axes, orientation vers les yeux). Le placement réel sur des manettes n'a pas été vu.
-- La fenêtre capturée passe par les deux bancs de test : dans la layer (swapchain à part, image copiée seulement quand elle change, conversion de format, pose devant soi à la première image et par `Ctrl+Alt+G`, espace STAGE ou LOCAL, tête non suivie, sur une main, main perdue, jeu sans manettes, session recréée) et dans XRPerfVR (posée, `Ctrl+Alt+G`, `Ctrl+Alt+F`, sur une main par les réglages, renvoi de l'image après une perte des textures). Le recadrage et la réduction de l'image sont testés par le calcul. Essayée sur un vrai PC (Windows 11, casque Pimax, SteamVR 2.16) : capture d'une fenêtre Discord, aperçu et recadrage dans l'onglet Fenêtre, affichage dans un jeu OpenXR (mod VR de Diablo II) et dans un jeu OpenVR (DoE), au poignet et posée dans l'espace.
+- La fenêtre capturée passe par les deux bancs de test : dans la layer (swapchain à part, image copiée seulement quand elle change, conversion de format, pose devant soi à la première image et par `Ctrl+Alt+G`, espace STAGE ou LOCAL, tête non suivie, sur une main, main perdue, jeu sans manettes, session recréée) et dans XRPerfVR (posée, `Ctrl+Alt+G`, `Ctrl+Alt+F`, sur une main par les réglages, renvoi de l'image après une perte des textures). Le recadrage et la réduction de l'image sont testés par le calcul. Essayée sur un vrai PC (Windows 11, casque Pimax, SteamVR 2.16) : capture d'une fenêtre Discord, aperçu et recadrage dans l'onglet Fenêtre (1.4), affichage dans un jeu OpenXR (mod VR de Diablo II) et dans un jeu OpenVR (DoE), au poignet et posée dans l'espace.
 - XRPerfVR (jeux OpenVR) compile pour Windows avec l'en-tête officiel d'OpenVR 2.15.6 ; sa logique est exécutée contre un faux SteamVR (attente de SteamVR sans le lancer, connexion différée, jeu au premier plan, panneau identique à celui de la layer avec le temps GPU mesuré, montre au poignet, batterie, affichage au regard, réglages en direct, raccourcis, jeux OpenXR laissés à la layer, jeu Vulkan, layer qui se signale en retard, processus exclu, changement de jeu, fermeture normale et brutale de SteamVR, numérotation des images qui repart de zéro, échec de connexion, calques refusés), sous AddressSanitizer. Les conversions entre poses et matrices d'OpenVR sont testées par le calcul. Le code de XRPerfVR et son lancement par XRPerfSensors ont été relus de façon indépendante, et les défauts trouvés corrigés. Essayé avec SteamVR 2.16 et un casque Pimax (jeu OpenVR) : connexion, suivi du jeu, temps GPU mesuré, rapport, montre au poignet, batterie, fermeture et relance de SteamVR. L'image des calques est envoyée à SteamVR sous forme de texture Direct3D 11 (depuis la 1.3.2 : l'envoi d'une image brute faisait clignoter le panneau, puis le figeait), essayée elle aussi dans un casque.
 - Le dessin du panneau et le calcul des statistiques sont testés (`tests/preview.cpp`), y compris le rapport de session (valeurs exactes du relevé minute par minute et de la répartition). Côté layer, le banc de test vérifie aussi l'estimation par défaut, la mesure réelle avec une fausse carte, son absence (API sans mesure), une mesure qui s'interrompt et un pilote qui ne renvoie rien.
 - La lecture et l'analyse des rapports (`sensors/SessionReport.cs`) sont exécutées telles quelles sur des rapports produits par le code C++ : fichiers complets, avec mesure, mixtes, tronqués et illisibles.
 - L'ensemble du code a été relu une seconde fois de façon indépendante (protocole OpenXR, Direct3D 12, scripts, programme C#) et les défauts trouvés ont été corrigés.
-- Le programme C# est compilé avec le compilateur Roslyn contre les bibliothèques Windows Forms et LibreHardwareMonitorLib 0.9.6. Ses fenêtres ne sont pas exécutées (pas de Windows dans l'environnement de développement) : leur mise en page n'a donc jamais été vue. Deux parties sans fenêtre sont, elles, exécutées telles quelles : le bloc de réglages écrit par le C# est relu par le C++ (même disposition, mêmes valeurs par défaut), et l'aperçu hors jeu est appelé depuis le code C# sur la bibliothèque compilée.
+- Le programme C# est compilé avec le compilateur Roslyn contre les bibliothèques Windows Forms, LibreHardwareMonitorLib 0.9.6 et le SDK WebView2. Deux parties sans fenêtre sont exécutées telles quelles : le bloc de réglages écrit par le C# est relu par le C++ (même disposition, mêmes valeurs par défaut), et l'aperçu hors jeu est appelé depuis le code C# sur la bibliothèque compilée. La lecture des rapports et leur mise en forme pour l'interface (`SessionReport.cs`, `ReportJson.cs`) sont exécutées sur des rapports français et anglais produits par le code C++.
+- L'interface (`sensors/ui/`) est exécutée dans Chromium, le moteur de WebView2, avec un programme simulé (`sensors/ui/dev/mock.js`) qui lui envoie de vraies données : panneaux et montres dessinés par la layer, rapports analysés par le vrai code C#. Toutes les pages ont été vues en français et en anglais, en thème sombre et clair, en grand et en petit format. La fenêtre WebView2 (`MainWindow.cs`) de la 1.5 a été utilisée sur un vrai PC sous Windows 11.
+- Rapports en mode manuel (1.6) : la décision (mode, raccourci, changement de mode en jeu, témoin) est testée dans `tests/preview.cpp` ; les deux bancs de test (layer et XRPerfVR) font démarrer et arrêter des enregistrements au raccourci (rapport gardé, trop court, terminé à la fin de la session, mode changé en direct). Le témoin est dessiné dans les trois présentations. Pas encore essayé en jeu.
+- Activation de la layer (1.6, `LayerRegistry.cs`) : compilée et relue, pas encore essayée sous Windows (écriture dans le registre, mise à jour qui garde la layer désactivée).
 - Le script de paquet (`scripts/package.ps1`) est exécuté avec une doublure de `dotnet` : contenu et archive du paquet, vérification du mode autonome, échec de la publication. Le paquet obtenu est ensuite installé par `setup.ps1` dans ses essais. Le workflow GitHub Actions est vérifié pour sa syntaxe seulement : sa première exécution réelle se fera sur GitHub.
 - Le script d'installation (`scripts/setup.ps1`) est essayé avec des doublures à la place du registre, des tâches planifiées et de la demande d'élévation : première installation, mise à jour d'un dossier abîmé, jeu encore ouvert, compilation incomplète, installation sur place, archive extraite dans le dossier d'installation, échec en cours de route puis reprise. Les scripts ont aussi été relus une fois de façon indépendante.
-- Essai réel : la layer compilée avec Visual Studio (MSVC) fonctionne en jeu sur un casque Pimax, aux côtés d'OFXR Bridge et d'autres mods, à travers Pimax OpenXR comme à travers SteamVR. XRPerfSensors, sa fenêtre de réglages, la fenêtre des rapports, le panneau sur le bureau, la montre, l'accroche aux manettes, la batterie (sous SteamVR), la ligne session / batterie, XRPerfVR (jeux OpenVR) et la fenêtre capturée ont été utilisés en jeu.
+- Essai réel : la layer compilée avec Visual Studio (MSVC) fonctionne en jeu sur un casque Pimax, aux côtés d'OFXR Bridge et d'autres mods, à travers Pimax OpenXR comme à travers SteamVR. XRPerfSensors, ses fenêtres de réglages et de rapports (celles de la 1.4, puis la fenêtre de la 1.5), le panneau sur le bureau, la montre, l'accroche aux manettes, la batterie (sous SteamVR), la ligne session / batterie, XRPerfVR (jeux OpenVR) et la fenêtre capturée ont été utilisés en jeu.
 - **Non vérifié** : les autres runtimes (Meta, Virtual Desktop, Windows Mixed Reality...) et les casques d'autres marques. Les deux chemins Direct3D ont été vus en jeu : Direct3D 11 (DoE) et Direct3D 12 (mod VR de Diablo II). La mesure réelle du temps GPU (requêtes Direct3D 11, listes de commandes Direct3D 12) est compilée et relue, mais n'a jamais tourné sur une vraie carte : à vérifier en jeu, en comparant avec l'estimation. `Installer.bat`, `build.bat` et les parties de l'installation propres à Windows (élévation, registre, tâche planifiée) ont été utilisés sur un vrai PC sous Windows 11 ; la compilation automatique de GitHub n'a pas encore tourné. La cadence après génération d'images et l'horloge ont été confirmées en jeu avec OFXR Bridge. Le nom que chaque runtime annonce pour chaque casque n'a pas été relevé : seul le journal dira ce que le vôtre renvoie.
 
 ## Dépannage
@@ -313,11 +344,14 @@ Ce qui a été vérifié avant livraison, et ce qui ne l'a pas été :
 - **Pas de batterie sur la montre** : le runtime ne propose pas l'extension de batterie (journal : « batterie OpenXR indisponible »).
 - **Rien dans un jeu SteamVR (OpenVR)** : l'option « Aussi dans les jeux SteamVR » doit être cochée et XRPerfSensors lancé. Après une fermeture de SteamVR, XRPerfVR attend qu'il soit parti avant de s'y reconnecter ; un SteamVR relancé aussitôt (fin de la configuration de la pièce, par exemple) est reconnu depuis la 1.4.1 (journal : « SteamVR relance »). Le journal indique « XRPerfVR : connecte a SteamVR », puis le jeu suivi, ou pourquoi il ne l'est pas (exclu dans le `.ini`, jeu OpenXR laissé à la layer).
 - **Panneau figé ou qui clignote dans un jeu SteamVR (OpenVR)** : le journal indique « image du calque ... refusee par SteamVR » avec un code, puis « de nouveau acceptee » si cela s'arrange. XRPerfVR envoie l'image par Direct3D 11 sur la carte graphique de SteamVR ; si Direct3D 11 est indisponible (ligne « Direct3D 11 indisponible »), il revient à l'envoi d'une image brute, moins fiable.
-- **La fenêtre capturée n'apparaît pas** : l'onglet Fenêtre de XRPerfSensors donne l'état de la capture (fenêtre introuvable, réduite, Windows trop ancien, refus de capture). Dans un jeu, la case « Afficher la fenêtre dans le casque » doit être cochée (ou `Ctrl+Alt+F`) ; posée dans l'espace, elle peut être derrière vous : `Ctrl+Alt+G` la ramène devant. Le journal indique « Fenetre capturee : swapchain creee » à la première image reçue. Une fenêtre lancée en administrateur peut refuser d'être capturée par XRPerfSensors s'il ne l'est pas.
+- **La fenêtre capturée n'apparaît pas** : la page Fenêtre de XRPerfSensors donne l'état de la capture (fenêtre introuvable, réduite, Windows trop ancien, refus de capture). Dans un jeu, la case « Afficher la fenêtre dans le casque » doit être cochée (ou `Ctrl+Alt+F`) ; posée dans l'espace, elle peut être derrière vous : `Ctrl+Alt+G` la ramène devant. Le journal indique « Fenetre capturee : swapchain creee » à la première image reçue. Une fenêtre lancée en administrateur peut refuser d'être capturée par XRPerfSensors s'il ne l'est pas.
 - **Le temps GPU garde son « ~ » malgré l'option de mesure** : l'option ne vaut qu'au prochain lancement du jeu ; le journal indique ensuite « Mesure du temps GPU activee », ou pourquoi elle ne l'est pas (Vulkan, OpenGL, pilote qui ne renvoie rien).
 - **`--` pour la température ou la fréquence CPU** : PawnIO n'est pas installé, ou le processeur n'est pas reconnu par LibreHardwareMonitor.
-- **Désactiver sans désinstaller** : définir la variable d'environnement `DISABLE_XR_APILAYER_NOVENDOR_perf_overlay=1`.
+- **Désactiver sans désinstaller** : interrupteur « Jeux OpenXR (layer) » de XRPerfSensors (voir « Désactiver la layer »), ou la variable d'environnement `DISABLE_XR_APILAYER_NOVENDOR_perf_overlay=1`.
+- **Rien dans un jeu OpenXR, bandeau « layer OpenXR désactivée » dans XRPerfSensors** : la layer a été désactivée ; réactivez-la au même endroit, puis relancez le jeu.
+- **Pas de rapport** : vérifiez le mode (page Mesures). En mode manuel, il faut démarrer puis arrêter l'enregistrement avec `Ctrl+Alt+S` ; le journal note chaque début et fin d'enregistrement.
 - **Un jeu se comporte bizarrement** : lancer `uninstall.bat` pour écarter la layer, et regarder le journal.
+- **La fenêtre de XRPerfSensors reste vide ou annonce que WebView2 manque** : installer le moteur WebView2 de Microsoft (https://developer.microsoft.com/microsoft-edge/webview2/). Le reste du programme fonctionne sans.
 
 ## Organisation du code
 
@@ -333,6 +367,7 @@ layer/src/ascii.h             réduction d'un nom (casque, runtime) aux caractè
 layer/src/stats.h             FPS, AVG, MIN, MAX, temps CPU
 layer/src/frame_timer.h       appariement xrWaitFrame / xrBeginFrame / xrEndFrame, cadence demandée
 layer/src/output_tap.h        compteurs du maillon de sortie de chaîne (cadence après génération d'images)
+layer/src/report_control.h    quand écrire un rapport : automatique, manuel (Ctrl+Alt+S, témoin REC) ou jamais
 layer/src/session_stats.h     cumul sur toute la session et mise en forme du rapport texte (relu par SessionReport.cs)
 layer/src/summary_file.cpp    fichier du résumé (gardé ouvert, réécrit sur place)
 layer/src/panel_share.cpp     copie du panneau vers la fenêtre du bureau
@@ -345,10 +380,17 @@ layer/src/window_pixels.h     recadrage, réduction et opacité de l'image captu
 layer/src/window_share.cpp    lecture de l'image capturée (layer et XRPerfVR)
 sensors/WindowCapture.cs      choix de la fenêtre, mémoire partagée, pilotage de la capture
 sensors/VrCompanion.cs        lancement, relance et arrêt de XRPerfVR
-sensors/PanelWindow.cs        fenêtre du bureau (miroir pour OBS, aperçu hors jeu) et ses réglages
-sensors/SettingsWindow.cs     fenêtre de réglages, envoi des réglages à la layer, lecture / écriture du .ini
-sensors/SessionReport.cs      lecture et analyse des rapports de session, lecture « simple » en phrases (sans interface)
-sensors/ReportsWindow.cs      fenêtre des rapports : liste, analyse, courbes, comparaison, suppression
+sensors/PanelWindow.cs        fenêtre miroir du panneau (OBS, aperçu hors jeu) et réglages propres au PC (XRPerfSensors.ini)
+sensors/OverlaySettings.cs    réglages du casque : lecture / écriture du .ini, envoi à la layer, aperçu dessiné par la layer
+sensors/MainWindow.cs         fenêtre principale : WebView2, messages avec l'interface, aperçus, capteurs, plein écran
+sensors/SettingsJson.cs       réglages échangés avec l'interface (JSON) et leurs bornes
+sensors/ReportStore.cs        rapports : lecture des dossiers, session précédente, ouverture, suppression
+sensors/ReportJson.cs         rapports mis en forme pour l'interface (analyses dans la langue choisie)
+sensors/SessionReport.cs      lecture (français ou anglais) et analyse des rapports, lecture « simple » en phrases (sans interface)
+sensors/LayerRegistry.cs      activation de la layer dans le registre OpenXR (relance élevée « --layer on|off »)
+sensors/Loc.cs                langue des textes du programme (celle de Windows, français ou anglais)
+sensors/ui/                   interface : index.html, app.css, app.js (pages), charts.js (courbes), i18n.js (textes FR / EN), polices
+sensors/ui/dev/               programme simulé pour mettre l'interface au point dans un navigateur (non livré)
 layer/src/settings_reader.cpp lecture des réglages envoyés par XRPerfSensors
 layer/src/settings_apply.h    application bornée de ces réglages, noms des présentations et des couleurs
 layer/src/frame_history.h     historique des temps d'image, CPU et GPU (courbes de la présentation graphique)
@@ -362,7 +404,7 @@ Installer.bat                 installation en un double-clic (compile d'abord s'
 Creer-paquet.bat              construit le paquet de distribution (release\XRPerfOverlay-<version>-win64.zip)
 scripts/package.ps1           assemblage du paquet (publication autonome de XRPerfSensors, archive, empreinte)
 .github/workflows/build.yml   compilation, tests et paquet automatiques sur GitHub ; brouillon de version sur étiquette
-docs/LISEZ-MOI.txt            guide de l'utilisateur joint au paquet
+docs/LISEZ-MOI.txt            guide de l'utilisateur joint au paquet (docs/README-EN.txt : en anglais)
 layer/src/version.rc          ressource de version de la DLL (numéros générés depuis VERSION)
 layer/src/hardware_info.cpp   modèles du processeur (registre) et de la carte graphique (DXGI) pour les rapports
 scripts/setup.ps1             copie dans le dossier d'installation, enregistrement, relance des capteurs

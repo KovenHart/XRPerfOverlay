@@ -41,6 +41,8 @@ class VrBackend {
     virtual std::string processName(uint32_t pid) = 0;    // "Game.exe", vide si inconnu
     virtual bool layerMeasures(uint32_t pid) = 0;         // la layer OpenXR mesure dans ce processus
     virtual bool layerDisplays(uint32_t pid) = 0;         // ... et y affiche le panneau elle-même
+    // Témoin d'enregistrement manuel publié par la layer dans ce processus (false : aucun).
+    virtual bool layerRecord(uint32_t pid, int& state, float& seconds) { (void)pid; (void)state; (void)seconds; return false; }
 
     // --- Connexion à SteamVR ---------------------------------------------------------------------
     virtual bool connect() = 0;          // en tant qu'application « overlay » ; écrit la cause d'un échec au journal

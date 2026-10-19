@@ -11,8 +11,8 @@
 #
 # Contenu du paquet :
 #   Installer.bat           installation ou mise à jour (mode « paquet » : rien à compiler)
-#   LISEZ-MOI.txt           guide de l'utilisateur
-#   README.md, docs\        documentation complète
+#   LISEZ-MOI.txt           guide de l'utilisateur (README-EN.txt : le même en anglais)
+#   README.md, README.en.md, docs\   documentation complète, en français et en anglais
 #   LICENSE.txt, THIRD-PARTY.md
 #   scripts\setup.ps1       script d'installation lancé par Installer.bat
 #   programme\              ce qui est copié dans le dossier d'installation (XRPerfVR et XRPerfCapture dans programme\sensors)
@@ -110,7 +110,9 @@ Write-Host 'Installateur et documentation...'
 Copy-Required (Under 'Installer.bat') (Join-Path $staging 'Installer.bat')
 Copy-Required (Under 'scripts', 'setup.ps1') (Join-Path (Join-Path $staging 'scripts') 'setup.ps1')
 Copy-Required (Under 'docs', 'LISEZ-MOI.txt') (Join-Path $staging 'LISEZ-MOI.txt')
+Copy-Required (Under 'docs', 'README-EN.txt') (Join-Path $staging 'README-EN.txt')
 Copy-Required (Join-Path $Root 'README.md') (Join-Path $staging 'README.md')
+Copy-Required (Join-Path $Root 'README.en.md') (Join-Path $staging 'README.en.md')
 Copy-Required (Join-Path $Root 'LICENSE') (Join-Path $staging 'LICENSE.txt')
 Copy-Required (Join-Path $Root 'THIRD-PARTY.md') (Join-Path $staging 'THIRD-PARTY.md')
 foreach ($image in @(Get-ChildItem -LiteralPath (Under 'docs') -Filter '*.png')) {

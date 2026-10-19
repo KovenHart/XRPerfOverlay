@@ -29,11 +29,19 @@
 
   <ItemGroup>
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+    <!-- Fenêtre principale : l'interface du dossier ui affichée par le moteur WebView2 d'Edge (présent sur Windows 10 et 11). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- La même icône, lisible par le programme : zone de notification et fenêtre du bureau. -->
     <EmbeddedResource Include="XRPerfSensors.ico" LogicalName="XRPerfSensors.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Interface (HTML, CSS, JavaScript, polices), copiée à côté du programme. Le dossier ui\dev ne sert qu'à la
+         mise au point dans un navigateur : il n'est pas livré. -->
+    <Content Include="ui\**\*" Exclude="ui\dev\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

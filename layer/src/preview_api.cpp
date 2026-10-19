@@ -91,6 +91,7 @@ int xrpoRenderPreview(const xrpo::SettingsBlock* settings, const xrpo::SensorBlo
         std::memcpy(data.headset, name.c_str(), name.size() + 1);  // AsciiText borne la longueur à 47 caractères
         data.layout = config.layout;
         data.theme = ThemeOf(config);
+        data.english = config.english;
 
         // Comme pour un jeu : la fenêtre du bureau montre toujours le panneau opaque.
         Panel panel;
@@ -114,6 +115,7 @@ int xrpoRenderWatchPreview(const xrpo::SettingsBlock* settings, int clockSeconds
         data.style = config.watch.style;
         data.elements = config.watch.elements;
         data.theme = ThemeOf(config);
+        data.english = config.english;
         data.hour = clockSeconds / 3600;
         data.minute = (clockSeconds / 60) % 60;
         data.second = clockSeconds % 60;

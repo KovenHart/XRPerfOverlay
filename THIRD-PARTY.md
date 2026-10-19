@@ -50,6 +50,48 @@ Les bibliothèques dont elle dépend (HidSharp, sous licence Apache-2.0, et les 
 `sensors\` qui ne font pas partie de .NET) sont installées par NuGet et distribuées sous leur propre
 licence, indiquée sur la page NuGet de chacune.
 
+## Microsoft WebView2 (paquet NuGet `Microsoft.Web.WebView2`)
+
+Bibliothèques `Microsoft.Web.WebView2.Core.dll`, `Microsoft.Web.WebView2.WinForms.dll` et `WebView2Loader.dll`,
+installées par NuGet à la compilation et distribuées sans modification avec XRPerfSensors : elles affichent sa
+fenêtre (dossier `sensors/ui/`) avec le moteur WebView2 d'Edge, fourni par Windows. Copyright (c) Microsoft
+Corporation — https://www.nuget.org/packages/Microsoft.Web.WebView2
+
+```
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * The name of Microsoft Corporation, or the names of its contributors
+may not be used to endorse or promote products derived from this
+software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+## Polices Barlow et Barlow Semi Condensed (`sensors/ui/fonts/`)
+
+Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow) — SIL Open Font License 1.1
+(texte complet dans `sensors/ui/fonts/OFL.txt`). Sous-ensembles latins convertis au format WOFF.
+
 ## .NET (paquet de distribution)
 
 Le paquet de distribution contient le runtime .NET et Windows Forms dans `programme\sensors\`, pour que

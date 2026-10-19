@@ -159,12 +159,15 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
     c.keyOpacityDown = readInt(c, L"hotkeys", L"opacity_down", c.keyOpacityDown, 0, 255);
     c.keyWindowToggle = readInt(c, L"hotkeys", L"window_toggle", c.keyWindowToggle, 0, 255);
     c.keyWindowPlace = readInt(c, L"hotkeys", L"window_place", c.keyWindowPlace, 0, 255);
+    c.keyRecord = readInt(c, L"hotkeys", L"record", c.keyRecord, 0, 255);
 
     c.clock = readInt(c, L"overlay", L"clock", 1, 0, 1) != 0;
     c.headsetInfo = readInt(c, L"overlay", L"headset_info", 1, 0, 1) != 0;
     c.panelElements = (readInt(c, L"overlay", L"session", 0, 0, 1) ? kWatchSession : 0u) | (readInt(c, L"overlay", L"battery", 0, 0, 1) ? kWatchBattery : 0u);
     const std::wstring headset = readString(c, L"overlay", L"headset_name");
     c.headsetName = AsciiText(headset.c_str(), headset.size());
+    const std::wstring language = lower(readString(c, L"overlay", L"language"));
+    c.english = language == L"en" ? true : language == L"fr" ? false : PRIMARYLANGID(GetUserDefaultUILanguage()) != LANG_FRENCH;
 
     // Présentation et couleurs : un nom inconnu laisse la valeur par défaut.
     const auto ascii = [&](const wchar_t* key) {
@@ -219,7 +222,14 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
 
     const std::wstring measure = lower(readString(c, L"framegen", L"measure_output"));
     c.measureOutput = measure == L"1" ? 1 : (measure == L"0" ? 0 : -1);
-    c.summaryEnabled = readInt(c, L"summary", L"enabled", 1, 0, 1) != 0;
+    // Mode des rapports ; sans "mode" (fichier d'une version précédente), "enabled=0" veut dire aucun.
+    const std::wstring reportModeText = lower(readString(c, L"summary", L"mode"));
+    const std::string reportMode = AsciiText(reportModeText.c_str(), reportModeText.size());
+    const int modeIndex = NameIndex(kReportModeNames, reportMode.c_str(), -1);
+    if (modeIndex >= 0)
+        c.reportMode = static_cast<ReportMode>(modeIndex);
+    else
+        c.reportMode = readInt(c, L"summary", L"enabled", 1, 0, 1) != 0 ? ReportMode::Auto : ReportMode::Off;
     c.summaryHardware = readInt(c, L"summary", L"hardware", 1, 0, 1) != 0;
     c.gpuTiming = readInt(c, L"gpu", L"measure", 0, 0, 1) != 0;
     c.summaryFolder = readString(c, L"summary", L"folder");

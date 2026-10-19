@@ -1,6 +1,10 @@
 ﻿# Retire la layer du registre OpenXR et supprime la tâche de démarrage de XRPerfSensors.
 # Les fichiers ne sont pas effacés : supprimez ensuite le dossier à la main.
 $ErrorActionPreference = 'Stop'
+
+# Langue des messages : français pour un Windows en français, anglais sinon.
+$script:English = ([System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName -ne 'fr')
+function T([string]$French, [string]$English) { if ($script:English) { return $English } return $French }
 $keyPath = 'SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit'
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -18,19 +22,19 @@ try {
         foreach ($name in $key.GetValueNames()) {
             if ($name.EndsWith('XR_APILAYER_NOVENDOR_perf_overlay.json', [StringComparison]::OrdinalIgnoreCase)) {
                 $key.DeleteValue($name)
-                Write-Host "Inscription retirée : $name" -ForegroundColor Green
+                Write-Host ((T "Inscription retirée : " "Registration removed: ") + $name) -ForegroundColor Green
                 $removed++
             }
         }
         $key.Close()
     }
     $hklm.Close()
-    if ($removed -eq 0) { Write-Host "La layer n'était pas enregistrée." }
+    if ($removed -eq 0) { Write-Host (T "La layer n'était pas enregistrée." "The layer was not registered.") }
 
     if (Get-ScheduledTask -TaskName 'XRPerfSensors' -ErrorAction SilentlyContinue) {
         Stop-ScheduledTask -TaskName 'XRPerfSensors' -ErrorAction SilentlyContinue
         Unregister-ScheduledTask -TaskName 'XRPerfSensors' -Confirm:$false
-        Write-Host "Tâche planifiée 'XRPerfSensors' supprimée." -ForegroundColor Green
+        Write-Host (T "Tâche planifiée 'XRPerfSensors' supprimée." "Scheduled task 'XRPerfSensors' removed.") -ForegroundColor Green
     }
     Get-Process -Name 'XRPerfSensors' -ErrorAction SilentlyContinue | Stop-Process -Force
     # XRPerfVR s'arrête de lui-même avec XRPerfSensors, après avoir terminé son rapport.
@@ -38,6 +42,6 @@ try {
         try { if (-not $process.WaitForExit(5000)) { $process.Kill() } } catch { }
     }
 } catch {
-    Write-Host "ERREUR : $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host ((T "ERREUR : " "ERROR: ") + $_.Exception.Message) -ForegroundColor Red
 }
 Read-Host 'Appuyez sur Entrée pour fermer'

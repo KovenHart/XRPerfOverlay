@@ -35,11 +35,22 @@ struct SessionInfo {
     const char* nowText = "?";    // date et heure du relevé
     bool finished = false;        // true : session terminée proprement
     double wallSeconds = 0.0;     // temps écoulé depuis le début de la session
+    bool english = false;         // résumé en anglais (sinon en français) ; XRPerfSensors lit les deux
+    bool manual = false;          // enregistrement démarré et arrêté au raccourci clavier (mode manuel)
 };
 
 class SessionStats {
   public:
     SessionStats() { reset(); }
+
+    // Nouveau rapport en cours de session (enregistrement manuel, changement de mode) : tout repart de
+    // zéro, sauf la mise à l'écart de la mesure GPU, qui vaut pour toute la session.
+    void restart() {
+        const bool rejected = m_gpuRejected;
+        const float measured = m_rejectedMeasured, estimate = m_rejectedEstimate, load = m_rejectedLoad;
+        reset();
+        if (rejected) rejectGpuMeasure(measured, estimate, load);
+    }
 
     void reset() {
         std::memset(m_histogram, 0, sizeof(m_histogram));
@@ -169,94 +180,109 @@ class SessionStats {
         return std::nanf("");
     }
 
-    // Le résumé complet, en UTF-8 avec marque d'ordre d'octets et fins de ligne Windows.
+    // Le résumé complet, en UTF-8 avec marque d'ordre d'octets et fins de ligne Windows. En français ou
+    // en anglais : sensors/SessionReport.cs reconnaît les intitulés des deux langues.
     std::string format(const SessionInfo& info) const {
         Writer w;
         char a[32], b[32], c[32];
+        const bool en = info.english;
+        const auto T = [en](const char* french, const char* english) { return en ? english : french; };
         w.put("\xEF\xBB\xBF");
         if (info.version[0])
-            w.put("XR Perf Overlay %s - résumé de session\r\n\r\n", info.version);
+            w.put(T("XR Perf Overlay %s - résumé de session\r\n\r\n", "XR Perf Overlay %s - session summary\r\n\r\n"), info.version);
         else
-            w.put("XR Perf Overlay - résumé de session\r\n\r\n");
-        w.put("Jeu              : %s\r\n", info.game);
-        w.put("API graphique    : %s\r\n", info.api);
+            w.put(T("XR Perf Overlay - résumé de session\r\n\r\n", "XR Perf Overlay - session summary\r\n\r\n"));
+        w.put(T("Jeu              : %s\r\n", "Game             : %s\r\n"), info.game);
+        w.put(T("API graphique    : %s\r\n", "Graphics API     : %s\r\n"), info.api);
         if (info.system[0] && std::strcmp(info.system, info.headset) != 0)
-            w.put("Casque           : %s   (nom annoncé par le runtime : %s)\r\n", info.headset[0] ? info.headset : "--", info.system);
+            w.put(T("Casque           : %s   (nom annoncé par le runtime : %s)\r\n", "Headset          : %s   (name reported by the runtime: %s)\r\n"),
+                  info.headset[0] ? info.headset : "--", info.system);
         else
-            w.put("Casque           : %s\r\n", info.headset[0] ? info.headset : "--");
-        w.put(info.openvr ? "Runtime OpenVR   : %s\r\n" : "Runtime OpenXR   : %s\r\n", info.runtime[0] ? info.runtime : "--");
-        if (info.cpu) w.put("Processeur       : %s\r\n", info.cpu[0] ? info.cpu : "--");
-        if (info.gpu) w.put("Carte graphique  : %s\r\n", info.gpu[0] ? info.gpu : "--");
+            w.put(T("Casque           : %s\r\n", "Headset          : %s\r\n"), info.headset[0] ? info.headset : "--");
+        if (info.openvr)
+            w.put(T("Runtime OpenVR   : %s\r\n", "OpenVR runtime   : %s\r\n"), info.runtime[0] ? info.runtime : "--");
+        else
+            w.put(T("Runtime OpenXR   : %s\r\n", "OpenXR runtime   : %s\r\n"), info.runtime[0] ? info.runtime : "--");
+        if (info.cpu) w.put(T("Processeur       : %s\r\n", "Processor        : %s\r\n"), info.cpu[0] ? info.cpu : "--");
+        if (info.gpu) w.put(T("Carte graphique  : %s\r\n", "Graphics card    : %s\r\n"), info.gpu[0] ? info.gpu : "--");
         if (m_render.width == 0)
-            w.put("Rendu par œil    : --\r\n");
+            w.put(T("Rendu par œil    : --\r\n", "Render per eye   : --\r\n"));
         else if (m_renderMin.pixels() == m_renderMax.pixels())
-            w.put("Rendu par œil    : %d x %d\r\n", m_render.width, m_render.height);
+            w.put(T("Rendu par œil    : %d x %d\r\n", "Render per eye   : %d x %d\r\n"), m_render.width, m_render.height);
         else
-            w.put("Rendu par œil    : %d x %d   (a varié de %d x %d à %d x %d)\r\n", m_render.width, m_render.height, m_renderMin.width,
-                  m_renderMin.height, m_renderMax.width, m_renderMax.height);
+            w.put(T("Rendu par œil    : %d x %d   (a varié de %d x %d à %d x %d)\r\n", "Render per eye   : %d x %d   (varied from %d x %d to %d x %d)\r\n"),
+                  m_render.width, m_render.height, m_renderMin.width, m_renderMin.height, m_renderMax.width, m_renderMax.height);
         if (info.recommendedWidth > 0 && info.recommendedHeight > 0) {
             if (m_render.width > 0)
-                w.put("Rendu recommandé : %d x %d   (par le runtime ; le jeu rend à %.0f %% en largeur)\r\n", info.recommendedWidth,
-                      info.recommendedHeight, 100.0 * m_render.width / info.recommendedWidth);
+                w.put(T("Rendu recommandé : %d x %d   (par le runtime ; le jeu rend à %.0f %% en largeur)\r\n",
+                        "Recommended render : %d x %d   (by the runtime; the game renders at %.0f %% of the width)\r\n"),
+                      info.recommendedWidth, info.recommendedHeight, 100.0 * m_render.width / info.recommendedWidth);
             else
-                w.put("Rendu recommandé : %d x %d   (par le runtime)\r\n", info.recommendedWidth, info.recommendedHeight);
+                w.put(T("Rendu recommandé : %d x %d   (par le runtime)\r\n", "Recommended render : %d x %d   (by the runtime)\r\n"),
+                      info.recommendedWidth, info.recommendedHeight);
         }
-        w.put("Début            : %s\r\n", info.startText);
+        w.put(T("Début            : %s\r\n", "Start            : %s\r\n"), info.startText);
         if (info.finished)
-            w.put("Fin              : %s\r\n", info.nowText);
+            w.put(T("Fin              : %s\r\n", "End              : %s\r\n"), info.nowText);
         else
-            w.put("Dernier relevé   : %s  (session en cours, ou jeu fermé sans terminer sa session)\r\n", info.nowText);
-        w.put("Durée            : %s, dont %s d'images mesurées\r\n", duration(a, info.wallSeconds), duration(b, m_activeSeconds));
+            w.put(T("Dernier relevé   : %s  (session en cours, ou jeu fermé sans terminer sa session)\r\n",
+                    "Last update      : %s  (session in progress, or game closed without ending its session)\r\n"), info.nowText);
+        if (info.manual)
+            w.put(T("Enregistrement   : manuel (raccourci clavier)\r\n", "Recording        : manual (hotkey)\r\n"));
+        w.put(T("Durée            : %s, dont %s d'images mesurées\r\n", "Duration         : %s, of which %s of measured frames\r\n"),
+              duration(a, info.wallSeconds), duration(b, m_activeSeconds));
 
         const float avgFps = m_activeSeconds > 0.0 ? static_cast<float>(static_cast<double>(m_frames) / m_activeSeconds) : std::nanf("");
         const float low1 = slowFrameMs(0.01), low01 = slowFrameMs(0.001);
-        w.put("\r\nIMAGES PAR SECONDE\r\n");
-        w.put("  Moyenne        : %s\r\n", num(a, avgFps, 1));
-        w.put("  Minimum        : %s   (cadence la plus basse sur une seconde)\r\n", num(a, m_fps.min(), 0));
-        w.put("  Maximum        : %s   (cadence la plus haute sur une seconde)\r\n", num(a, m_fps.max(), 0));
-        w.put("  1 %% low        : %s   (99 %% des images ont été plus rapides)\r\n", num(a, 1000.f / low1, 1));
-        w.put("  0,1 %% low      : %s   (99,9 %% des images ont été plus rapides)\r\n", num(a, 1000.f / low01, 1));
+        w.put(T("\r\nIMAGES PAR SECONDE\r\n", "\r\nFRAMES PER SECOND\r\n"));
+        w.put(T("  Moyenne        : %s\r\n", "  Average        : %s\r\n"), num(a, avgFps, 1));
+        w.put(T("  Minimum        : %s   (cadence la plus basse sur une seconde)\r\n", "  Minimum        : %s   (lowest rate over one second)\r\n"), num(a, m_fps.min(), 0));
+        w.put(T("  Maximum        : %s   (cadence la plus haute sur une seconde)\r\n", "  Maximum        : %s   (highest rate over one second)\r\n"), num(a, m_fps.max(), 0));
+        w.put(T("  1 %% low        : %s   (99 %% des images ont été plus rapides)\r\n", "  1 %% low        : %s   (99 %% of frames were faster)\r\n"), num(a, 1000.f / low1, 1));
+        w.put(T("  0,1 %% low      : %s   (99,9 %% des images ont été plus rapides)\r\n", "  0.1 %% low      : %s   (99.9 %% of frames were faster)\r\n"), num(a, 1000.f / low01, 1));
         if (m_targetSamples > 0)
-            w.put("  Cible          : %.0f, tenue %.0f %% du temps\r\n", static_cast<double>(m_target),
+            w.put(T("  Cible          : %.0f, tenue %.0f %% du temps\r\n", "  Target         : %.0f, held %.0f %% of the time\r\n"), static_cast<double>(m_target),
                   100.0 * static_cast<double>(m_targetHeld) / static_cast<double>(m_targetSamples));
         else
-            w.put("  Cible          : --\r\n");
+            w.put(T("  Cible          : --\r\n", "  Target         : --\r\n"));
         if (m_outFps.n > 0)
-            w.put("  Avec framegen  : %s   (images envoyées au casque, générées comprises ; min %s, max %s)\r\n", num(a, m_outFps.avg(), 1),
-                  num(b, m_outFps.min(), 0), num(c, m_outFps.max(), 0));
-        w.put("  Images rendues : %.0f\r\n", static_cast<double>(m_frames));
-        w.put("  Coupures       : %u   (chargements et pauses de plus d'une seconde, non comptés)\r\n", m_pauses);
+            w.put(T("  Avec framegen  : %s   (images envoyées au casque, générées comprises ; min %s, max %s)\r\n",
+                    "  With framegen  : %s   (frames sent to the headset, generated ones included; min %s, max %s)\r\n"),
+                  num(a, m_outFps.avg(), 1), num(b, m_outFps.min(), 0), num(c, m_outFps.max(), 0));
+        w.put(T("  Images rendues : %.0f\r\n", "  Frames rendered : %.0f\r\n"), static_cast<double>(m_frames));
+        w.put(T("  Coupures       : %u   (chargements et pauses de plus d'une seconde, non comptés)\r\n",
+                "  Interruptions  : %u   (loading and pauses longer than one second, not counted)\r\n"), m_pauses);
 
-        w.put("\r\nTEMPS PAR IMAGE (ms)       moyenne       max\r\n");
-        w.put("  Image complète         %8s  %8s   (intervalle entre deux images)\r\n", num(a, 1000.f / avgFps, 1),
-              num(b, m_frames > 0 ? m_worstMs : std::nanf(""), 1));
+        w.put(T("\r\nTEMPS PAR IMAGE (ms)       moyenne       max\r\n", "\r\nFRAME TIME (ms)            average       max\r\n"));
+        w.put(T("  Image complète         %8s  %8s   (intervalle entre deux images)\r\n", "  Whole frame            %8s  %8s   (interval between two frames)\r\n"),
+              num(a, 1000.f / avgFps, 1), num(b, m_frames > 0 ? m_worstMs : std::nanf(""), 1));
         w.put("  CPU                    %8s  %8s\r\n", num(a, m_cpuFrame.avg(), 1), num(b, m_cpuFrame.max(), 1));
         if (m_gpuMeasured.n > 0)
-            w.put("  GPU (mesuré)           %8s  %8s\r\n", num(a, m_gpuMeasured.avg(), 1), num(b, m_gpuMeasured.max(), 1));
-        w.put("  GPU (estimé)           %8s  %8s\r\n", num(a, m_gpuFrame.avg(), 1), num(b, m_gpuFrame.max(), 1));
+            w.put(T("  GPU (mesuré)           %8s  %8s\r\n", "  GPU (measured)         %8s  %8s\r\n"), num(a, m_gpuMeasured.avg(), 1), num(b, m_gpuMeasured.max(), 1));
+        w.put(T("  GPU (estimé)           %8s  %8s\r\n", "  GPU (estimated)        %8s  %8s\r\n"), num(a, m_gpuFrame.avg(), 1), num(b, m_gpuFrame.max(), 1));
 
-        w.put("\r\nPROCESSEUR                 moyenne       max\r\n");
-        w.put("  Charge (%%)             %8s  %8s\r\n", num(a, m_cpuLoad.avg(), 0), num(b, m_cpuLoad.max(), 0));
-        w.put("  Température (°C)       %8s  %8s\r\n", num(a, m_cpuTemp.avg(), 0), num(b, m_cpuTemp.max(), 0));
-        w.put("  Fréquence (MHz)        %8s  %8s\r\n", num(a, m_cpuMHz.avg(), 0), num(b, m_cpuMHz.max(), 0));
+        w.put(T("\r\nPROCESSEUR                 moyenne       max\r\n", "\r\nPROCESSOR                  average       max\r\n"));
+        w.put(T("  Charge (%%)             %8s  %8s\r\n", "  Load (%%)               %8s  %8s\r\n"), num(a, m_cpuLoad.avg(), 0), num(b, m_cpuLoad.max(), 0));
+        w.put(T("  Température (°C)       %8s  %8s\r\n", "  Temperature (°C)       %8s  %8s\r\n"), num(a, m_cpuTemp.avg(), 0), num(b, m_cpuTemp.max(), 0));
+        w.put(T("  Fréquence (MHz)        %8s  %8s\r\n", "  Clock (MHz)            %8s  %8s\r\n"), num(a, m_cpuMHz.avg(), 0), num(b, m_cpuMHz.max(), 0));
 
-        w.put("\r\nCARTE GRAPHIQUE            moyenne       max\r\n");
-        w.put("  Charge (%%)             %8s  %8s\r\n", num(a, m_gpuLoad.avg(), 0), num(b, m_gpuLoad.max(), 0));
-        w.put("  Température (°C)       %8s  %8s\r\n", num(a, m_gpuTemp.avg(), 0), num(b, m_gpuTemp.max(), 0));
-        w.put("  Fréquence (MHz)        %8s  %8s\r\n", num(a, m_gpuMHz.avg(), 0), num(b, m_gpuMHz.max(), 0));
-        w.put("  VRAM (Go)              %8s  %8s   sur %s\r\n", num(a, m_vramUsed.avg() / 1024.f, 1), num(b, m_vramUsed.max() / 1024.f, 1),
-              num(c, m_vramTotalMB > 0.f ? m_vramTotalMB / 1024.f : std::nanf(""), 1));
+        w.put(T("\r\nCARTE GRAPHIQUE            moyenne       max\r\n", "\r\nGRAPHICS CARD              average       max\r\n"));
+        w.put(T("  Charge (%%)             %8s  %8s\r\n", "  Load (%%)               %8s  %8s\r\n"), num(a, m_gpuLoad.avg(), 0), num(b, m_gpuLoad.max(), 0));
+        w.put(T("  Température (°C)       %8s  %8s\r\n", "  Temperature (°C)       %8s  %8s\r\n"), num(a, m_gpuTemp.avg(), 0), num(b, m_gpuTemp.max(), 0));
+        w.put(T("  Fréquence (MHz)        %8s  %8s\r\n", "  Clock (MHz)            %8s  %8s\r\n"), num(a, m_gpuMHz.avg(), 0), num(b, m_gpuMHz.max(), 0));
+        w.put(T("  VRAM (Go)              %8s  %8s   sur %s\r\n", "  VRAM (GB)              %8s  %8s   of %s\r\n"), num(a, m_vramUsed.avg() / 1024.f, 1),
+              num(b, m_vramUsed.max() / 1024.f, 1), num(c, m_vramTotalMB > 0.f ? m_vramTotalMB / 1024.f : std::nanf(""), 1));
 
         // Répartition des temps d'image par rapport au budget d'une image (durée à ne pas dépasser pour tenir la cible).
         if (m_target > 0.f && m_frames > 0) {
             const float budget = 1000.f / m_target;
             const double held = shareAtMost(budget * 1.05f), mid = shareAtMost(budget * 1.5f), twice = shareAtMost(budget * 2.f);
-            w.put("\r\nRÉPARTITION DES TEMPS D'IMAGE   (budget d'une image pour tenir %.0f : %.1f ms)\r\n", static_cast<double>(m_target),
-                  static_cast<double>(budget));
-            w.put("  Dans le budget          : %5.1f %%\r\n", 100.0 * held);
-            w.put("  Jusqu'à 1,5 x le budget : %5.1f %%\r\n", 100.0 * (mid - held));
-            w.put("  De 1,5 à 2 x le budget  : %5.1f %%\r\n", 100.0 * (twice - mid));
-            w.put("  Plus de 2 x le budget   : %5.1f %%\r\n", 100.0 * (1.0 - twice));
+            w.put(T("\r\nRÉPARTITION DES TEMPS D'IMAGE   (budget d'une image pour tenir %.0f : %.1f ms)\r\n",
+                    "\r\nFRAME TIME DISTRIBUTION   (frame budget to hold %.0f : %.1f ms)\r\n"), static_cast<double>(m_target), static_cast<double>(budget));
+            w.put(T("  Dans le budget          : %5.1f %%\r\n", "  Within budget           : %5.1f %%\r\n"), 100.0 * held);
+            w.put(T("  Jusqu'à 1,5 x le budget : %5.1f %%\r\n", "  Up to 1.5 x the budget  : %5.1f %%\r\n"), 100.0 * (mid - held));
+            w.put(T("  De 1,5 à 2 x le budget  : %5.1f %%\r\n", "  1.5 to 2 x the budget   : %5.1f %%\r\n"), 100.0 * (twice - mid));
+            w.put(T("  Plus de 2 x le budget   : %5.1f %%\r\n", "  Over 2 x the budget     : %5.1f %%\r\n"), 100.0 * (1.0 - twice));
         }
 
         // Relevé minute par minute (minutes comptées depuis le début de la session).
@@ -267,9 +293,12 @@ class SessionStats {
             bool mixed = false;
             if (measured)
                 for (const Minute& r : m_minutes) mixed = mixed || (r.gpuMeasured.n == 0 && r.gpuEstimate.n > 0);
-            w.put("\r\nRELEVÉ MINUTE PAR MINUTE   (GPU ms : %s)\r\n",
-                  !measured ? "estimé" : mixed ? "mesuré ; ~ = estimé, minute sans mesure" : "mesuré");
-            w.put("  minute  FPS moy  FPS min  CPU ms  GPU ms  CPU %%  GPU %%  CPU °C  GPU °C  VRAM Go\r\n");
+            w.put(T("\r\nRELEVÉ MINUTE PAR MINUTE   (GPU ms : %s)\r\n", "\r\nMINUTE BY MINUTE   (GPU ms : %s)\r\n"),
+                  !measured ? T("estimé", "estimated")
+                  : mixed   ? T("mesuré ; ~ = estimé, minute sans mesure", "measured; ~ = estimated, minute without measurement")
+                            : T("mesuré", "measured"));
+            w.put(T("  minute  FPS moy  FPS min  CPU ms  GPU ms  CPU %%  GPU %%  CPU °C  GPU °C  VRAM Go\r\n",
+                    "  minute  FPS avg  FPS min  CPU ms  GPU ms  CPU %%  GPU %%  CPU °C  GPU °C  VRAM GB\r\n"));
             char e[32], f[32], g[32], h[32], k[32], l[32];
             for (size_t i = 0; i < m_minutes.size(); ++i) {
                 const Minute& r = m_minutes[i];
@@ -286,18 +315,24 @@ class SessionStats {
 
         w.put("\r\n");
         if (m_sensorSamples == 0)
-            w.put("Capteurs indisponibles : XRPerfSensors n'était pas lancé pendant cette session.\r\n");
+            w.put(T("Capteurs indisponibles : XRPerfSensors n'était pas lancé pendant cette session.\r\n",
+                    "Sensors unavailable : XRPerfSensors was not running during this session.\r\n"));
         else if (m_sensorSamples < m_samples)
-            w.put("Capteurs relevés pendant %.0f %% de la session seulement.\r\n",
+            w.put(T("Capteurs relevés pendant %.0f %% de la session seulement.\r\n", "Sensors read during only %.0f %% of the session.\r\n"),
                   100.0 * static_cast<double>(m_sensorSamples) / static_cast<double>(m_samples));
         if (m_gpuMeasured.n > 0)
-            w.put("Le temps GPU mesuré est l'écart, sur le GPU, entre le début et la fin de chaque image du jeu (horodatages) : "
-                  "quand le processeur est la limite, il compte aussi les moments où le GPU attend le travail suivant.\r\n");
+            w.put(T("Le temps GPU mesuré est l'écart, sur le GPU, entre le début et la fin de chaque image du jeu (horodatages) : "
+                    "quand le processeur est la limite, il compte aussi les moments où le GPU attend le travail suivant.\r\n",
+                    "The measured GPU time is the time, on the GPU, between the start and the end of each game frame (timestamps): "
+                    "when the processor is the bottleneck, it also counts the moments the GPU waits for the next work.\r\n"));
         if (m_gpuRejected)
-            w.put("Mesure réelle du temps GPU écartée : %.1f ms mesuré contre %.1f ms estimé, carte chargée à %.0f %%. "
-                  "Avec ce jeu, les repères de la layer n'encadrent pas son rendu ; le temps GPU de ce rapport est estimé.\r\n",
+            w.put(T("Mesure réelle du temps GPU écartée : %.1f ms mesuré contre %.1f ms estimé, carte chargée à %.0f %%. "
+                    "Avec ce jeu, les repères de la layer n'encadrent pas son rendu ; le temps GPU de ce rapport est estimé.\r\n",
+                    "Real GPU time measurement discarded : %.1f ms measured against %.1f ms estimated, card at %.0f %% load. "
+                    "With this game, the layer's markers do not enclose its rendering; the GPU time in this report is estimated.\r\n"),
                   static_cast<double>(m_rejectedMeasured), static_cast<double>(m_rejectedEstimate), static_cast<double>(m_rejectedLoad));
-        w.put("Le temps GPU estimé vaut charge GPU x durée d'une image : ce n'est pas une mesure image par image.\r\n");
+        w.put(T("Le temps GPU estimé vaut charge GPU x durée d'une image : ce n'est pas une mesure image par image.\r\n",
+                "The estimated GPU time is GPU load x frame duration: it is not a frame-by-frame measurement.\r\n"));
         return w.text();
     }
 

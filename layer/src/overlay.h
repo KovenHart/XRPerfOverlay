@@ -23,6 +23,7 @@
 #include "session_stats.h"
 #include "settings_reader.h"
 #include "stats.h"
+#include "report_control.h"
 #include "summary_file.h"
 #include "window_share.h"
 #include "xr.h"
@@ -89,7 +90,13 @@ class Overlay {
     std::string m_cpuText, m_gpuText;  // modèles du processeur et de la carte graphique (option)
     void openSummary();
     void writeSummary(double now, bool finished);
-    void finishSummary();
+    // Dernière écriture puis fermeture ; retourne true si le rapport est gardé (assez long).
+    bool finishSummary();
+    // Enregistrement d'un rapport : du début de session à la fin (automatique), ou entre deux appuis
+    // sur le raccourci (manuel).
+    void startRecording(double now, bool manual);
+    void stopRecording(double now);
+    void updateRecording(double now);
     XrPosef quadPose() const;
     // Calque accroché à une main : espace et pose, ou false s'il ne doit pas être affiché maintenant
     // (main non suivie, ou pas regardée en mode « seulement quand je la regarde »).
@@ -209,7 +216,12 @@ class Overlay {
     SummaryFile m_summary;
     double m_sessionStart = 0.0;
     double m_lastSummaryWrite = 0.0;
-    std::string m_gameText, m_apiText, m_startText;
+    std::string m_gameText, m_apiText;
+    ReportControl m_reportControl;
+    bool m_recording = false;     // un rapport est en cours d'enregistrement
+    bool m_recordManual = false;  // ... démarré par le raccourci
+    double m_recordStart = 0.0;
+    std::string m_recordStartText;  // date et heure du début de l'enregistrement
 
     // Casque et résolution de rendu.
     std::string m_headsetText;  // nom affiché (celui du .ini s'il est renseigné, sinon celui du runtime)

@@ -20,14 +20,21 @@ class LayerPresence {
     ~LayerPresence() { set(false, false); }
 
     void set(bool measuring, bool displaying);
+    // Témoin d'enregistrement manuel (RecordIndicator) et sa durée, pour le panneau qu'XRPerfVR
+    // affiche quand la layer mesure sans afficher (jeu Vulkan ou OpenGL lancé à travers SteamVR).
+    void setRecord(int state, float seconds);
 
   private:
     void* m_measuring = nullptr;
     void* m_displaying = nullptr;
+    void* m_recordMapping = nullptr;
+    void* m_recordView = nullptr;
 };
 
 // Côté XRPerfVR : la layer mesure / affiche-t-elle dans le processus `pid` ?
 bool LayerMeasuresIn(uint32_t pid);
 bool LayerDisplaysIn(uint32_t pid);
+// Témoin d'enregistrement publié par la layer dans le processus `pid` ; false s'il n'y en a pas.
+bool LayerRecordIn(uint32_t pid, int& state, float& seconds);
 
 }  // namespace xrpo

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XR Perf Overlay</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app" class="app" hidden>
+  <nav class="rail" id="rail" aria-label="Navigation"></nav>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <div class="banner" id="banner" hidden></div>
+    <main class="page" id="page" tabindex="-1"></main>
+  </div>
+</div>
+<div class="tooltip" id="tooltip" role="status" hidden></div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="i18n.js"></script>
+<script src="charts.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

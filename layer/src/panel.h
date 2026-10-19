@@ -89,6 +89,12 @@ struct PanelData {
     // Apparence.
     Layout layout = Layout::Classic;
     Theme theme = PresetTheme(ThemeId::Dark);
+    bool english = false;  // textes en anglais (sinon en français)
+
+    // Témoin d'enregistrement d'un rapport en mode manuel (RecordIndicator de report_control.h) :
+    // 0 = rien, 1 = en cours (avec sa durée), 2 = rapport écrit, 3 = trop court, pas de rapport.
+    int recordState = 0;
+    double recordSeconds = 0.0;
 
     // Présentation "graphique" : temps d'image des dernières secondes, de la plus ancienne colonne
     // (indice 0) à la plus récente. Valeurs en millisecondes, 0 = pas d'image dans cette tranche.
@@ -138,6 +144,7 @@ class Panel {
     uint32_t m_baseStatus = 0;
     Layout m_baseLayout = Layout::Classic;
     Theme m_baseTheme = {};
+    bool m_baseEnglish = false;
 };
 
 // --- Montre ------------------------------------------------------------------------------------
@@ -169,6 +176,7 @@ struct WatchData {
     bool fpsValid = false;
     float fps = 0.f;
     float targetFps = 0.f;
+    bool english = false;  // textes en anglais (lettres des manettes L / R au lieu de G / D)
 };
 
 class WatchFace {

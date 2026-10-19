@@ -215,25 +215,25 @@ namespace XRPerfSensors
             bool wanted = hasTarget && (preview || ReaderWants());
             if (!Available)
             {
-                _message = File.Exists(_dllPath) ? "Capture impossible : mémoire partagée indisponible." : "XRPerfCapture.dll absente : réinstallez XR Perf Overlay.";
+                _message = File.Exists(_dllPath) ? Loc.T("Capture impossible : mémoire partagée indisponible.", "Capture impossible: shared memory unavailable.") : Loc.T("XRPerfCapture.dll absente : réinstallez XR Perf Overlay.", "XRPerfCapture.dll is missing: reinstall XR Perf Overlay.");
                 return;
             }
             if (!hasTarget)
             {
-                _message = "Aucune fenêtre choisie.";
+                _message = Loc.T("Aucune fenêtre choisie.", "No window chosen.");
                 StopCapture();
                 return;
             }
             if (wanted) _wantedUntil = now + 5000;
             if (!wanted && now >= _wantedUntil)
             {
-                _message = enabled ? "En attente d'un jeu VR : la capture démarre avec lui." : "";
+                _message = enabled ? Loc.T("En attente d'un jeu VR : la capture démarre avec lui.", "Waiting for a VR game: capture starts with it.") : "";
                 StopCapture();
                 return;
             }
             if (!Load())
             {
-                _message = "XRPerfCapture.dll illisible : réinstallez XR Perf Overlay.";
+                _message = Loc.T("XRPerfCapture.dll illisible : réinstallez XR Perf Overlay.", "XRPerfCapture.dll is unreadable: reinstall XR Perf Overlay.");
                 return;
             }
             // Fenêtre toujours là et toujours la bonne : gardée ; sinon recherchée de nouveau.
@@ -245,8 +245,8 @@ namespace XRPerfSensors
             _chosen = IntPtr.Zero;
             if (target == IntPtr.Zero)
             {
-                _message = "Fenêtre introuvable : « " + (settings.CaptureTitle.Length > 0 ? settings.CaptureTitle : settings.CaptureProcess) +
-                           " » n'est pas ouverte.";
+                _message = Loc.T("Fenêtre introuvable : « ", "Window not found: « ") + (settings.CaptureTitle.Length > 0 ? settings.CaptureTitle : settings.CaptureProcess) +
+                           Loc.T(" » n'est pas ouverte.", " » is not open.");
                 StopCapture();
                 return;
             }
@@ -255,7 +255,7 @@ namespace XRPerfSensors
             {
                 if (_start(target, _view, (ulong)ShareSize, ref options) != 0)
                 {
-                    _message = "Capture impossible (paramètres refusés).";
+                    _message = Loc.T("Capture impossible (paramètres refusés).", "Capture impossible (settings rejected).");
                     return;
                 }
                 _running = true;
@@ -287,13 +287,13 @@ namespace XRPerfSensors
                     int width = 0, height = 0;
                     ReadSize(ref width, ref height);
                     return width > 0
-                        ? string.Format("Capture en cours : fenêtre de {0} x {1}, image envoyée au casque {2} x {3}.", status.Width, status.Height, width, height)
-                        : "Capture en cours.";
-                case StateStarting: return "Démarrage de la capture...";
-                case StateMinimized: return "Fenêtre réduite : Windows ne la dessine plus, la dernière image reste affichée.";
-                case StateClosed: return "La fenêtre a été fermée.";
-                case StateUnsupported: return "Capture impossible : il faut Windows 10 version 1903 ou plus récent.";
-                case StateFailed: return string.Format("Cette fenêtre ne peut pas être capturée (erreur 0x{0:X8}) ; nouvel essai toutes les 3 s.", status.Error);
+                        ? string.Format(Loc.T("Capture en cours : fenêtre de {0} x {1}, image envoyée au casque {2} x {3}.", "Capturing: {0} x {1} window, image sent to the headset {2} x {3}."), status.Width, status.Height, width, height)
+                        : Loc.T("Capture en cours.", "Capturing.");
+                case StateStarting: return Loc.T("Démarrage de la capture...", "Starting capture...");
+                case StateMinimized: return Loc.T("Fenêtre réduite : Windows ne la dessine plus, la dernière image reste affichée.", "Window minimized: Windows no longer draws it, the last image stays on screen.");
+                case StateClosed: return Loc.T("La fenêtre a été fermée.", "The window was closed.");
+                case StateUnsupported: return Loc.T("Capture impossible : il faut Windows 10 version 1903 ou plus récent.", "Capture impossible: Windows 10 version 1903 or later is required.");
+                case StateFailed: return string.Format(Loc.T("Cette fenêtre ne peut pas être capturée (erreur 0x{0:X8}) ; nouvel essai toutes les 3 s.", "This window cannot be captured (error 0x{0:X8}); retrying every 3 s."), status.Error);
                 default: return _message;
             }
         }
