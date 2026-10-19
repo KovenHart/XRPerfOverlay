@@ -61,7 +61,7 @@
       switch (msg.type) {
         case "ready":
           Promise.all([load("dev/mock_images.js"), load("dev/mock_reports.js")]).then(() => {
-            reply({ type: "init", version: "1.5.0", layerVersion: "1.5.0", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
+            reply({ type: "init", version: "1.6.0", layerVersion: "1.6.0", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
               pawnio: params.get("pawnio") !== "0", fullscreen, layer, reportsFolder: "C:\\XRPerfOverlay\\sessions", page: params.get("page") || "dashboard" });
             reply({ type: "status", game: params.get("game") || "none", sensors: "ok" });
             reply(reportsData().list);

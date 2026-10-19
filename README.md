@@ -12,7 +12,24 @@ En option : une montre au poignet, et une fenêtre du bureau (le chat d'un strea
 
 ![Aperçu du panneau](docs/apercu.png)
 
-Le projet contient deux programmes :
+## Nouveautés
+
+**1.6**
+- **Désactiver la layer OpenXR** sans la désinstaller : un interrupteur dans XRPerfSensors (page Panneau, tableau de bord ou menu de l'icône). Désactivée, elle n'est plus chargée du tout dans les jeux OpenXR. Voir « Désactiver la layer ».
+- **Rapports au raccourci** : un rapport à chaque session, seulement entre deux appuis sur `Ctrl+Alt+S`, ou jamais. Pendant l'enregistrement, un témoin REC s'affiche sur le panneau. Fonctionne aussi dans les jeux SteamVR. Voir « Rapports de session ».
+
+![Témoin d'enregistrement sur le panneau](docs/temoin-rec.png)
+
+**1.5**
+- **Nouvelle fenêtre XRPerfSensors** : une seule fenêtre avec un menu à gauche, plein écran avec `F11`, couleurs au choix (comme le panneau, six thèmes ou les vôtres).
+- **Rapports** : l'analyse et les courbes sur la même page, une lecture simple illustrée (grille de 100 images, barres, jauges), une comparaison de deux sessions avec leurs courbes superposées.
+- **Français et anglais** pour tout : fenêtre, menu, panneau et montre dans le casque, rapports, installateur et documentation.
+
+![Tableau de bord de XRPerfSensors](docs/interface-tableau-de-bord.png)
+
+Les autres captures de la fenêtre sont dans « Fenêtre de XRPerfSensors ».
+
+Le projet contient ces programmes :
 
 | Dossier | Rôle |
 |---|---|
@@ -133,6 +150,18 @@ Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit �
 - **Mesures** : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
 - **Rapports** : voir « Rapports de session ».
 - **Interface** : langue (celle de Windows, français ou anglais), couleurs de la fenêtre (« comme le panneau » du casque, l'un des six thèmes, ou trois couleurs à soi), taille du texte, animations, plein écran et ouverture en plein écran.
+
+Le rapport d'une session, avec l'analyse en phrases à gauche et les courbes minute par minute à droite :
+
+![Page Rapports, lecture simple](docs/interface-rapport.png)
+
+La comparaison de deux sessions du même jeu (ici, avant et après une baisse de la résolution de rendu) :
+
+![Page Rapports, comparaison](docs/interface-comparaison.png)
+
+Une page de réglages, avec l'aperçu du panneau dessiné par la layer :
+
+![Page Panneau](docs/interface-panneau.png)
 
 La fenêtre est affichée par le moteur **WebView2** d'Edge, fourni avec Windows 11 et les Windows 10 à jour (l'installateur prévient s'il manque). Fermée, elle est détruite et ne consomme plus rien ; le programme continue dans la zone de notification.
 

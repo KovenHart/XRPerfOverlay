@@ -12,6 +12,23 @@ Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown 
 
 ![Panel preview](docs/apercu.png)
 
+## What's new
+
+**1.6**
+- **Turn the OpenXR layer off** without uninstalling it: a switch in XRPerfSensors (Panel page, dashboard or tray icon menu). When off, it is no longer loaded into OpenXR games at all. See "Turning the layer off".
+- **Reports on hotkey**: a report for every session, only between two presses of `Ctrl+Alt+S`, or never. While recording, a REC indicator shows on the panel. Works in SteamVR games too. See "Session reports".
+
+![Recording indicator on the panel](docs/temoin-rec.png)
+
+**1.5**
+- **New XRPerfSensors window**: a single window with a menu on the left, full screen with `F11`, colors of your choice (like the panel, six themes or your own).
+- **Reports**: analysis and curves on the same page, an illustrated simple view (grid of 100 frames, bars, gauges), a comparison of two sessions with their curves overlaid.
+- **French and English** for everything: window, menu, panel and watch in the headset, reports, installer and documentation.
+
+![XRPerfSensors dashboard](docs/interface-dashboard-en.png)
+
+More screenshots of the window are in "The XRPerfSensors window".
+
 The project contains these programs:
 
 | Folder | Role |
@@ -132,6 +149,18 @@ Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open 
 - **Measurements**: real GPU time measurement (otherwise an estimate), writing reports (every session, on the `Ctrl+Alt+S` hotkey or never: applies immediately, even in game), processor and graphics card models in the reports, reports folder. GPU measurement and models apply the next time a game starts.
 - **Reports**: see "Session reports".
 - **Interface**: language (Windows', French or English), window colors ("same as the panel" in the headset, one of the six themes, or three colors of your own), text size, animations, full screen and opening in full screen.
+
+A session report, with the analysis in sentences on the left and the minute-by-minute curves on the right:
+
+![Reports page, simple view](docs/interface-report-en.png)
+
+Comparing two sessions of the same game (here, before and after lowering the render resolution):
+
+![Reports page, comparison](docs/interface-comparison-en.png)
+
+A settings page, with the panel preview drawn by the layer:
+
+![Panel page](docs/interface-panel-en.png)
 
 The window is displayed by Edge's **WebView2** engine, which comes with Windows 11 and up-to-date Windows 10 (the installer warns if it's missing). When closed, it is destroyed and uses nothing; the program keeps running in the notification area.
 
