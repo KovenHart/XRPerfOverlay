@@ -113,5 +113,5 @@ To report a problem, give the version number (at the bottom of the XRPerfSensors
 or in the VERSION file of the installation folder), the game, the headset and the OpenXR runtime,
 and attach the log.
 
-Full documentation: README.en.md (in French: README.md). License: LICENSE.txt (MIT).
+Full guide: docs\GUIDE.en.md. What's new in each version: CHANGELOG.en.md. License: LICENSE.txt (MIT).
 Third-party components: THIRD-PARTY.md.

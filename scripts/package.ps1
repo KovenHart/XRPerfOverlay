@@ -12,7 +12,8 @@
 # Contenu du paquet :
 #   Installer.bat           installation ou mise à jour (mode « paquet » : rien à compiler)
 #   LISEZ-MOI.txt           guide de l'utilisateur (README-EN.txt : le même en anglais)
-#   README.md, README.en.md, docs\   documentation complète, en français et en anglais
+#   README.md, README.en.md, CHANGELOG.md, CHANGELOG.en.md
+#   docs\                   guide d'utilisation (GUIDE.md, GUIDE.en.md), développement, captures
 #   LICENSE.txt, THIRD-PARTY.md
 #   scripts\setup.ps1       script d'installation lancé par Installer.bat
 #   programme\              ce qui est copié dans le dossier d'installation (XRPerfVR et XRPerfCapture dans programme\sensors)
@@ -113,6 +114,11 @@ Copy-Required (Under 'docs', 'LISEZ-MOI.txt') (Join-Path $staging 'LISEZ-MOI.txt
 Copy-Required (Under 'docs', 'README-EN.txt') (Join-Path $staging 'README-EN.txt')
 Copy-Required (Join-Path $Root 'README.md') (Join-Path $staging 'README.md')
 Copy-Required (Join-Path $Root 'README.en.md') (Join-Path $staging 'README.en.md')
+Copy-Required (Join-Path $Root 'CHANGELOG.md') (Join-Path $staging 'CHANGELOG.md')
+Copy-Required (Join-Path $Root 'CHANGELOG.en.md') (Join-Path $staging 'CHANGELOG.en.md')
+foreach ($page in @(Get-ChildItem -LiteralPath (Under 'docs') -Filter '*.md')) {
+    Copy-Required $page.FullName (Join-Path (Join-Path $staging 'docs') $page.Name)
+}
 Copy-Required (Join-Path $Root 'LICENSE') (Join-Path $staging 'LICENSE.txt')
 Copy-Required (Join-Path $Root 'THIRD-PARTY.md') (Join-Path $staging 'THIRD-PARTY.md')
 foreach ($image in @(Get-ChildItem -LiteralPath (Under 'docs') -Filter '*.png')) {

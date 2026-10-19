@@ -116,4 +116,4 @@ ou dans le fichier VERSION du dossier d'installation), le jeu, le casque et le r
 joignez le journal.
 
 English: README-EN.txt.
-Documentation complète : README.md (en anglais : README.en.md). Licence : LICENSE.txt (MIT). Composants tiers : THIRD-PARTY.md.
+Guide complet : docs\GUIDE.md. Nouveautés de chaque version : CHANGELOG.md. Licence : LICENSE.txt (MIT). Composants tiers : THIRD-PARTY.md.
