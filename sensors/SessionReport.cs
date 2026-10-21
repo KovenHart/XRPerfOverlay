@@ -62,6 +62,14 @@ namespace XRPerfSensors
         public readonly List<MinuteRow> Minutes = new List<MinuteRow>();
         public bool MinutesGpuMeasured;
         public bool SensorsMissing;
+        /// <summary>Part de la session pendant laquelle les capteurs ont été relevés (en %), NaN si complète ou non indiquée.</summary>
+        public double SensorCoverage = double.NaN;
+        /// <summary>
+        /// Capteurs relevés pendant trop peu de la session (moins de la moitié) : leurs moyennes ne disent rien de la
+        /// partie (par exemple un seul relevé, XRPerfSensors lancé à la fin). Elles sont écartées comme si les
+        /// capteurs avaient manqué ; le relevé minute par minute les garde, minute par minute.
+        /// </summary>
+        public bool SensorsTooFew;
         /// <summary>La layer a écarté la mesure du temps GPU en cours de session (non représentative).</summary>
         public bool GpuMeasureRejected;
 
@@ -193,6 +201,7 @@ namespace XRPerfSensors
                 }
 
                 if (Starts(line, "Capteurs indisponibles", "Sensors unavailable")) SensorsMissing = true;
+                if (Starts(line, "Capteurs relevés pendant", "Sensors read during")) SensorCoverage = At(Numbers(line), 0);
                 if (Starts(line, "Mesure réelle du temps GPU écartée", "Real GPU time measurement discarded")) GpuMeasureRejected = true;
                 // Titres de section : en début de ligne, sans " : " (sauf ceux de la répartition et du relevé, qui en contiennent un).
                 bool distribution = Starts(line, "RÉPARTITION", "FRAME TIME DISTRIBUTION");
@@ -316,6 +325,18 @@ namespace XRPerfSensors
                     else if (tableLabel.StartsWith("VRAM", StringComparison.Ordinal)) { VramAvg = At(row, 0); VramMax = At(row, 1); VramTotal = At(row, 2); }
                 }
             }
+            if (SensorCoverage < 50) DropSensorAverages();
+        }
+
+        // Moyennes et maximums des capteurs écartés (voir SensorsTooFew). La mesure réelle du temps GPU ne vient
+        // pas des capteurs : elle est gardée.
+        private void DropSensorAverages()
+        {
+            SensorsTooFew = true;
+            CpuLoadAvg = CpuLoadMax = CpuTempAvg = CpuTempMax = CpuMHzAvg = double.NaN;
+            GpuLoadAvg = GpuLoadMax = GpuTempAvg = GpuTempMax = GpuMHzAvg = double.NaN;
+            VramAvg = VramMax = double.NaN;
+            GpuEstimateAvg = GpuEstimateMax = double.NaN;
         }
     }
 
@@ -702,6 +723,11 @@ namespace XRPerfSensors
             if (r.SensorsMissing)
                 Add(findings, FindingLevel.Info, L("XRPerfSensors n'était pas lancé : pas de charge, de température ni de temps GPU estimé.",
                     "XRPerfSensors was not running: no load, temperature or estimated GPU time."));
+            else if (r.SensorsTooFew)
+                Add(findings, FindingLevel.Warning, string.Format(CultureInfo.InvariantCulture,
+                    L("XRPerfSensors n'a relevé les capteurs que pendant {0} % de la session (lancé en cours de partie, ou à la fin) : leurs moyennes ne représentent pas la partie et ne sont pas utilisées. Charge, températures et temps GPU estimé sont donc inconnus ; lancez XRPerfSensors avant le jeu.",
+                      "XRPerfSensors read the sensors during only {0} % of the session (started mid-game, or at the end): their averages do not represent the session and are not used. Load, temperatures and estimated GPU time are therefore unknown; start XRPerfSensors before the game."),
+                    F(r.SensorCoverage, "0")));
             return findings;
         }
 
@@ -887,8 +913,11 @@ namespace XRPerfSensors
             if (!gpuKnown)
             {
                 view.Limiter = cpuBound ? "cpu" : "unknown";
-                limit.Lines.Add(L("XRPerfSensors n'était pas lancé pendant cette partie : impossible de savoir si la carte graphique était au maximum.",
-                    "XRPerfSensors was not running during this session: there is no telling whether the graphics card was at its maximum."));
+                limit.Lines.Add(r.SensorsTooFew
+                    ? string.Format(culture, L("XRPerfSensors n'a relevé les capteurs que pendant {0} % de cette partie : trop peu pour savoir si la carte graphique était au maximum.",
+                        "XRPerfSensors read the sensors during only {0} % of this session: too little to tell whether the graphics card was at its maximum."), N(r.SensorCoverage, "0"))
+                    : L("XRPerfSensors n'était pas lancé pendant cette partie : impossible de savoir si la carte graphique était au maximum.",
+                        "XRPerfSensors was not running during this session: there is no telling whether the graphics card was at its maximum."));
                 if (cpuBound)
                     limit.Lines.Add(string.Format(culture, L("{0}, ou la façon dont le jeu l'utilise, semble avoir fixé la limite : il mettait {1} ms à préparer chaque image, pour {2} ms disponibles.",
                         "{0}, or the way the game uses it, seems to have set the limit: it took {1} ms to prepare each frame, with {2} ms available."),
