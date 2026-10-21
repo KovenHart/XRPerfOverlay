@@ -4,6 +4,17 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.7.2 (2026-10-21)
+
+- Cadence plafonnée : reconnue aussi quand le plafond ne divise pas la fréquence du casque (un jeu bloqué à 60 sur un casque à 72 Hz). La cadence de chaque seconde y varie (50 à 58 au plus bas), ce qui échappait à la 1.7.1 ; le plafond se reconnaît alors au jeu qui attend dans chaque image (temps CPU proche de la durée d'une image, carte graphique sous 90 %) sur au moins deux minutes.
+- Quand le jeu se plafonne par moments, l'analyse n'attribue plus les baisses restantes à des « moments précis » ni à la carte graphique (les minutes restantes mêlent souvent menus et passages bloqués), et ne donne plus de conseil de résolution chiffré, qui reposerait sur les menus.
+- Jeu plafonné par moments : la lecture simple propose l'enregistrement manuel (`Ctrl+Alt+S`) pour un rapport sur un seul type de passage, et la comparaison de deux sessions prévient que l'écart dépend surtout du temps passé dans les passages bloqués et libres, pas des performances.
+
+## 1.7.1 (2026-10-21)
+
+- **Cadence plafonnée reconnue dans les rapports** : quand le jeu se limite lui-même (par exemple un jeu de combat bloqué à 60 images par seconde sur un casque à 90 Hz, ou des cinématiques à 30), les minutes collées à une valeur ronde sous la cible sont repérées. Le rapport l'explique (« limite du jeu, pas un manque de puissance »), met ces minutes de côté pour juger ce qui limite, et n'accuse plus le processeur à tort : au plafond, le jeu attend dans chaque image et son temps CPU gonfle. Si presque toute la session est plafonnée, il dit que la cible est hors d'atteinte quels que soient les réglages et conseille une fréquence du casque égale au plafond, si elle existe. Une cadence bloquée à une fraction exacte de la cible (45 pour 90) est signalée à part : elle peut aussi venir de la reprojection du casque.
+- Le repérage se fait minute par minute : un passage plafonné de quelques secondes, mêlé à du jeu normal dans la même minute, n'est pas reconnu.
+
 ## 1.7.0 (2026-10-21)
 
 - **Page Configuration** dans XRPerfSensors : un diagnostic du PC pour la VR. Elle relève le runtime OpenXR actif et les autres installés, les layers OpenXR inscrites (dans leur ordre de chargement, avec leur état), le runtime des jeux SteamVR, les logiciels VR installés, le processeur, la mémoire, les cartes graphiques et leurs pilotes, et les réglages de Windows qui comptent (planification GPU, mode Jeu, mode d'alimentation). Elle signale ce qui mérite un coup d'œil : runtime absent ou changé depuis la dernière session, layer orpheline ou sans DLL, XR Perf Overlay inscrit deux fois, OpenXR Toolkit encore actif, deux générations d'images en même temps, mode Économie d'énergie, portable à deux cartes graphiques... Une layer qui pose problème se **désactive d'un clic**, avec confirmation, sans être désinstallée, et se réactive de la même façon. Rien d'autre n'est modifié. Bouton « Copier le diagnostic » pour demander de l'aide (sans nom de compte Windows : les chemins du dossier utilisateur sont écrits `%USERPROFILE%`).

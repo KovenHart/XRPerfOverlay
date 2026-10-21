@@ -4,6 +4,17 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.7.2 (2026-10-21)
+
+- Capped frame rate: also recognized when the cap does not divide the headset refresh rate (a game locked at 60 on a 72 Hz headset). The rate of each second varies there (50 to 58 at the lowest), which 1.7.1 missed; the cap is then recognized by the game waiting inside each frame (CPU time close to a frame's duration, graphics card under 90 %) over at least two minutes.
+- When the game caps itself at times, the analysis no longer attributes the remaining drops to "specific moments" or to the graphics card (the remaining minutes often mix menus and capped stretches), and no longer gives a numbered resolution advice, which would rest on the menus.
+- Game capped at times: the simple reading suggests manual recording (`Ctrl+Alt+S`) for a report on a single kind of stretch, and comparing two sessions warns that the gap mostly depends on the time spent in locked and free stretches, not on performance.
+
+## 1.7.1 (2026-10-21)
+
+- **Capped frame rate recognized in reports**: when the game limits itself (for example a fighting game locked at 60 frames per second on a 90 Hz headset, or cutscenes at 30), minutes stuck at a round value below the target are spotted. The report explains it ("a limit of the game, not a lack of power"), sets those minutes aside to judge what is limiting, and no longer wrongly blames the processor: at the cap, the game waits inside each frame and its CPU time swells. If almost the whole session is capped, it says the target is out of reach whatever the settings and advises a headset refresh rate equal to the cap, if one exists. A frame rate locked at an exact fraction of the target (45 for 90) is reported separately: it may also come from the headset's reprojection.
+- Spotting works minute by minute: a capped stretch of a few seconds, mixed with normal play in the same minute, is not recognized.
+
 ## 1.7.0 (2026-10-21)
 
 - **Configuration page** in XRPerfSensors: a diagnosis of the PC for VR. It lists the active OpenXR runtime and the other installed ones, the registered OpenXR layers (in loading order, with their state), the runtime for SteamVR games, installed VR software, the processor, memory, graphics cards and their drivers, and the Windows settings that matter (GPU scheduling, Game Mode, power mode). It points out what deserves a look: runtime missing or changed since the last session, orphaned layer or layer without its DLL, XR Perf Overlay registered twice, OpenXR Toolkit still active, two frame generation layers at once, Power saver mode, laptop with two graphics cards... A layer that causes trouble can be **turned off in one click**, with confirmation, without uninstalling it, and turned back on the same way. Nothing else is changed. "Copy diagnosis" button to ask for help (without the Windows account name: paths inside the user folder are written `%USERPROFILE%`).

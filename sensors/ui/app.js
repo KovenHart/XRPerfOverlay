@@ -1294,15 +1294,17 @@ window.App = (function () {
     if (kind === "felt") return framesFigure(dist, animate);
     if (kind === "limit") {
       const budget = n.budgetMs, lim = (r.simple || {}).limiter;
+      // Valeurs jugées (minutes plafonnées par le jeu mises de côté) ; rapports d'avant la 1.7.1 : moyennes de la session.
+      const cpuMs = "limitCpuMs" in n ? n.limitCpuMs : n.cpuMsAvg, gpuLoad = "limitGpuLoad" in n ? n.limitGpuLoad : n.gpuLoadAvg;
       const rows = [];
-      if (n.cpuMsAvg != null && budget) {
-        const share = Math.min(1.25, n.cpuMsAvg / budget);
+      if (cpuMs != null && budget) {
+        const share = Math.min(1.25, cpuMs / budget);
         rows.push(barRow(t("rep.limit.cpu"), t("rep.limit.cpuSub"), share / 1.25 * 100, (1 / 1.25) * 100, share >= 0.85 ? "warn" : "", lim === "cpu" || lim === "both",
-          num(n.cpuMsAvg, 1) + " " + t("unit.ms"), t("rep.limit.available", { ms: num(budget, 1) })));
+          num(cpuMs, 1) + " " + t("unit.ms"), t("rep.limit.available", { ms: num(budget, 1) })));
       }
-      if (n.gpuLoadAvg != null) {
-        rows.push(barRow(t("rep.limit.gpu"), t("rep.limit.gpuSub"), n.gpuLoadAvg, null, n.gpuLoadAvg >= 90 ? "warn" : "", lim === "gpu" || lim === "both",
-          num(n.gpuLoadAvg) + " %", n.gpuLoadMax != null ? t("rep.health.max") + " " + num(n.gpuLoadMax) + " %" : ""));
+      if (gpuLoad != null) {
+        rows.push(barRow(t("rep.limit.gpu"), t("rep.limit.gpuSub"), gpuLoad, null, gpuLoad >= 90 ? "warn" : "", lim === "gpu" || lim === "both",
+          num(gpuLoad) + " %", n.gpuLoadMax != null ? t("rep.health.max") + " " + num(n.gpuLoadMax) + " %" : ""));
       }
       return rows.length ? h("div", { class: "figure" }, h("div", { class: "bars" }, rows)) : null;
     }

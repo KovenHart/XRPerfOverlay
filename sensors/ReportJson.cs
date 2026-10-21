@@ -135,6 +135,8 @@ namespace XRPerfSensors
             Num(w, "cpuLoadAvg", r.CpuLoadAvg); Num(w, "cpuLoadMax", r.CpuLoadMax);
             Num(w, "cpuTempAvg", r.CpuTempAvg); Num(w, "cpuTempMax", r.CpuTempMax); Num(w, "cpuMHzAvg", r.CpuMHzAvg);
             Num(w, "gpuLoadAvg", r.GpuLoadAvg); Num(w, "gpuLoadMax", r.GpuLoadMax);
+            // Valeurs qui ont servi à juger ce qui limite (minutes plafonnées par le jeu mises de côté) : barres de la lecture simple.
+            Num(w, "limitCpuMs", r.JudgedCpuMs); Num(w, "limitGpuLoad", r.JudgedGpuLoad);
             Num(w, "gpuTempAvg", r.GpuTempAvg); Num(w, "gpuTempMax", r.GpuTempMax); Num(w, "gpuMHzAvg", r.GpuMHzAvg);
             Num(w, "vramAvg", r.VramAvg); Num(w, "vramMax", r.VramMax); Num(w, "vramTotal", r.VramTotal);
             Num(w, "budgetMs", !double.IsNaN(r.BudgetMs) ? r.BudgetMs : r.Target > 0 ? 1000.0 / r.Target : double.NaN);

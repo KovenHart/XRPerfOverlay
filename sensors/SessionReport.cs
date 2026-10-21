@@ -22,6 +22,21 @@ namespace XRPerfSensors
         public bool GpuEstimated;
     }
 
+    /// <summary>
+    /// Minutes où la cadence est restée collée à une valeur ronde sous la cible (relevé minute par minute).
+    /// </summary>
+    internal sealed class CapRun
+    {
+        public int Fps;
+        /// <summary>
+        /// Valeur qui divise la cible (45 pour 90, 36 pour 72) : le casque bloque le jeu à une fraction de la cible
+        /// quand il ne suit plus (reprojection). Impossible alors de distinguer un manque de puissance d'une limite du
+        /// jeu : ces minutes ne sont pas mises de côté.
+        /// </summary>
+        public bool Divisor;
+        public readonly List<int> Minutes = new List<int>();
+    }
+
     /// <summary>Contenu d'un rapport de session. NaN = valeur absente ou affichée "--".</summary>
     internal sealed class SessionReport
     {
@@ -70,6 +85,21 @@ namespace XRPerfSensors
         /// capteurs avaient manqué ; le relevé minute par minute les garde, minute par minute.
         /// </summary>
         public bool SensorsTooFew;
+
+        /// <summary>Cadences plafonnées repérées dans le relevé minute par minute (voir <see cref="DetectCaps"/>).</summary>
+        public readonly List<CapRun> Caps = new List<CapRun>();
+        /// <summary>Minutes du relevé avec une cadence, et celles plafonnées par le jeu (hors fractions de la cible).</summary>
+        public int MeasuredMinutes, CappedMinutes;
+        /// <summary>Plafond du jeu sur presque toute la session (80 % des minutes ou plus) : rien à juger de la puissance.</summary>
+        public bool MostlyCapped { get { return MeasuredMinutes > 0 && CappedMinutes >= 0.8 * MeasuredMinutes; } }
+        /// <summary>Plafond du jeu le plus long (celui à citer), ou null.</summary>
+        public CapRun MainCap { get { return Caps.Where(c => !c.Divisor).OrderByDescending(c => c.Minutes.Count).FirstOrDefault(); } }
+        /// <summary>
+        /// Valeurs qui servent à juger ce qui limite : les moyennes de la session, ou, si le jeu s'est plafonné par
+        /// moments, celles des minutes non plafonnées (au plafond, le jeu attend dans chaque image : son temps CPU
+        /// gonfle sans que le processeur y soit pour rien). NaN si la session est presque entièrement plafonnée.
+        /// </summary>
+        public double JudgedCpuMs = double.NaN, JudgedGpuLoad = double.NaN, JudgedGpuMs = double.NaN, JudgedFps = double.NaN;
         /// <summary>La layer a écarté la mesure du temps GPU en cours de session (non représentative).</summary>
         public bool GpuMeasureRejected;
 
@@ -326,6 +356,80 @@ namespace XRPerfSensors
                 }
             }
             if (SensorCoverage < 50) DropSensorAverages();
+            DetectCaps();
+        }
+
+        private static readonly int[] CapValues = { 30, 36, 45, 60, 72, 90, 120 };
+
+        /// <summary>
+        /// Repère les minutes plafonnées : moyenne à 1 image près d'une valeur ronde sous la cible. Le plafond est
+        /// retenu sur l'un de deux signes :
+        /// - une minute collée à la valeur (moyenne à 0,5 près) dont même la seconde la plus lente y est restée
+        ///   (minimum à 1 image près) ;
+        /// - au moins deux minutes où le jeu attend : temps CPU d'au moins 75 % de la durée d'une image au plafond,
+        ///   carte graphique sous 90 %. Au plafond, le jeu patiente dans chaque image ; sur un casque dont la
+        ///   fréquence n'est pas un multiple du plafond (60 sur 72 Hz), la cadence de chaque seconde varie, d'où
+        ///   ce second signe.
+        /// Les minutes proches de la valeur en font alors partie, même avec un à-coup (minimum jusqu'à 60 % du
+        /// plafond). Une minute qui mêle jeu libre et passage plafonné n'est pas reconnue : la détection reste prudente.
+        /// </summary>
+        private void DetectCaps()
+        {
+            JudgedCpuMs = CpuMsAvg;
+            JudgedGpuLoad = GpuLoadAvg;
+            JudgedGpuMs = GpuMsAvg;
+            JudgedFps = FpsAvg;
+            List<MinuteRow> rows = Minutes.Where(m => !double.IsNaN(m.FpsAvg)).ToList();
+            MeasuredMinutes = rows.Count;
+            if (!(Target > 0) || rows.Count == 0) return;
+            var capped = new HashSet<MinuteRow>();
+            var gameCapped = new HashSet<MinuteRow>();
+            foreach (int cap in CapValues)
+            {
+                if (cap > Target - 1.5) continue;
+                List<MinuteRow> near = rows.Where(m => Math.Abs(m.FpsAvg - cap) <= 1.0 && !capped.Contains(m)).ToList();
+                bool stuck = near.Any(m => Math.Abs(m.FpsAvg - cap) <= 0.5 && m.FpsMin >= cap - 1);
+                int waiting = near.Count(m => m.CpuMs >= 0.75 * 1000.0 / cap && !(m.GpuLoad >= 90));
+                if (!stuck && waiting < 2) continue;
+                double ratio = Target / cap;
+                var run = new CapRun { Fps = cap, Divisor = Math.Round(ratio) >= 2 && Math.Abs(ratio - Math.Round(ratio)) < 0.05 };
+                foreach (MinuteRow m in near)
+                {
+                    if (!(m.FpsMin >= 0.6 * cap)) continue;
+                    capped.Add(m);
+                    if (!run.Divisor) gameCapped.Add(m);
+                    run.Minutes.Add(m.Minute);
+                }
+                Caps.Add(run);
+            }
+            CappedMinutes = gameCapped.Count;
+            if (CappedMinutes == 0) return;
+            List<MinuteRow> free = rows.Where(m => !gameCapped.Contains(m)).ToList();
+            if (MostlyCapped || free.Count == 0)
+            {
+                JudgedCpuMs = JudgedGpuLoad = JudgedGpuMs = JudgedFps = double.NaN;
+                return;
+            }
+            JudgedCpuMs = ReportAnalysis.Mean(free.Select(m => m.CpuMs));
+            JudgedGpuLoad = double.IsNaN(GpuLoadAvg) ? double.NaN : ReportAnalysis.Mean(free.Select(m => m.GpuLoad));
+            // Temps GPU par minute : de même nature que celui de la session (mesuré ou estimé), sinon inconnu.
+            JudgedGpuMs = double.IsNaN(GpuMsAvg) || GpuIsMeasured != MinutesGpuMeasured ? double.NaN
+                : ReportAnalysis.Mean(free.Where(m => !GpuIsMeasured || !m.GpuEstimated).Select(m => m.GpuMs));
+            JudgedFps = ReportAnalysis.Mean(free.Select(m => m.FpsAvg));
+        }
+
+        /// <summary>Minute plafonnée par le jeu (hors fractions de la cible).</summary>
+        public bool IsGameCapped(int minute)
+        {
+            return Caps.Any(c => !c.Divisor && c.Minutes.Contains(minute));
+        }
+
+        /// <summary>Numéros de minutes, « 3, 4 et 7 » (« 3, 4 and 7 »).</summary>
+        public static string MinuteList(List<int> minutes, bool english)
+        {
+            var parts = minutes.Select(m => m.ToString(CultureInfo.InvariantCulture)).ToList();
+            if (parts.Count <= 1) return string.Join("", parts);
+            return string.Join(", ", parts.Take(parts.Count - 1)) + (english ? " and " : " et ") + parts[parts.Count - 1];
         }
 
         // Moyennes et maximums des capteurs écartés (voir SensorsTooFew). La mesure réelle du temps GPU ne vient
@@ -423,17 +527,22 @@ namespace XRPerfSensors
         public static ResolutionAdvice AdviseResolution(SessionReport r)
         {
             double budget = r.Target > 0 ? 1000.0 / r.Target : double.NaN;
-            double gpuMs = r.GpuMsAvg;
-            if (double.IsNaN(budget) || double.IsNaN(gpuMs) || gpuMs <= 0 || double.IsNaN(r.GpuLoadAvg)) return null;
-            bool gpuBound = r.GpuLoadAvg >= 90 || (gpuMs >= 0.9 * budget && r.GpuLoadAvg >= 85);
-            bool cpuBound = r.CpuMsAvg >= 0.85 * budget;
+            // Jeu plafonné par moments : seules les minutes libres comptent ; presque toujours plafonné : rien à chiffrer.
+            double gpuMs = r.JudgedGpuMs, gpuLoad = r.JudgedGpuLoad;
+            if (double.IsNaN(budget) || double.IsNaN(gpuMs) || gpuMs <= 0 || double.IsNaN(gpuLoad)) return null;
+            bool gpuBound = gpuLoad >= 90 || (gpuMs >= 0.9 * budget && gpuLoad >= 85);
+            bool cpuBound = r.JudgedCpuMs >= 0.85 * budget;
+            // Jeu plafonné par moments : les minutes restantes mêlent souvent menus et passages bloqués, et la
+            // fluidité dépend du plafond, pas de la résolution. Pas de chiffre.
+            if (r.CappedMinutes > 0) return null;
+            bool held = r.TargetHeld >= 95;
             var advice = new ResolutionAdvice();
             if (gpuBound)
             {
                 // Processeur aussi à la limite : baisser la résolution ne suffirait pas à tenir la cible, pas de chiffre.
                 if (cpuBound) return null;
                 // Carte chargée mais temps GPU dans le budget et cible tenue : rien à chiffrer.
-                if (!(gpuMs >= 0.9 * budget || r.TargetHeld < 95)) return null;
+                if (!(gpuMs >= 0.9 * budget || !held)) return null;
                 double scale = Math.Min(Math.Sqrt(0.9 * budget / gpuMs), 0.95);
                 if (scale < MinScale)
                 {
@@ -442,7 +551,7 @@ namespace XRPerfSensors
                 }
                 advice.Scale = Math.Floor(scale * 20.0 + 1e-9) / 20.0;
             }
-            else if (!cpuBound && r.TargetHeld >= 95 && r.GpuLoadAvg < 70)
+            else if (!cpuBound && held && gpuLoad < 70)
             {
                 double scale = Math.Min(Math.Sqrt(0.85 * budget / gpuMs), MaxScale);
                 scale = Math.Floor(scale * 20.0 + 1e-9) / 20.0;
@@ -480,7 +589,7 @@ namespace XRPerfSensors
         /// </summary>
         public static double CpuSustainableFps(SessionReport r)
         {
-            return r.CpuMsAvg > 0 ? 1000.0 / (r.CpuMsAvg * 1.1) : double.NaN;
+            return r.JudgedCpuMs > 0 ? 1000.0 / (r.JudgedCpuMs * 1.1) : double.NaN;
         }
 
         /// <summary>
@@ -548,33 +657,58 @@ namespace XRPerfSensors
             }
 
             // 2. Ce qui semble limiter.
-            double gpuMs = r.GpuMsAvg;
+            double gpuMs = r.JudgedGpuMs, gpuLoad = r.JudgedGpuLoad, cpuMs = r.JudgedCpuMs;
             string gpuKind = r.GpuIsMeasured ? L("mesuré", "measured") : L("estimé", "estimated");
             // Le temps GPU seul ne suffit pas : mesuré, il compte aussi les attentes de la carte quand le
             // processeur est la limite. La charge de la carte doit confirmer.
-            bool gpuBound = r.GpuLoadAvg >= 90 || (!double.IsNaN(budget) && gpuMs >= 0.9 * budget && r.GpuLoadAvg >= 85);
-            bool cpuBound = !double.IsNaN(budget) && r.CpuMsAvg >= 0.85 * budget;
+            bool gpuBound = gpuLoad >= 90 || (!double.IsNaN(budget) && gpuMs >= 0.9 * budget && gpuLoad >= 85);
+            bool cpuBound = !double.IsNaN(budget) && cpuMs >= 0.85 * budget;
+            // Jeu plafonné par moments : les minutes restantes mêlent souvent jeu libre et passages bloqués ; les
+            // baisses s'expliquent par le plafond, on n'en cherche pas d'autre cause.
+            bool belowTarget = r.CappedMinutes == 0 && r.TargetHeld < 95;
+            foreach (CapRun cap in r.Caps)
+            {
+                string minutes = (cap.Minutes.Count > 1 ? L("minutes ", "minutes ") : L("minute ", "minute ")) + SessionReport.MinuteList(cap.Minutes, english);
+                if (cap.Divisor)
+                    Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
+                        L("Cadence bloquée à {0} images par seconde, une fraction exacte de la cible de {1}, pendant {2} des {3} minutes ({4}) : soit le casque a bloqué le jeu à cette cadence parce qu'il ne suivait plus (reprojection), soit le jeu se limite lui-même.",
+                          "Frame rate locked at {0} frames per second, an exact fraction of the {1} target, for {2} of the {3} minutes ({4}): either the headset locked the game to that rate because it could not keep up (reprojection), or the game limits itself."),
+                        cap.Fps, F(r.Target, "0"), cap.Minutes.Count, r.MeasuredMinutes, minutes));
+                else
+                    Add(findings, r.MostlyCapped ? FindingLevel.Warning : FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
+                        L("Cadence plafonnée à {0} images par seconde pendant {1} des {2} minutes ({3}) : c'est une limite du jeu (limite d'images, V-Sync, cinématique ou menu), pas un manque de puissance. {4}",
+                          "Frame rate capped at {0} frames per second for {1} of the {2} minutes ({3}): it is a limit of the game (frame cap, V-Sync, cutscene or menu), not a lack of power. {4}"),
+                        cap.Fps, cap.Minutes.Count, r.MeasuredMinutes, minutes,
+                        r.MostlyCapped
+                            ? string.Format(CultureInfo.InvariantCulture, L("La cible de {0} est hors d'atteinte quels que soient les réglages, et ce rapport ne peut pas dire si le PC a de la marge.",
+                                "The {0} target is out of reach whatever the settings, and this report cannot tell whether the PC has headroom."), F(r.Target, "0"))
+                            : L("Ces minutes sont mises de côté pour juger ce qui limite.", "These minutes are set aside to judge what is limiting.")));
+            }
             if (gpuBound && !cpuBound)
                 Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
                     L("La carte graphique semble être la limite : charge moyenne {0} %, temps GPU {1} {2} ms pour un budget de {3} ms par image.",
                       "The graphics card seems to be the bottleneck: average load {0} %, {1} GPU time {2} ms for a budget of {3} ms per frame."),
-                    F(r.GpuLoadAvg, "0"), gpuKind, F(gpuMs, "0.0"), F(budget, "0.0")));
+                    F(gpuLoad, "0"), gpuKind, F(gpuMs, "0.0"), F(budget, "0.0")));
             else if (cpuBound && !gpuBound)
                 Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
                     L("Le processeur, ou le jeu lui-même, semble être la limite : temps CPU moyen {0} ms pour un budget de {1} ms, carte graphique chargée à {2} %.",
                       "The processor, or the game itself, seems to be the bottleneck: average CPU time {0} ms for a budget of {1} ms, graphics card at {2} % load."),
-                    F(r.CpuMsAvg, "0.0"), F(budget, "0.0"), F(r.GpuLoadAvg, "0")));
+                    F(cpuMs, "0.0"), F(budget, "0.0"), F(gpuLoad, "0")));
             else if (cpuBound && gpuBound)
                 Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
                     L("Processeur et carte graphique sont tous deux proches de la limite (CPU {0} ms, GPU {1} {2} ms, budget {3} ms).",
                       "Processor and graphics card are both close to the limit (CPU {0} ms, {1} GPU {2} ms, budget {3} ms)."),
-                    F(r.CpuMsAvg, "0.0"), gpuKind, F(gpuMs, "0.0"), F(budget, "0.0")));
-            else if (r.TargetHeld < 95 && r.GpuLoadMax >= 90)
+                    F(cpuMs, "0.0"), gpuKind, F(gpuMs, "0.0"), F(budget, "0.0")));
+            else if (r.MostlyCapped)
+            {
+                // Plafond du jeu : rien d'autre à dire de ce qui limite (déjà expliqué plus haut).
+            }
+            else if (belowTarget && r.GpuLoadMax >= 90)
                 Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
                     L("La carte graphique n'est pas saturée en moyenne ({0} %), mais elle l'a été par moments (jusqu'à {1} %) : c'est probablement là que la cadence a baissé.",
                       "The graphics card is not saturated on average ({0} %), but it was at times (up to {1} %): that is probably when the frame rate dropped."),
-                    F(r.GpuLoadAvg, "0"), F(r.GpuLoadMax, "0")));
-            else if (r.TargetHeld < 95)
+                    F(gpuLoad, "0"), F(r.GpuLoadMax, "0")));
+            else if (belowTarget)
                 Add(findings, FindingLevel.Info,
                     L("Ni le processeur ni la carte graphique ne sont saturés en moyenne : les baisses viennent plutôt d'à-coups ponctuels (chargements, streaming, scripts du jeu) que d'un manque de puissance.",
                       "Neither the processor nor the graphics card is saturated on average: the drops come from occasional hitches (loading, streaming, game scripts) rather than a lack of power."));
@@ -624,7 +758,8 @@ namespace XRPerfSensors
                     F(r.VramMax, "0.0"), F(r.VramTotal, "0.0")));
 
             // 5. Évolution au fil de la session (relevé minute par minute).
-            List<MinuteRow> rows = r.Minutes.Where(m => !double.IsNaN(m.FpsAvg)).ToList();
+            // Les minutes plafonnées par le jeu (menu, cinématique) ne sont pas une baisse de performances.
+            List<MinuteRow> rows = r.Minutes.Where(m => !double.IsNaN(m.FpsAvg) && !r.IsGameCapped(m.Minute)).ToList();
             if (rows.Count >= 9)
             {
                 int third = rows.Count / 3;
@@ -654,7 +789,7 @@ namespace XRPerfSensors
 
             // Résolution : le jeu rend-il ce que le runtime lui recommande ?
             double scale = RenderScale(r);
-            bool struggling = !double.IsNaN(r.TargetHeld) && r.TargetHeld < 95;
+            bool struggling = belowTarget;
             if (!double.IsNaN(scale) && (scale >= 1.05 || scale <= 0.95))
             {
                 double pixels = 100.0 * (scale * scale - 1.0);
@@ -695,7 +830,7 @@ namespace XRPerfSensors
                 Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
                     L("Avec {0} ms par image en moyenne, le processeur peut suivre environ {1} images par seconde, pour {2} visées.",
                       "At {0} ms per frame on average, the processor can keep up with about {1} frames per second, for {2} targeted."),
-                    F(r.CpuMsAvg, "0.0"), F(Math.Floor(CpuSustainableFps(r)), "0"), F(r.Target, "0")));
+                    F(r.JudgedCpuMs, "0.0"), F(Math.Floor(CpuSustainableFps(r)), "0"), F(r.Target, "0")));
 
             // Résolution changée par le jeu en cours de session (résolution dynamique, densité adaptative).
             if (r.RenderMin.Length > 0 && r.RenderMax.Length > 0 && r.RenderMin != r.RenderMax)
@@ -710,7 +845,11 @@ namespace XRPerfSensors
                 double delta = r.FpsAvg - previous.FpsAvg;
                 double lowDelta = r.Low1 - previous.Low1;
                 string when = previous.Start.HasValue ? previous.Start.Value.ToString("dd/MM HH:mm", CultureInfo.InvariantCulture) : L("précédente", "before");
-                FindingLevel level = delta <= -0.05 * previous.FpsAvg ? FindingLevel.Warning : delta >= 0.05 * previous.FpsAvg ? FindingLevel.Good : FindingLevel.Info;
+                // Jeu plafonné dans l'une des deux sessions : moyenne et cible tenue suivent surtout la part de temps
+                // passée au plafond (combats, cinématiques) ou libre (menus), pas les performances.
+                bool capsEither = r.CappedMinutes > 0 || previous.CappedMinutes > 0;
+                FindingLevel level = capsEither ? FindingLevel.Info
+                    : delta <= -0.05 * previous.FpsAvg ? FindingLevel.Warning : delta >= 0.05 * previous.FpsAvg ? FindingLevel.Good : FindingLevel.Info;
                 string hardware = HardwareDifference(r, previous, english);
                 string setup = SetupDifference(r, previous, english);
                 Add(findings, level, string.Format(CultureInfo.InvariantCulture,
@@ -718,6 +857,9 @@ namespace XRPerfSensors
                     when, F(r.FpsAvg, "0.0"), delta >= 0 ? "+" : "", F(delta, "0.0"), F(r.Low1, "0.0"), lowDelta >= 0 ? "+" : "", F(lowDelta, "0.0"),
                     setup.Length > 0 ? L(". Réglages différents : ", ". Different settings: ") + setup : "",
                     hardware.Length > 0 ? L(". Matériel différent : ", ". Different hardware: ") + hardware : ""));
+                if (capsEither)
+                    Add(findings, FindingLevel.Info, L("Le jeu se plafonne par moments : l'écart entre les deux sessions vient surtout du temps passé dans les passages plafonnés et dans les passages libres (menus), pas d'une différence de performances. Pour comparer, enregistrez le même type de passage au raccourci.",
+                        "The game caps itself at times: the gap between the two sessions mostly comes from the time spent in capped stretches and free ones (menus), not from a performance difference. To compare, record the same kind of stretch with the hotkey."));
             }
 
             if (r.SensorsMissing)
@@ -903,14 +1045,30 @@ namespace XRPerfSensors
 
             // 3. Ce qui a limité.
             var limit = new NoviceSection { Kind = "limit", Title = L("Qu'est-ce qui a limité ?", "What held it back?") };
-            double gpuMs = r.GpuMsAvg;
-            bool gpuKnown = !double.IsNaN(r.GpuLoadAvg);
-            bool gpuBound = r.GpuLoadAvg >= 90 || (!double.IsNaN(budget) && gpuMs >= 0.9 * budget && r.GpuLoadAvg >= 85);
-            bool cpuBound = !double.IsNaN(budget) && r.CpuMsAvg >= 0.85 * budget;
+            // Jeu plafonné par moments : on juge sur les minutes libres (voir SessionReport.DetectCaps).
+            double gpuMs = r.JudgedGpuMs, gpuLoad = r.JudgedGpuLoad, cpuMs = r.JudgedCpuMs;
+            bool gpuKnown = !double.IsNaN(r.MostlyCapped ? r.GpuLoadAvg : gpuLoad);
+            bool gpuBound = gpuLoad >= 90 || (!double.IsNaN(budget) && gpuMs >= 0.9 * budget && gpuLoad >= 85);
+            bool cpuBound = !double.IsNaN(budget) && cpuMs >= 0.85 * budget;
+            CapRun mainCap = r.MainCap;
             string gpuName = r.Gpu.Length > 0 ? L("La carte graphique (", "The graphics card (") + r.Gpu + ")" : L("La carte graphique", "The graphics card");
             string cpuName = r.Cpu.Length > 0 ? L("Le processeur (", "The processor (") + r.Cpu + ")" : L("Le processeur", "The processor");
-            bool struggling = !double.IsNaN(held) && held < 95;
-            if (!gpuKnown)
+            bool struggling = r.CappedMinutes == 0 && !double.IsNaN(held) && held < 95;
+            string outside = r.CappedMinutes > 0 ? L("En dehors de ces minutes : ", "Outside those minutes: ") : "";
+            // Phrase précédée de « En dehors de ces minutes : », ou seule (majuscule).
+            Func<string, string> Outside = text => outside.Length > 0 ? outside + text : char.ToUpperInvariant(text[0]) + text.Substring(1);
+            if (mainCap != null)
+                limit.Lines.Add(string.Format(culture, r.MostlyCapped
+                    ? L("Le jeu lui-même : il se limite à {0} images par seconde ({1} des {2} minutes), alors que le casque en attend {3}. Ni la carte graphique ni le processeur n'y sont pour rien, et aucun réglage du PC ne fera mieux.",
+                        "The game itself: it limits itself to {0} frames per second ({1} of the {2} minutes), while the headset expects {3}. Neither the graphics card nor the processor is to blame, and no PC setting will do better.")
+                    : L("Pendant {1} des {2} minutes, le jeu était bloqué à {0} images par seconde : c'est lui qui se limite (limite d'images, cinématique ou menu). Ces minutes sont mises de côté pour la suite.",
+                        "For {1} of the {2} minutes, the game was locked at {0} frames per second: it limits itself (frame cap, cutscene or menu). Those minutes are set aside for what follows."),
+                    mainCap.Fps, mainCap.Minutes.Count, r.MeasuredMinutes, N(r.Target, "0")));
+            if (r.MostlyCapped)
+            {
+                view.Limiter = "cap";
+            }
+            else if (!gpuKnown)
             {
                 view.Limiter = cpuBound ? "cpu" : "unknown";
                 limit.Lines.Add(r.SensorsTooFew
@@ -921,20 +1079,20 @@ namespace XRPerfSensors
                 if (cpuBound)
                     limit.Lines.Add(string.Format(culture, L("{0}, ou la façon dont le jeu l'utilise, semble avoir fixé la limite : il mettait {1} ms à préparer chaque image, pour {2} ms disponibles.",
                         "{0}, or the way the game uses it, seems to have set the limit: it took {1} ms to prepare each frame, with {2} ms available."),
-                        cpuName, N(r.CpuMsAvg, "0.0"), N(budget, "0.0")));
+                        cpuName, N(cpuMs, "0.0"), N(budget, "0.0")));
             }
             else if (gpuBound && cpuBound)
             {
                 view.Limiter = "both";
                 limit.Lines.Add(string.Format(culture, L("Le processeur et la carte graphique étaient tous les deux près de leur maximum (carte graphique occupée {0} % du temps).",
                     "The processor and the graphics card were both near their maximum (graphics card busy {0} % of the time)."),
-                    N(r.GpuLoadAvg, "0")));
+                    N(gpuLoad, "0")));
             }
             else if (gpuBound)
             {
                 view.Limiter = "gpu";
                 limit.Lines.Add(string.Format(culture, L("{0} travaillait presque sans arrêt ({1} % du temps) : c'est elle qui fixait la limite.",
-                    "{0} was working almost non-stop ({1} % of the time): it was setting the limit."), gpuName, N(r.GpuLoadAvg, "0")));
+                    "{0} was working almost non-stop ({1} % of the time): it was setting the limit."), gpuName, N(gpuLoad, "0")));
             }
             else if (cpuBound)
             {
@@ -944,16 +1102,16 @@ namespace XRPerfSensors
                       "La carte graphique, elle, n'était occupée que {3} % du temps.",
                       "{0}, or the way the game uses it, was setting the limit: it took {1} ms to prepare each frame, with {2} ms available. " +
                       "The graphics card was only busy {3} % of the time."),
-                    cpuName, N(r.CpuMsAvg, "0.0"), N(budget, "0.0"), N(r.GpuLoadAvg, "0")));
+                    cpuName, N(cpuMs, "0.0"), N(budget, "0.0"), N(gpuLoad, "0")));
             }
-            else if (struggling && r.GpuLoadAvg >= 80)
+            else if (struggling && gpuLoad >= 80)
             {
                 view.Limiter = "busy";
                 limit.Lines.Add(string.Format(culture,
                     L("La carte graphique était très occupée ({0} % du temps), sans être tout à fait au maximum, et le processeur avait de la marge. " +
                       "Les baisses viennent sans doute des moments les plus chargés, où la carte montait jusqu'à {1} %.",
                       "The graphics card was very busy ({0} % of the time), without quite reaching its maximum, and the processor had headroom. " +
-                      "The drops probably come from the busiest moments, when the card went up to {1} %."), N(r.GpuLoadAvg, "0"), N(r.GpuLoadMax, "0")));
+                      "The drops probably come from the busiest moments, when the card went up to {1} %."), N(gpuLoad, "0"), N(r.GpuLoadMax, "0")));
             }
             else if (struggling)
             {
@@ -962,22 +1120,22 @@ namespace XRPerfSensors
                     L("Ni la carte graphique (occupée {0} % du temps) ni le processeur n'étaient au maximum en moyenne. Les baisses viennent plutôt de moments " +
                       "précis (chargement d'une zone, scène très chargée, sauvegarde) que d'un manque de puissance.",
                       "Neither the graphics card (busy {0} % of the time) nor the processor was at its maximum on average. The drops come from specific " +
-                      "moments (loading an area, a very busy scene, saving) rather than a lack of power."), N(r.GpuLoadAvg, "0")));
+                      "moments (loading an area, a very busy scene, saving) rather than a lack of power."), N(gpuLoad, "0")));
                 if (r.GpuLoadMax >= 90)
                     limit.Lines.Add(string.Format(culture, L("La carte graphique a quand même atteint {0} % par moments : c'est sans doute là que ça a ralenti.",
                         "The graphics card still reached {0} % at times: that is probably when it slowed down."), N(r.GpuLoadMax, "0")));
             }
-            else if (r.GpuLoadAvg < 70)
+            else if (gpuLoad < 70)
             {
                 view.Limiter = "none";
-                limit.Lines.Add(string.Format(culture, L("Rien : votre PC avait de la marge. La carte graphique n'était occupée que {0} % du temps.",
-                    "Nothing: your PC had headroom. The graphics card was only busy {0} % of the time."), N(r.GpuLoadAvg, "0")));
+                limit.Lines.Add(Outside(string.Format(culture, L("rien ne limitait, votre PC avait de la marge. La carte graphique n'était occupée que {0} % du temps.",
+                    "nothing was limiting, your PC had headroom. The graphics card was only busy {0} % of the time."), N(gpuLoad, "0"))));
             }
             else
             {
                 view.Limiter = "none";
-                limit.Lines.Add(string.Format(culture, L("Rien de bloquant : la carte graphique était bien occupée ({0} % du temps), mais suffisait.",
-                    "Nothing blocking: the graphics card was well used ({0} % of the time), but it was enough."), N(r.GpuLoadAvg, "0")));
+                limit.Lines.Add(Outside(string.Format(culture, L("rien de bloquant, la carte graphique était bien occupée ({0} % du temps), mais suffisait.",
+                    "nothing blocking, the graphics card was well used ({0} % of the time), but it was enough."), N(gpuLoad, "0"))));
             }
             if (r.GpuMeasureImplausible || r.GpuMeasureRejected)
                 limit.Lines.Add(L("La mesure exacte du temps de la carte graphique ne fonctionne pas avec ce jeu ; ces explications reposent sur sa charge.",
@@ -1038,6 +1196,9 @@ namespace XRPerfSensors
                 if (!double.IsNaN(r.TargetHeld) && !double.IsNaN(previous.TargetHeld))
                     compare.Lines.Add(string.Format(culture, L("Rythme visé tenu {0} % du temps, contre {1} %.", "Target pace held {0} % of the time, against {1} %."),
                         N(r.TargetHeld, "0"), N(previous.TargetHeld, "0")));
+                if (r.CappedMinutes > 0 || previous.CappedMinutes > 0)
+                    compare.Lines.Add(L("Attention, le jeu se bloque lui-même par moments : ces chiffres dépendent surtout du temps passé dans les passages bloqués (combats, cinématiques) et dans les passages libres (menus), pas des performances de votre PC.",
+                        "Note that the game locks itself at times: these figures mostly depend on the time spent in locked stretches (fights, cutscenes) and free ones (menus), not on your PC's performance."));
                 string renderNow = ReportAnalysis.AdviceBase(r), renderBefore = ReportAnalysis.AdviceBase(previous);
                 long pixelsNow = ReportAnalysis.Pixels(renderNow), pixelsBefore = ReportAnalysis.Pixels(renderBefore);
                 if (pixelsNow > 0 && pixelsBefore > 0 && renderNow != renderBefore)
@@ -1108,20 +1269,34 @@ namespace XRPerfSensors
                     view.Tips.Add(string.Format(culture,
                         L("Le processeur prépare une image en {0} ms en moyenne : il peut suivre environ {1} images par seconde, pour {2} visées.{3}",
                           "The processor prepares a frame in {0} ms on average: it can keep up with about {1} frames per second, for {2} targeted.{3}"),
-                        N(r.CpuMsAvg, "0.0"), N(Math.Floor(cpuFps), "0"), N(r.Target, "0"), more));
+                        N(cpuMs, "0.0"), N(Math.Floor(cpuFps), "0"), N(r.Target, "0"), more));
                 }
                 view.Tips.Add(L("Réduisez ce qui occupe le processeur dans le jeu : foule, circulation, distance d'affichage, ombres des objets en mouvement.",
                     "Reduce what keeps the processor busy in the game: crowds, traffic, draw distance, shadows of moving objects."));
                 view.Tips.Add(L("Fermez les programmes inutiles pendant la partie (navigateur, enregistrement vidéo, lanceurs de jeux).",
                     "Close unneeded programs while playing (browser, video recording, game launchers)."));
             }
+            if (mainCap != null && r.MostlyCapped)
+                view.Tips.Add(string.Format(culture,
+                    L("Le jeu se limite à {0} images par seconde : baisser ou monter les réglages ne changera pas la fluidité. Si votre casque propose une fréquence de {0} Hz, choisissez-la : chaque image du jeu tombera sur un rafraîchissement, sans compensation. Sinon, prenez la fréquence la plus basse disponible. Vérifiez aussi les options du jeu (limite d'images, V-Sync).",
+                      "The game limits itself to {0} frames per second: lowering or raising settings will not change smoothness. If your headset offers a {0} Hz refresh rate, choose it: each game frame will land on a refresh, without compensation. Otherwise, pick the lowest rate available. Also check the game's options (frame cap, V-Sync)."),
+                    mainCap.Fps));
+            else if (mainCap != null)
+            {
+                view.Tips.Add(string.Format(culture,
+                    L("Les passages bloqués à {0} images par seconde viennent du jeu (limite d'images, cinématique ou menu) : vérifiez ses options (limite d'images, V-Sync). Les réglages graphiques n'y changeront rien.",
+                      "The stretches locked at {0} frames per second come from the game (frame cap, cutscene or menu): check its options (frame cap, V-Sync). Graphics settings will not change them."),
+                    mainCap.Fps));
+                view.Tips.Add(L("Pour un rapport sur un seul type de passage (par exemple les combats seulement), utilisez l'enregistrement manuel : page Mesures, réglez « Écrire un rapport » sur « Au raccourci », puis appuyez sur Ctrl+Alt+S au début et à la fin du passage. Le rapport sera bien plus clair, et deux rapports de ce type se comparent vraiment.",
+                    "For a report on a single kind of stretch (for example fights only), use manual recording: Measurements page, set « Write a report » to « On hotkey », then press Ctrl+Alt+S at the start and end of the stretch. The report will be much clearer, and two such reports truly compare."));
+            }
             if ((gpuBound || cpuBound) && struggling)
                 view.Tips.Add(L("Choisissez une fréquence plus basse pour le casque (par exemple 72 Hz au lieu de 90) : chaque image a alors plus de temps pour être prête.",
                     "Choose a lower refresh rate for the headset (for example 72 Hz instead of 90): each frame then has more time to be ready."));
-            if (!gpuBound && !cpuBound && struggling && r.GpuLoadAvg >= 80)
+            if (!gpuBound && !cpuBound && struggling && gpuLoad >= 80)
                 view.Tips.Add(L("La carte graphique est souvent près de son maximum : baisser un peu la résolution de rendu lui laisserait de la marge pour les moments chargés.",
                     "The graphics card is often near its maximum: lowering the render resolution a little would leave it headroom for busy moments."));
-            if (!gpuBound && !cpuBound && struggling && gpuKnown && r.GpuLoadAvg < 80)
+            if (!gpuBound && !cpuBound && struggling && gpuKnown && gpuLoad < 80)
             {
                 view.Tips.Add(L("Ces à-coups viennent souvent du jeu lui-même (chargements, effets préparés au premier passage) : ils diminuent souvent en rejouant le même passage.",
                     "These hitches often come from the game itself (loading, effects prepared the first time through): they often decrease when replaying the same part."));
@@ -1140,7 +1315,7 @@ namespace XRPerfSensors
                       "Nothing to change, and you have headroom: you could raise the render resolution up to about {0} % of the current one in width and height{1}, or the graphics quality, then check with a new report."),
                     N(100.0 * advice.Scale, "0"), adviceSize));
             if (view.Tips.Count == 0)
-                view.Tips.Add(!double.IsNaN(r.GpuLoadAvg) && r.GpuLoadAvg < 70 && !struggling
+                view.Tips.Add(!double.IsNaN(gpuLoad) && gpuLoad < 70 && !struggling
                     ? L("Rien à changer. Vous avez même de la marge : vous pouvez essayer d'augmenter un peu la qualité ou la résolution, puis vérifier avec un nouveau rapport.",
                         "Nothing to change. You even have headroom: you can try raising the quality or resolution a little, then check with a new report.")
                     : L("Rien à changer : tout s'est bien passé.", "Nothing to change: everything went well."));
