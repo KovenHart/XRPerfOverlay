@@ -4,6 +4,13 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.7.0 (2026-10-21)
+
+- **Page Configuration** dans XRPerfSensors : un diagnostic du PC pour la VR. Elle relève le runtime OpenXR actif et les autres installés, les layers OpenXR inscrites (dans leur ordre de chargement, avec leur état), le runtime des jeux SteamVR, les logiciels VR installés, le processeur, la mémoire, les cartes graphiques et leurs pilotes, et les réglages de Windows qui comptent (planification GPU, mode Jeu, mode d'alimentation). Elle signale ce qui mérite un coup d'œil : runtime absent ou changé depuis la dernière session, layer orpheline ou sans DLL, XR Perf Overlay inscrit deux fois, OpenXR Toolkit encore actif, deux générations d'images en même temps, mode Économie d'énergie, portable à deux cartes graphiques... Une layer qui pose problème se **désactive d'un clic**, avec confirmation, sans être désinstallée, et se réactive de la même façon. Rien d'autre n'est modifié. Bouton « Copier le diagnostic » pour demander de l'aide (sans nom de compte Windows : les chemins du dossier utilisateur sont écrits `%USERPROFILE%`).
+- **Conseils chiffrés dans les rapports** : quand la carte graphique limite, le rapport donne la résolution de rendu à viser pour tenir le rythme (par exemple « environ 85 % de l'actuelle, soit 3264 x 3019 par œil »), calculée d'après le temps GPU et le budget d'une image ; quand elle a de la marge, jusqu'où monter. Quand le processeur limite, le nombre d'images par seconde qu'il peut suivre, et si une génération d'images le mettrait à sa portée. Ce sont des estimations, à vérifier avec un nouveau rapport. Dans un jeu SteamVR, le calcul part de la résolution que SteamVR recommande (celle du jeu n'est pas visible de l'extérieur).
+- **Nom du casque** modifiable dans XRPerfSensors (page Apparence) : utile sous SteamVR, où le pilote du casque peut annoncer un autre modèle (un Dream Air vu comme « Pimax Crystal »). Il vaut au prochain lancement d'un jeu.
+- Rapports des jeux SteamVR : l'en-tête montre la résolution recommandée par SteamVR au lieu de l'API graphique « non relevée », et la comparaison de deux sessions signale quand elle a changé.
+
 ## 1.6.0 (2026-10-19)
 
 - **Désactiver la layer OpenXR** sans la désinstaller : interrupteur « Jeux OpenXR (layer) » dans XRPerfSensors (page Panneau, tableau de bord) et case « Layer OpenXR activée » dans le menu de l'icône. Désactivée, la layer n'est plus chargée du tout dans les jeux OpenXR ; un bandeau le rappelle sur le tableau de bord. Une mise à jour la laisse désactivée.

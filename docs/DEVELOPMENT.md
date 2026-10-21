@@ -81,6 +81,7 @@ What was checked before delivery, and what wasn't:
 - Report reading and analysis (`sensors/SessionReport.cs`) and their formatting for the interface (`sensors/ReportJson.cs`) are run as is on French and English reports produced by the C++ code.
 - The C# program is compiled with the Roslyn compiler against Windows Forms, LibreHardwareMonitorLib 0.9.6 and the WebView2 SDK. The settings block written by C# is read back by C++, and the off-game preview is called from the C# code on the compiled library.
 - The interface (`sensors/ui/`) runs in Chromium, WebView2's engine, with a simulated program (`sensors/ui/dev/mock.js`) feeding it real data: panels and watches drawn by the layer, reports analyzed by the real C# code. Every page was viewed in French and English, in dark and light themes, at large and small sizes. The 1.5 WebView2 window (`MainWindow.cs`) was used on a real Windows 11 PC.
+- Configuration page: the survey (`ConfigProbe.cs`) only reads the registry and the OpenXR .json files; findings are drawn in the interface (`sensors/ui/config.js`), tested by `tests/config_check.js` (about forty configurations, in French and English) and run by the automatic build. The page was viewed in Chromium with the simulated program (healthy and problematic configurations, French and English, large and small sizes). Tried on a real Windows 11 PC (Pimax Dream Air): runtime, layers and hardware recognized, layers turned off and back on. Report advice with numbers (1.7): a resolution increase advised at 130 % was applied and checked with a second session (target still held).
 - Manual report mode (1.6): the decision logic (mode, hotkey, mode change in game, indicator) is tested in `tests/preview.cpp`; both test benches (layer and XRPerfVR) start and stop recordings with the hotkey (report kept, too short, ended at session end, mode changed live). The indicator is drawn in the three layouts. Not yet tried in game.
 - Turning the layer on and off (1.6, `LayerRegistry.cs`): compiled and reviewed, not yet tried on Windows (registry write, update keeping the layer off).
 - The package and installation scripts are run with stand-ins for `dotnet`, the registry, scheduled tasks and elevation, in French and English.
@@ -108,14 +109,16 @@ sensors/OverlaySettings.cs    headset settings: .ini reading / writing, sending 
 sensors/SettingsJson.cs       settings exchanged with the interface (JSON) and their bounds
 sensors/ReportStore.cs        reports: folder reading, previous session, opening, deleting
 sensors/ReportJson.cs         reports formatted for the interface (analyses in the chosen language)
+sensors/ConfigProbe.cs        configuration survey (registry, OpenXR .json files) for the Configuration page, no analysis
 sensors/SessionReport.cs      reading (French or English) and analysis of reports, "simple" reading in sentences
 sensors/LayerRegistry.cs      turning the layer on or off in the OpenXR registry (elevated relaunch "--layer on|off")
 sensors/Loc.cs                program text language (Windows', French or English)
 sensors/PanelWindow.cs        desktop mirror of the panel (OBS, off-game preview) and PC-specific settings
 sensors/WindowCapture.cs      window choice, shared memory, capture control
 sensors/VrCompanion.cs        starting, restarting and stopping XRPerfVR
-sensors/ui/                   interface: index.html, app.css, app.js (pages), charts.js (graphs), i18n.js (FR / EN texts), fonts
+sensors/ui/                   interface: index.html, app.css, app.js (pages), charts.js (graphs), config.js (Configuration page findings), i18n.js (FR / EN texts), fonts
 sensors/ui/dev/               simulated program to develop the interface in a browser (not shipped)
+tests/config_check.js         Configuration page findings tests (node tests/config_check.js)
 tests/preview.cpp             statistics, panel, report and language tests (cmake -DXRPO_BUILD_TESTS=ON)
 scripts/setup.ps1             copy to the installation folder, registration, restarting the sensors
 scripts/package.ps1           package assembly (self-contained XRPerfSensors, archive, checksum)

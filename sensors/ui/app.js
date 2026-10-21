@@ -41,6 +41,8 @@ window.App = (function () {
     compareNote: { setup: "", hardware: "" },
     readMode: "simple",
     reportView: "analysis",
+    config: undefined,     // relevé de configuration : undefined = pas encore demandé, null = échec
+    configLoading: false,
   };
 
   // --- Outils ----------------------------------------------------------------------------------
@@ -105,6 +107,8 @@ window.App = (function () {
     problem: '<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>',
     tip: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1.1 1.3 1.1 2.2h5c0-.9.5-1.7 1.1-2.2A6 6 0 0 0 12 3z"/>',
     compare: '<path d="M8 4v16M16 4v16M4 8h4M16 16h4M4 14h4M16 10h4"/>',
+    config: '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx=".8"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/>',
+    copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/>',
   };
 
   function icon(name) {
@@ -222,6 +226,12 @@ window.App = (function () {
         if (!msg.layer || JSON.stringify(msg.layer) === JSON.stringify(state.layer)) break;
         state.layer = msg.layer;
         if ((state.page === "dashboard" || state.page === "panel") && !isDragging()) renderPage();
+        if (state.page === "config") requestConfig();
+        break;
+      case "config":
+        state.config = msg.config || null;
+        state.configLoading = false;
+        if (state.page === "config") renderPage();
         break;
       case "go":
         go(msg.page);
@@ -334,6 +344,7 @@ window.App = (function () {
     { id: "desktop", icon: "mirror" },
     { id: "measures", icon: "measures" },
     { id: "reports", icon: "reports" },
+    { id: "config", icon: "config" },
     { id: "interface", icon: "interface" },
   ];
 
@@ -348,6 +359,7 @@ window.App = (function () {
     main.scrollTop = 0;
     if (page === "reports") send("listReports");
     if (page === "window") send("listWindows");
+    if (page === "config") requestConfig();
   }
 
   function renderAll() {
@@ -428,7 +440,8 @@ window.App = (function () {
     page.className = "page";
     const builder = {
       dashboard: renderDashboard, panel: renderPanelPage, appearance: renderAppearancePage, watch: renderWatchPage,
-      window: renderWindowPage, desktop: renderDesktopPage, measures: renderMeasuresPage, reports: renderReportsPage, interface: renderInterfacePage,
+      window: renderWindowPage, desktop: renderDesktopPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage,
+      interface: renderInterfacePage,
     }[state.page];
     page.replaceChildren();
     if (builder) builder(page);
@@ -771,6 +784,34 @@ window.App = (function () {
     return box;
   }
 
+  // Nom du casque affiché (panneau, rapports) à la place de celui que le runtime annonce. Enregistré quand
+  // on quitte le champ ou appuie sur Entrée ; vaut au prochain lancement d'un jeu.
+  function headsetNameRow() {
+    const input = h("input", { class: "text-input", type: "text", maxlength: "40", spellcheck: "false", autocomplete: "off",
+      placeholder: t("app.headsetName.auto"), "aria-label": t("app.headsetName") });
+    input.value = get("overlay", "HeadsetName") || "";
+    input.disabled = locked("overlay");
+    const help = t("app.headsetName.help");
+    const r = row(t("app.headsetName"), help, input);
+    const helpEl = r.querySelector(".row-help");
+    const clean = v => v.replace(/[^\x20-\x7E]/g, "").replace(/[;\[\]]/g, "").trim().slice(0, 40);
+    const commit = () => {
+      const v = clean(input.value);
+      input.value = v;
+      helpEl.textContent = help;
+      if (v === (get("overlay", "HeadsetName") || "")) return;
+      setValue("overlay", "HeadsetName", v);
+      toast(t("app.headsetName.saved"));
+    };
+    input.addEventListener("input", () => {
+      const bad = /[^\x20-\x7E]|[;\[\]]/.test(input.value);
+      helpEl.textContent = bad ? t("app.headsetName.ascii") : help;
+    });
+    input.addEventListener("change", commit);
+    input.addEventListener("keydown", e => { if (e.key === "Enter") input.blur(); });
+    return r;
+  }
+
   function renderAppearancePage(page) {
     refreshers = [];
     const o = state.overlay;
@@ -792,6 +833,7 @@ window.App = (function () {
       group(t("app.elements"), null, [
         switchCtl("overlay", "Clock", t("app.clock")),
         switchCtl("overlay", "HeadsetInfo", t("app.headset")),
+        headsetNameRow(),
         switchCtl("overlay", "PanelSession", t("app.session")),
         switchCtl("overlay", "PanelBattery", t("app.battery"), t("app.battery.help")),
       ]),
@@ -970,6 +1012,68 @@ window.App = (function () {
       ]),
     ];
     settingsLayout(page, form, null);
+  }
+
+  // --- Configuration --------------------------------------------------------------------------------
+
+  // Relevé fait par le programme (ConfigProbe.cs) ; constats et mise en forme dans config.js.
+  function requestConfig() {
+    state.configLoading = true;
+    send("diagnose");
+    if (state.page === "config") renderPage();
+  }
+
+  const FINDING_ICON = { Good: "good", Problem: "problem", Warning: "alert", Info: "info" };
+  const LAYER_PILL = { on: "pill good", off: "pill", missing: "pill warn", unreadable: "pill warn", nolib: "pill bad" };
+
+  // Bouton « Désactiver » / « Réactiver » d'une layer : le programme demande confirmation avant de désactiver.
+  function layerButton(action, named) {
+    const text = action.on ? t("cfg.layer.enable") : named ? t("cfg.layer.disableNamed", { name: action.label }) : t("cfg.layer.disable");
+    return h("button", { class: "btn small" + (action.on ? "" : " danger"), type: "button",
+      onclick: () => send("setXrLayer", { id: action.id, manifest: action.manifest, on: action.on, label: action.label }) }, text);
+  }
+
+  function renderConfigPage(page) {
+    refreshers = [];
+    const cfg = state.config;
+    const refresh = h("button", { class: "btn", type: "button", disabled: state.configLoading, onclick: requestConfig }, icon("refresh"), t("cfg.refresh"));
+    if (cfg === undefined) {
+      settingsLayout(page, [group(t("cfg.findings"), null, [h("p", { class: "cfg-wait", text: t("cfg.loading") })])], null);
+      return;
+    }
+    const findings = ConfigCheck.analyze(cfg, t);
+    const problems = findings.filter(f => f.level === "Problem").length, warnings = findings.filter(f => f.level === "Warning").length;
+    const count = (key, n) => t(key + (n === 1 ? ".one" : ".other"), { n });
+    const verdict = problems ? h("span", { class: "pill bad" }, h("i", { class: "dot" }), count("cfg.count.problem", problems) + (warnings ? " · " + count("cfg.count.warning", warnings) : ""))
+      : warnings ? h("span", { class: "pill warn" }, h("i", { class: "dot" }), count("cfg.count.warning", warnings))
+      : h("span", { class: "pill good" }, h("i", { class: "dot" }), t("cfg.count.ok"));
+    const when = cfg && cfg.collectedAt ? formatDate(cfg.collectedAt) : "";
+    const copy = h("button", { class: "btn primary", type: "button", title: t("cfg.copy.help"), disabled: !cfg,
+      onclick: () => send("copyText", { text: ConfigCheck.text(cfg, t, state.version) }) }, icon("copy"), t("cfg.copy"));
+
+    const form = [group(t("cfg.findings"), null, [
+      h("div", { class: "cfg-bar" }, verdict, h("span", { class: "muted small", text: state.configLoading ? t("cfg.loading") : when ? t("cfg.collected", { time: when }) : "" }),
+        h("span", { class: "cfg-gap" }), refresh, copy),
+      h("ul", { class: "findings cfg-findings" }, findings.map(f => h("li", { class: f.level }, icon(FINDING_ICON[f.level] || "info"),
+        h("div", { class: "cfg-finding" }, h("span", { text: f.text }), f.action ? layerButton(f.action, true) : null)))),
+      h("p", { class: "note", text: t("cfg.readOnly") }),
+    ])];
+
+    if (cfg) {
+      for (const s of ConfigCheck.sections(cfg, t, num)) {
+        const rows = s.rows.map(r => {
+          const control = r.status
+            ? h("div", { class: "cfg-tags" }, (r.tags || []).map(tag => h("span", { class: "cfg-tag", text: tag })), h("span", { class: LAYER_PILL[r.status] || "pill" }, h("i", { class: "dot" }), r.value),
+                r.toggle ? layerButton(r.toggle, false) : null)
+            : h("div", { class: "cfg-value", text: r.value || "--" });
+          return row(r.label, r.sub || null, control);
+        });
+        if (s.id === "layers" && !rows.length) rows.push(h("p", { class: "note", text: t("cfg.layers.none") }));
+        form.push(group(s.title, s.help || null, rows));
+      }
+    }
+    settingsLayout(page, form, null);
+    page.firstChild.classList.add("cfg");
   }
 
   // --- Rapports -------------------------------------------------------------------------------

@@ -373,6 +373,96 @@ namespace XRPerfSensors
         }
 
         /// <summary>
+        /// Résolution de rendu conseillée d'après le temps GPU et le budget d'une image (voir <see cref="AdviseResolution"/>).
+        /// </summary>
+        internal sealed class ResolutionAdvice
+        {
+            /// <summary>Échelle par côté, par rapport à la résolution de la session : 0,85 = 85 % en largeur et en hauteur.</summary>
+            public double Scale;
+            /// <summary>Résolution par œil correspondante (0 si celle de la session est inconnue).</summary>
+            public int Width, Height;
+            /// <summary>Marge : la résolution peut monter (sinon, elle doit baisser).</summary>
+            public bool Up;
+            /// <summary>Il faudrait descendre sous <see cref="MinScale"/> : la résolution seule ne suffira pas.</summary>
+            public bool NotEnough;
+            /// <summary>Part des pixels de la session (Scale²), en %.</summary>
+            public double PixelPercent { get { return 100.0 * Scale * Scale; } }
+        }
+
+        private const double MinScale = 0.6, MaxScale = 1.3;
+
+        /// <summary>
+        /// Conseil chiffré sur la résolution de rendu, ou null s'il n'y a rien de sûr à dire. Le temps GPU d'une
+        /// image suit à peu près le nombre de pixels : pour qu'il tienne dans le budget avec 10 % de marge, il faut
+        /// multiplier chaque côté par √(0,9 × budget / temps GPU). Seulement quand la carte graphique limite (vers
+        /// le bas), ou quand elle a clairement de la marge et que la cible est tenue (vers le haut). Une partie du
+        /// travail ne dépend pas des pixels : le calcul est un peu optimiste, d'où la marge et l'arrondi vers le
+        /// bas au pas de 5 %.
+        /// </summary>
+        public static ResolutionAdvice AdviseResolution(SessionReport r)
+        {
+            double budget = r.Target > 0 ? 1000.0 / r.Target : double.NaN;
+            double gpuMs = r.GpuMsAvg;
+            if (double.IsNaN(budget) || double.IsNaN(gpuMs) || gpuMs <= 0 || double.IsNaN(r.GpuLoadAvg)) return null;
+            bool gpuBound = r.GpuLoadAvg >= 90 || (gpuMs >= 0.9 * budget && r.GpuLoadAvg >= 85);
+            bool cpuBound = r.CpuMsAvg >= 0.85 * budget;
+            var advice = new ResolutionAdvice();
+            if (gpuBound)
+            {
+                // Processeur aussi à la limite : baisser la résolution ne suffirait pas à tenir la cible, pas de chiffre.
+                if (cpuBound) return null;
+                // Carte chargée mais temps GPU dans le budget et cible tenue : rien à chiffrer.
+                if (!(gpuMs >= 0.9 * budget || r.TargetHeld < 95)) return null;
+                double scale = Math.Min(Math.Sqrt(0.9 * budget / gpuMs), 0.95);
+                if (scale < MinScale)
+                {
+                    scale = MinScale;
+                    advice.NotEnough = true;
+                }
+                advice.Scale = Math.Floor(scale * 20.0 + 1e-9) / 20.0;
+            }
+            else if (!cpuBound && r.TargetHeld >= 95 && r.GpuLoadAvg < 70)
+            {
+                double scale = Math.Min(Math.Sqrt(0.85 * budget / gpuMs), MaxScale);
+                scale = Math.Floor(scale * 20.0 + 1e-9) / 20.0;
+                if (scale < 1.05) return null;
+                advice.Scale = scale;
+                advice.Up = true;
+            }
+            else
+            {
+                return null;
+            }
+            Match m = Regex.Match(AdviceBase(r), @"^(\d+) x (\d+)$");
+            if (m.Success)
+            {
+                advice.Width = (int)Math.Round(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) * advice.Scale);
+                advice.Height = (int)Math.Round(int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture) * advice.Scale);
+            }
+            return advice;
+        }
+
+        /// <summary>
+        /// Résolution par œil sur laquelle porte le conseil : celle que le jeu a rendue, ou, pour un jeu SteamVR
+        /// (dont l'image n'est pas visible de l'extérieur), celle que SteamVR recommande. Vide si inconnue.
+        /// </summary>
+        public static string AdviceBase(SessionReport r)
+        {
+            if (Pixels(r.Render) > 0) return r.Render;
+            if (r.OpenVR && Pixels(r.RenderRecommended) > 0) return r.RenderRecommended;
+            return "";
+        }
+
+        /// <summary>
+        /// Cadence que le processeur peut suivre (images par seconde), d'après son temps moyen par image et 10 %
+        /// de marge. NaN si le temps CPU est inconnu.
+        /// </summary>
+        public static double CpuSustainableFps(SessionReport r)
+        {
+            return r.CpuMsAvg > 0 ? 1000.0 / (r.CpuMsAvg * 1.1) : double.NaN;
+        }
+
+        /// <summary>
         /// Différences de conditions entre deux rapports du même jeu, qui changent les performances sans
         /// rien dire du matériel : résolution de rendu, casque, runtime OpenXR, API graphique. Chaîne vide
         /// si tout est pareil ou non indiqué. `a` est la session récente, `b` la référence.
@@ -380,12 +470,14 @@ namespace XRPerfSensors
         public static string SetupDifference(SessionReport a, SessionReport b, bool english = false)
         {
             var parts = new List<string>();
-            long pa = Pixels(a.Render), pb = Pixels(b.Render);
-            if (pa > 0 && pb > 0 && a.Render != b.Render)
+            // Jeux SteamVR : la résolution recommandée par SteamVR, faute de celle du jeu.
+            string ra = AdviceBase(a), rb = AdviceBase(b);
+            long pa = Pixels(ra), pb = Pixels(rb);
+            if (pa > 0 && pb > 0 && ra != rb)
             {
                 double change = 100.0 * (pa - pb) / pb;
                 parts.Add(string.Format(CultureInfo.InvariantCulture, english ? "render {0} → {1} per eye ({2}{3} % pixels)" : "rendu {0} → {1} par œil ({2}{3} % de pixels)",
-                    b.Render, a.Render, change >= 0 ? "+" : "", change.ToString("0", CultureInfo.InvariantCulture)));
+                    rb, ra, change >= 0 ? "+" : "", change.ToString("0", CultureInfo.InvariantCulture)));
             }
             if (a.Headset.Length > 0 && b.Headset.Length > 0 && !string.Equals(a.Headset, b.Headset, StringComparison.OrdinalIgnoreCase))
                 parts.Add((english ? "headset " : "casque ") + b.Headset + " → " + a.Headset);
@@ -556,6 +648,33 @@ namespace XRPerfSensors
                     L("Sous SteamVR, la résolution recommandée ({0}) suit le réglage de résolution de SteamVR (automatique par défaut, qui monte haut sur une carte puissante), pas celui du logiciel du casque.",
                       "Under SteamVR, the recommended resolution ({0}) follows SteamVR's resolution setting (automatic by default, which goes high on a powerful card), not the headset software's."),
                     r.RenderRecommended));
+
+            // Conseil chiffré : résolution qui ferait tenir la cible, ou marge disponible.
+            ResolutionAdvice advice = AdviseResolution(r);
+            if (advice != null)
+            {
+                string size = advice.Width > 0 ? string.Format(CultureInfo.InvariantCulture, L(" ({0} x {1} par œil)", " ({0} x {1} per eye)"), advice.Width, advice.Height) : "";
+                if (advice.Up)
+                    Add(findings, FindingLevel.Good, string.Format(CultureInfo.InvariantCulture,
+                        L("Marge : la carte graphique a travaillé {0} ms par image pour un budget de {1} ms. La résolution de rendu pourrait monter à environ {2} % par côté{3}, soit {4} % de pixels, en tenant encore la cible.",
+                          "Headroom: the graphics card worked {0} ms per frame for a budget of {1} ms. The render resolution could go up to about {2} % per side{3}, that is {4} % of the pixels, while still holding the target."),
+                        F(gpuMs, "0.0"), F(budget, "0.0"), F(100.0 * advice.Scale, "0"), size, F(advice.PixelPercent, "0")));
+                else if (advice.NotEnough)
+                    Add(findings, FindingLevel.Warning, string.Format(CultureInfo.InvariantCulture,
+                        L("Temps GPU {0} ms pour un budget de {1} ms : même à {2} % de la résolution par côté{3}, la cible ne serait probablement pas tenue. Il faut aussi baisser la qualité graphique, une fréquence plus basse ou une génération d'images.",
+                          "GPU time {0} ms for a budget of {1} ms: even at {2} % of the resolution per side{3}, the target would probably not be held. Graphics quality, a lower refresh rate or frame generation are needed as well."),
+                        F(gpuMs, "0.0"), F(budget, "0.0"), F(100.0 * advice.Scale, "0"), size));
+                else
+                    Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
+                        L("Pour tenir la cible avec un peu de marge, la résolution de rendu devrait descendre à environ {0} % par côté{1}, soit {2} % de pixels (temps GPU {3} ms pour un budget de {4} ms). C'est une estimation : à vérifier avec un nouveau rapport.",
+                          "To hold the target with a little headroom, the render resolution should come down to about {0} % per side{1}, that is {2} % of the pixels (GPU time {3} ms for a budget of {4} ms). This is an estimate: check it with a new report."),
+                        F(100.0 * advice.Scale, "0"), size, F(advice.PixelPercent, "0"), F(gpuMs, "0.0"), F(budget, "0.0")));
+            }
+            if (cpuBound && CpuSustainableFps(r) < r.Target)
+                Add(findings, FindingLevel.Info, string.Format(CultureInfo.InvariantCulture,
+                    L("Avec {0} ms par image en moyenne, le processeur peut suivre environ {1} images par seconde, pour {2} visées.",
+                      "At {0} ms per frame on average, the processor can keep up with about {1} frames per second, for {2} targeted."),
+                    F(r.CpuMsAvg, "0.0"), F(Math.Floor(CpuSustainableFps(r)), "0"), F(r.Target, "0")));
 
             // Résolution changée par le jeu en cours de session (résolution dynamique, densité adaptative).
             if (r.RenderMin.Length > 0 && r.RenderMax.Length > 0 && r.RenderMin != r.RenderMax)
@@ -890,13 +1009,14 @@ namespace XRPerfSensors
                 if (!double.IsNaN(r.TargetHeld) && !double.IsNaN(previous.TargetHeld))
                     compare.Lines.Add(string.Format(culture, L("Rythme visé tenu {0} % du temps, contre {1} %.", "Target pace held {0} % of the time, against {1} %."),
                         N(r.TargetHeld, "0"), N(previous.TargetHeld, "0")));
-                long pixelsNow = ReportAnalysis.Pixels(r.Render), pixelsBefore = ReportAnalysis.Pixels(previous.Render);
-                if (pixelsNow > 0 && pixelsBefore > 0 && r.Render != previous.Render)
+                string renderNow = ReportAnalysis.AdviceBase(r), renderBefore = ReportAnalysis.AdviceBase(previous);
+                long pixelsNow = ReportAnalysis.Pixels(renderNow), pixelsBefore = ReportAnalysis.Pixels(renderBefore);
+                if (pixelsNow > 0 && pixelsBefore > 0 && renderNow != renderBefore)
                 {
                     double change = 100.0 * (pixelsNow - pixelsBefore) / pixelsBefore;
                     compare.Lines.Add(string.Format(culture, L("Attention, l'image n'était pas calculée à la même taille : {0} par œil cette fois, {1} la dernière fois ({2} % de pixels {3}). Plus de pixels, c'est plus de travail pour la carte graphique.",
                         "Note that the image was not computed at the same size: {0} per eye this time, {1} last time ({2} % {3} pixels). More pixels means more work for the graphics card."),
-                        r.Render, previous.Render, N(Math.Abs(change), "0"), change >= 0 ? L("en plus", "more") : L("en moins", "fewer")));
+                        renderNow, renderBefore, N(Math.Abs(change), "0"), change >= 0 ? L("en plus", "more") : L("en moins", "fewer")));
                 }
                 if (r.Runtime.Length > 0 && previous.Runtime.Length > 0 && !string.Equals(r.Runtime, previous.Runtime, StringComparison.OrdinalIgnoreCase))
                     compare.Lines.Add(L("Attention, le jeu ne passait pas par le même logiciel de VR : ", "Note that the game did not go through the same VR software: ") +
@@ -917,10 +1037,29 @@ namespace XRPerfSensors
                     "The game goes through SteamVR: the image size there depends on SteamVR's resolution setting (automatic by default). Set it yourself in SteamVR's video settings, for this game or for all."));
             if (!gpuKnown) view.Tips.Add(L("Lancez XRPerfSensors avant de jouer : le prochain rapport dira si la carte graphique est au maximum.",
                 "Start XRPerfSensors before playing: the next report will tell whether the graphics card is at its maximum."));
+            ReportAnalysis.ResolutionAdvice advice = ReportAnalysis.AdviseResolution(r);
+            string whereToSet = ReportAnalysis.ThroughSteamVR(r)
+                ? L("dans les réglages vidéo de SteamVR (le jeu passe par lui), dans les réglages VR du jeu ou dans UEVR",
+                    "in SteamVR's video settings (the game goes through it), in the game's VR settings or in UEVR")
+                : L("dans le logiciel de votre casque, dans les réglages VR du jeu ou dans UEVR", "in your headset software, in the game's VR settings or in UEVR");
+            string adviceSize = advice != null && advice.Width > 0
+                ? string.Format(culture, L(", soit environ {0} x {1} par œil au lieu de {2}", ", that is about {0} x {1} per eye instead of {2}"), advice.Width, advice.Height, ReportAnalysis.AdviceBase(r))
+                : "";
             if (gpuBound)
             {
-                view.Tips.Add(L("Baissez la résolution de rendu : dans le logiciel de votre casque, dans les réglages VR du jeu ou dans UEVR. C'est le réglage qui soulage le plus la carte graphique.",
-                    "Lower the render resolution: in your headset software, in the game's VR settings or in UEVR. It is the setting that relieves the graphics card the most."));
+                if (advice != null && !advice.Up && !advice.NotEnough)
+                    view.Tips.Add(string.Format(culture,
+                        L("Baissez la résolution de rendu à environ {0} % de l'actuelle en largeur et en hauteur{1} ({2} % des pixels) : d'après le travail de la carte graphique, c'est ce qu'il faut pour tenir le rythme avec un peu de marge. Réglez-la {3}, puis vérifiez avec un nouveau rapport : c'est une estimation.",
+                          "Lower the render resolution to about {0} % of the current one in width and height{1} ({2} % of the pixels): judging by the graphics card's work, that is what it takes to hold the pace with a little headroom. Set it {3}, then check with a new report: this is an estimate."),
+                        N(100.0 * advice.Scale, "0"), adviceSize, N(advice.PixelPercent, "0"), whereToSet));
+                else if (advice != null && advice.NotEnough)
+                    view.Tips.Add(string.Format(culture,
+                        L("La résolution seule ne suffira pas : même réduite à {0} % en largeur et en hauteur{1}, la carte graphique serait encore trop lente. Baissez-la ({2}) et, en plus, la qualité graphique, ou passez à une fréquence plus basse ou à une génération d'images.",
+                          "Resolution alone will not be enough: even reduced to {0} % in width and height{1}, the graphics card would still be too slow. Lower it ({2}) and also the graphics quality, or switch to a lower refresh rate or frame generation."),
+                        N(100.0 * advice.Scale, "0"), adviceSize, whereToSet));
+                else
+                    view.Tips.Add(L("Baissez la résolution de rendu : dans le logiciel de votre casque, dans les réglages VR du jeu ou dans UEVR. C'est le réglage qui soulage le plus la carte graphique.",
+                        "Lower the render resolution: in your headset software, in the game's VR settings or in UEVR. It is the setting that relieves the graphics card the most."));
                 view.Tips.Add(L("Baissez les réglages graphiques les plus gourmands : ombres, anti-crénelage, éclairage, distance d'affichage.",
                     "Lower the most demanding graphics settings: shadows, anti-aliasing, lighting, draw distance."));
                 if (double.IsNaN(r.OutFps))
@@ -930,6 +1069,18 @@ namespace XRPerfSensors
             {
                 if (!gpuBound) view.Tips.Add(L("Baisser la résolution aidera peu : c'est le processeur qui limite, pas la carte graphique.",
                     "Lowering the resolution will help little: the processor is the bottleneck, not the graphics card."));
+                double cpuFps = ReportAnalysis.CpuSustainableFps(r);
+                if (cpuFps < r.Target)
+                {
+                    string more = double.IsNaN(r.OutFps) && cpuFps >= 0.55 * r.Target
+                        ? string.Format(culture, L(" Avec une génération d'images, le jeu n'aurait plus à en calculer que {0} par seconde, ce qui est à sa portée.",
+                            " With frame generation, the game would only have to compute {0} per second, which is within its reach."), N(r.Target / 2.0, "0"))
+                        : "";
+                    view.Tips.Add(string.Format(culture,
+                        L("Le processeur prépare une image en {0} ms en moyenne : il peut suivre environ {1} images par seconde, pour {2} visées.{3}",
+                          "The processor prepares a frame in {0} ms on average: it can keep up with about {1} frames per second, for {2} targeted.{3}"),
+                        N(r.CpuMsAvg, "0.0"), N(Math.Floor(cpuFps), "0"), N(r.Target, "0"), more));
+                }
                 view.Tips.Add(L("Réduisez ce qui occupe le processeur dans le jeu : foule, circulation, distance d'affichage, ombres des objets en mouvement.",
                     "Reduce what keeps the processor busy in the game: crowds, traffic, draw distance, shadows of moving objects."));
                 view.Tips.Add(L("Fermez les programmes inutiles pendant la partie (navigateur, enregistrement vidéo, lanceurs de jeux).",
@@ -954,6 +1105,11 @@ namespace XRPerfSensors
                 "Lower texture quality or the render resolution to relieve the graphics card's memory."));
             if (slowedDown && !heatedUp && !vramFull) view.Tips.Add(L("Le ralentissement en cours de partie peut venir du jeu (zone plus chargée) : comparez avec une autre session au même endroit.",
                 "The slowdown during the session may come from the game (a busier area): compare with another session in the same place."));
+            if (view.Tips.Count == 0 && advice != null && advice.Up)
+                view.Tips.Add(string.Format(culture,
+                    L("Rien à changer, et vous avez de la marge : vous pourriez monter la résolution de rendu jusqu'à environ {0} % de l'actuelle en largeur et en hauteur{1}, ou la qualité graphique, puis vérifier avec un nouveau rapport.",
+                      "Nothing to change, and you have headroom: you could raise the render resolution up to about {0} % of the current one in width and height{1}, or the graphics quality, then check with a new report."),
+                    N(100.0 * advice.Scale, "0"), adviceSize));
             if (view.Tips.Count == 0)
                 view.Tips.Add(!double.IsNaN(r.GpuLoadAvg) && r.GpuLoadAvg < 70 && !struggling
                     ? L("Rien à changer. Vous avez même de la marge : vous pouvez essayer d'augmenter un peu la qualité ou la résolution, puis vérifier avec un nouveau rapport.",

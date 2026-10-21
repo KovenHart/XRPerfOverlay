@@ -528,3 +528,21 @@ table.grid .delta-cell { width: 26%; min-width: 120px; }
   .row { grid-template-columns: minmax(0, 1fr); }
   .row-control { justify-content: flex-start; }
 }
+
+/* --- Configuration ------------------------------------------------------------------------------ */
+
+.cfg-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 4px 0 14px; }
+.cfg-gap { flex: 1; }
+.cfg-findings { padding-bottom: 14px; }
+.cfg-wait { color: var(--muted); padding: 6px 0 18px; }
+.cfg .row-help { overflow-wrap: anywhere; }
+.cfg-value { text-align: right; overflow-wrap: anywhere; max-width: 36ch; }
+.cfg-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.cfg-tag { font-size: .8rem; color: var(--muted); border: 1px solid var(--line-strong); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.cfg .pill { white-space: nowrap; }
+.text-input { width: min(300px, 100%); padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--raised); color: var(--text); font: inherit; }
+.text-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.text-input::placeholder { color: var(--muted); }
+.cfg-finding { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.cfg-finding > span { flex: 1 1 320px; }
+.btn.small { padding: 4px 10px; font-size: .86rem; min-height: 0; }

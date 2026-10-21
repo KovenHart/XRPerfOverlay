@@ -4,6 +4,7 @@
 using System;
 using System.Drawing;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 
 namespace XRPerfSensors
@@ -137,6 +138,14 @@ namespace XRPerfSensors
                 case "FaceViewer": if (!Bool(v, out b)) return false; o.FaceViewer = b; return true;
                 case "Clock": if (!Bool(v, out b)) return false; o.Clock = b; return true;
                 case "HeadsetInfo": if (!Bool(v, out b)) return false; o.HeadsetInfo = b; return true;
+                case "HeadsetName":
+                    // Texte simple (le panneau du casque n'affiche que l'ASCII) : sans retour à la ligne ni « ; »
+                    // ou « [ » qui gêneraient le .ini, 40 caractères au plus.
+                    if (v.ValueKind != JsonValueKind.String) return false;
+                    string name = (v.GetString() ?? "").Trim();
+                    if (name.Length > 40 || name.Any(ch => ch < 0x20 || ch > 0x7E || ch == ';' || ch == '[' || ch == ']')) return false;
+                    o.HeadsetName = name;
+                    return true;
                 case "PanelSession": if (!Bool(v, out b)) return false; o.PanelSession = b; return true;
                 case "PanelBattery": if (!Bool(v, out b)) return false; o.PanelBattery = b; return true;
                 case "Layout": if (!Int(v, 0, OverlaySettings.LayoutNames.Length - 1, out i)) return false; o.Layout = i; return true;

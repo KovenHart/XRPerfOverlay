@@ -238,6 +238,8 @@ namespace XRPerfSensors
             if (GlobalOpacity == baseline.GlobalOpacity && GlobalOpacity != fresh.GlobalOpacity) { GlobalOpacity = fresh.GlobalOpacity; changed = true; }
             if (WindowEnabled == baseline.WindowEnabled && WindowEnabled != fresh.WindowEnabled) { WindowEnabled = fresh.WindowEnabled; changed = true; }
             if (WindowAnchor == baseline.WindowAnchor && WindowAnchor != fresh.WindowAnchor) { WindowAnchor = fresh.WindowAnchor; changed = true; }
+            // Nom du casque modifié à la main dans le .ini pendant que le programme tourne : repris aussi.
+            if (HeadsetName == baseline.HeadsetName && HeadsetName != fresh.HeadsetName) { HeadsetName = fresh.HeadsetName; changed = true; }
             return changed;
         }
 
@@ -266,6 +268,10 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW(Section, "face_viewer", FaceViewer ? "1" : "0", path);
             ok &= WritePrivateProfileStringW(Section, "clock", Clock ? "1" : "0", path);
             ok &= WritePrivateProfileStringW(Section, "headset_info", HeadsetInfo ? "1" : "0", path);
+            // Vide : la clé est retirée, la layer reprend le nom annoncé par le runtime (retirer une clé absente
+            // n'est pas un échec : le résultat n'est pas compté).
+            if (string.IsNullOrEmpty(HeadsetName)) WritePrivateProfileStringW(Section, "headset_name", null, path);
+            else ok &= WritePrivateProfileStringW(Section, "headset_name", HeadsetName, path);
             ok &= WritePrivateProfileStringW(Section, "session", PanelSession ? "1" : "0", path);
             ok &= WritePrivateProfileStringW(Section, "battery", PanelBattery ? "1" : "0", path);
             ok &= WritePrivateProfileStringW(Section, "layout", LayoutNames[Layout], path);

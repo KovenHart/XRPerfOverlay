@@ -8,7 +8,7 @@ A performance panel shown in the headset for every OpenXR game (including games 
 - **CPU**: load, frame time, temperature, clock
 - **GPU**: load, frame time, temperature, clock, VRAM
 
-Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves.
+Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves. The Configuration page diagnoses the PC for VR: OpenXR runtime, installed layers, hardware, Windows settings.
 
 ![Panel preview](docs/apercu.png)
 

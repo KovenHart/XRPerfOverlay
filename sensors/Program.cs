@@ -434,6 +434,8 @@ namespace XRPerfSensors
         public Readings Latest { get { return _latest; } }
         public string SensorError { get { return _error; } }
         public string LayerVersion { get { return _layerVersion; } }
+        /// <summary>Fichier .json de la layer de cette installation (nom de son inscription OpenXR).</summary>
+        public string LayerManifest { get { return _layerManifest; } }
         /// <summary>L'aperçu du panneau est possible (DLL de la layer présente).</summary>
         public bool PreviewAvailable { get { return File.Exists(_layerDll); } }
 
@@ -917,6 +919,7 @@ namespace XRPerfSensors
         {
             // Instance relancée en administrateur pour activer ou désactiver la layer : une écriture, puis fin.
             if (args.Length == 2 && args[0] == LayerRegistry.CommandArgument) return LayerRegistry.RunCommand(args[1]);
+            if (args.Length == 3 && args[0] == LayerRegistry.OtherArgument) return LayerRegistry.RunOtherCommand(args[1], args[2]);
 
             // Une seule instance à la fois.
             using (var single = new Mutex(true, @"Local\XRPerfOverlay.SensorsApp", out bool first))

@@ -57,6 +57,12 @@ jobs:
           ./build/layer/Release/xrpo_preview.exe build/preview
           if ($LASTEXITCODE -ne 0) { throw "Tests en échec (code $LASTEXITCODE)." }
 
+      - name: Tests de la page Configuration (constats)
+        shell: pwsh
+        run: |
+          node tests/config_check.js
+          if ($LASTEXITCODE -ne 0) { throw "Tests de la page Configuration en échec (code $LASTEXITCODE)." }
+
       # Windows PowerShell 5.1, comme sur les PC des utilisateurs (Creer-paquet.bat).
       - name: Paquet de distribution
         shell: powershell

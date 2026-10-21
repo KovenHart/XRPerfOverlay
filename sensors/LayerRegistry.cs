@@ -12,7 +12,9 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Security.Principal;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 
@@ -22,6 +24,8 @@ namespace XRPerfSensors
     {
         public const string ManifestName = "XR_APILAYER_NOVENDOR_perf_overlay.json";
         public const string CommandArgument = "--layer";
+        /// <summary>Instance relancée en administrateur pour une autre layer : « --xrlayer on|off &lt;nom en base64&gt; ».</summary>
+        public const string OtherArgument = "--xrlayer";
         private const string KeyPath = @"SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit";
 
         public enum State { Missing, Enabled, Disabled }
@@ -144,6 +148,103 @@ namespace XRPerfSensors
                 try
                 {
                     process = Process.Start(new ProcessStartInfo(exe, CommandArgument + " " + (enabled ? "on" : "off"))
+                    {
+                        UseShellExecute = true,
+                        Verb = "runas",
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                    });
+                }
+                catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) // ERROR_CANCELLED : invite refusée
+                {
+                    return Outcome.Cancelled;
+                }
+                catch (Exception)
+                {
+                    return Outcome.Failed;
+                }
+                if (process == null) return Outcome.Failed;
+                using (process)
+                {
+                    if (!process.WaitForExit(30000)) return Outcome.Failed;
+                    switch (process.ExitCode)
+                    {
+                        case 0: return Outcome.Done;
+                        case 2: return Outcome.Missing;
+                        default: return Outcome.Failed;
+                    }
+                }
+            });
+        }
+        // --- Autres layers (page Configuration) -------------------------------------------------------
+        //
+        // Même mécanisme pour n'importe quelle layer inscrite : DWORD 0 = chargée, 1 = ignorée. Seule une
+        // valeur qui existe déjà est modifiée (jamais créée ni supprimée) : le choix reste réversible, et rien
+        // n'est inscrit à la place d'un installateur. Les inscriptions de HKCU (ce compte) se modifient sans
+        // droits administrateur ; celles de HKLM en demandent.
+
+        private static bool WriteOther(RegistryHive hive, string valueName, bool enabled)
+        {
+            using (RegistryKey root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64))
+            using (RegistryKey key = root.OpenSubKey(KeyPath, true))
+            {
+                if (key == null || !key.GetValueNames().Contains(valueName, StringComparer.Ordinal)) return false;
+                // Une inscription OpenXR est un DWORD : une valeur d'un autre type n'est pas touchée.
+                if (key.GetValueKind(valueName) != RegistryValueKind.DWord) return false;
+                key.SetValue(valueName, enabled ? 0 : 1, RegistryValueKind.DWord);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Instance relancée en administrateur (« --xrlayer on|off &lt;nom&gt; », nom de la valeur de HKLM en
+        /// base64) : fait l'écriture et retourne le code de sortie (0 : fait, 2 : inscription absente, 1 : échec).
+        /// </summary>
+        public static int RunOtherCommand(string value, string encodedName)
+        {
+            bool enabled;
+            if (string.Equals(value, "on", StringComparison.OrdinalIgnoreCase)) enabled = true;
+            else if (string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)) enabled = false;
+            else return 1;
+            try
+            {
+                string name = Encoding.UTF8.GetString(Convert.FromBase64String(encodedName ?? ""));
+                if (name.Length == 0) return 1;
+                return WriteOther(RegistryHive.LocalMachine, name, enabled) ? 0 : 2;
+            }
+            catch (Exception)
+            {
+                return 1;
+            }
+        }
+
+        /// <summary>
+        /// Active ou désactive l'inscription <paramref name="valueName"/> (nom exact de la valeur, chemin du
+        /// .json) dans HKLM (<paramref name="machine"/>) ou HKCU. Pour HKLM sans droits administrateur, Windows
+        /// demande l'autorisation.
+        /// </summary>
+        public static Task<Outcome> SetOtherAsync(bool machine, string valueName, bool enabled)
+        {
+            if (string.IsNullOrEmpty(valueName)) return Task.FromResult(Outcome.Missing);
+            if (!machine || IsElevated())
+            {
+                try
+                {
+                    return Task.FromResult(WriteOther(machine ? RegistryHive.LocalMachine : RegistryHive.CurrentUser, valueName, enabled) ? Outcome.Done : Outcome.Missing);
+                }
+                catch (Exception)
+                {
+                    return Task.FromResult(Outcome.Failed);
+                }
+            }
+            string exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return Task.FromResult(Outcome.Failed);
+            string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(valueName));
+            return Task.Run(() =>
+            {
+                Process process;
+                try
+                {
+                    process = Process.Start(new ProcessStartInfo(exe, OtherArgument + " " + (enabled ? "on" : "off") + " " + encoded)
                     {
                         UseShellExecute = true,
                         Verb = "runas",

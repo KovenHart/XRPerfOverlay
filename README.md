@@ -8,7 +8,7 @@ Un panneau de performances affiché dans le casque pour tous les jeux OpenXR (do
 - **CPU** : charge, frametime, température, fréquence
 - **GPU** : charge, frametime, température, fréquence, VRAM
 
-En option : une montre au poignet, et une fenêtre du bureau (le chat d'un stream, Discord...) affichée dans le casque. Un rapport est écrit à chaque session de jeu (ou au raccourci `Ctrl+Alt+S`), avec son analyse et ses courbes.
+En option : une montre au poignet, et une fenêtre du bureau (le chat d'un stream, Discord...) affichée dans le casque. Un rapport est écrit à chaque session de jeu (ou au raccourci `Ctrl+Alt+S`), avec son analyse et ses courbes. La page Configuration fait le diagnostic du PC pour la VR : runtime OpenXR, layers installées, matériel, réglages de Windows.
 
 ![Aperçu du panneau](docs/apercu.png)
 

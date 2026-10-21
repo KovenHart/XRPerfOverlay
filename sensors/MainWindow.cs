@@ -15,6 +15,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
@@ -287,6 +288,18 @@ namespace XRPerfSensors
                             break;
                         case "listWindows": SendWindows(); break;
                         case "chooseWindow": ChooseWindow(Str(m, "id")); break;
+                        case "diagnose": SendConfig(); break;
+                        case "setXrLayer":
+                            int xrId = m.TryGetProperty("id", out JsonElement xrIdElement) && xrIdElement.ValueKind == JsonValueKind.Number &&
+                                       xrIdElement.TryGetInt32(out int xrNumber) ? xrNumber : -1;
+                            bool xrOn = m.TryGetProperty("on", out JsonElement xrOnElement) && xrOnElement.ValueKind == JsonValueKind.True;
+                            string xrLabel = Str(m, "label"), xrManifest = Str(m, "manifest");
+                            Later(() => SetXrLayer(xrId, xrManifest, xrOn, xrLabel));
+                            break;
+                        case "copyText":
+                            string copied = Str(m, "text");
+                            if (!string.IsNullOrEmpty(copied)) Later(() => CopyText(copied));
+                            break;
                     }
                 }
             }
@@ -462,6 +475,95 @@ namespace XRPerfSensors
             if (failures.Count > 0)
                 MessageBox.Show(this, Loc.T("Certains rapports n'ont pas pu être supprimés :", "Some reports could not be deleted:") + "\n\n" + string.Join("\n", failures),
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        // --- Configuration du PC (page « Configuration ») -------------------------------------------------
+
+        private ConfigSnapshot _lastConfig;  // dernier relevé envoyé : les numéros de layers de la page s'y rapportent
+        private bool _configBusy;
+        private bool _configAgain;   // demandé de nouveau pendant un relevé (layer changée) : à refaire ensuite
+
+        // Relevé fait hors du fil de l'interface (registre, fichiers .json des runtimes et des layers), puis
+        // envoyé à la page qui en tire les constats (ui/config.js).
+        private void SendConfig()
+        {
+            if (_configBusy)
+            {
+                _configAgain = true;
+                return;
+            }
+            _configBusy = true;
+            _configAgain = false;
+            _reports.Refresh(false);
+            SessionReport last = _reports.Reports.Where(r => r.Readable).OrderByDescending(r => r.Start ?? r.FileTime).FirstOrDefault();
+            string manifest = _app.LayerManifest;
+            Readings readings = _app.Latest;
+            string gpu = readings != null && readings.GpuName != "?" ? readings.GpuName : null;
+            Task.Run(() => ConfigProbe.Collect(manifest, gpu, last)).ContinueWith(task => Later(() =>
+            {
+                _configBusy = false;
+                _lastConfig = task.Status == TaskStatus.RanToCompletion ? task.Result : null;
+                Post(_lastConfig != null ? ConfigProbe.Message(_lastConfig) : "{\"type\":\"config\",\"config\":null}");
+                if (_configAgain) SendConfig();
+            }));
+        }
+
+        // Activer ou désactiver une layer depuis la page Configuration. Celle de XR Perf Overlay passe par son
+        // propre interrupteur ; les autres, par leur inscription dans le registre (jamais créée ni supprimée).
+        private async void SetXrLayer(int id, string manifest, bool enabled, string label)
+        {
+            // Le numéro vient de la page : il doit désigner la même inscription dans le dernier relevé (chemin
+            // identique), sinon la liste a changé entre-temps et elle est simplement rafraîchie.
+            XrLayerInfo layer = _lastConfig?.Layers.FirstOrDefault(l => l.Id == id);
+            if (layer == null || string.IsNullOrEmpty(layer.RawName) || !string.Equals(layer.Manifest, manifest, StringComparison.Ordinal))
+            {
+                PostToast(Loc.T("La liste des layers a changé : elle est mise à jour, recommencez.", "The list of layers has changed: it is being updated, try again."));
+                SendConfig();
+                return;
+            }
+            if (layer.Ours && layer.Current)
+            {
+                _app.SetLayerEnabled(enabled);
+                return;
+            }
+            if (string.IsNullOrEmpty(label)) label = layer.Name ?? Path.GetFileNameWithoutExtension(layer.RawName);
+            if (!enabled)
+            {
+                string question = string.Format(Loc.T(
+                    "« {0} » ne sera plus chargée dans aucun jeu OpenXR, à partir du prochain lancement d'un jeu. Elle reste installée et se réactive ici d'un clic.\n\nDésactiver cette layer ?",
+                    "« {0} » will no longer be loaded into any OpenXR game, from the next game launch. It stays installed and can be turned back on here in one click.\n\nTurn this layer off?"), label);
+                if (MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            }
+            LayerRegistry.Outcome outcome;
+            try
+            {
+                outcome = await LayerRegistry.SetOtherAsync(layer.Machine, layer.RawName, enabled);
+            }
+            catch (Exception)
+            {
+                outcome = LayerRegistry.Outcome.Failed;
+            }
+            if (IsDisposed) return;
+            PostToast(outcome == LayerRegistry.Outcome.Done
+                ? (enabled ? Loc.T("Layer réactivée : elle sera chargée au prochain lancement d'un jeu.", "Layer turned back on: it will load at the next game launch.")
+                           : Loc.T("Layer désactivée : elle ne sera plus chargée au prochain lancement d'un jeu.", "Layer turned off: it will no longer load from the next game launch."))
+                : outcome == LayerRegistry.Outcome.Cancelled ? Loc.T("Autorisation refusée : la layer n'a pas été modifiée.", "Permission refused: the layer was not changed.")
+                : outcome == LayerRegistry.Outcome.Missing ? Loc.T("Cette inscription n'existe plus : la liste est mise à jour.", "This registration no longer exists: the list is being updated.")
+                : Loc.T("La layer n'a pas pu être modifiée (registre inaccessible).", "The layer could not be changed (registry not accessible)."));
+            SendConfig();
+        }
+
+        private void CopyText(string text)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                PostToast(Loc.T("Diagnostic copié dans le presse-papiers.", "Diagnosis copied to the clipboard."));
+            }
+            catch (Exception)
+            {
+                PostToast(Loc.T("Impossible d'écrire dans le presse-papiers.", "Could not write to the clipboard."));
+            }
         }
 
         // --- Fenêtre capturée ---------------------------------------------------------------------------

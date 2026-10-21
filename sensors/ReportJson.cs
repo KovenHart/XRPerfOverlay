@@ -89,7 +89,14 @@ namespace XRPerfSensors
                         (100.0 * scale).ToString("0", CultureInfo.InvariantCulture), r.RenderRecommended);
                 chips.Add(text);
             }
-            if (r.Api.Length > 0) chips.Add(r.Api);
+            else if (r.OpenVR && r.RenderRecommended.Length > 0)
+            {
+                // Jeu SteamVR : la taille de l'image du jeu n'est pas visible de l'extérieur ; celle que SteamVR
+                // recommande (son réglage de résolution), que les jeux suivent en général.
+                chips.Add((english ? "recommended render " : "rendu recommandé ") + r.RenderRecommended + (english ? " per eye" : " par œil"));
+            }
+            // Jeu SteamVR : l'API graphique n'est pas relevée, l'étiquette n'apprendrait rien.
+            if (r.Api.Length > 0 && !r.OpenVR) chips.Add(r.Api);
             if (r.Cpu.Length > 0) chips.Add(r.Cpu);
             if (r.Gpu.Length > 0) chips.Add(r.Gpu);
             return chips;

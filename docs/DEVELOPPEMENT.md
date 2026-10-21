@@ -86,6 +86,7 @@ Ce qui a été vérifié avant livraison, et ce qui ne l'a pas été :
 - L'ensemble du code a été relu une seconde fois de façon indépendante (protocole OpenXR, Direct3D 12, scripts, programme C#) et les défauts trouvés ont été corrigés.
 - Le programme C# est compilé avec le compilateur Roslyn contre les bibliothèques Windows Forms, LibreHardwareMonitorLib 0.9.6 et le SDK WebView2. Deux parties sans fenêtre sont exécutées telles quelles : le bloc de réglages écrit par le C# est relu par le C++ (même disposition, mêmes valeurs par défaut), et l'aperçu hors jeu est appelé depuis le code C# sur la bibliothèque compilée. La lecture des rapports et leur mise en forme pour l'interface (`SessionReport.cs`, `ReportJson.cs`) sont exécutées sur des rapports français et anglais produits par le code C++.
 - L'interface (`sensors/ui/`) est exécutée dans Chromium, le moteur de WebView2, avec un programme simulé (`sensors/ui/dev/mock.js`) qui lui envoie de vraies données : panneaux et montres dessinés par la layer, rapports analysés par le vrai code C#. Toutes les pages ont été vues en français et en anglais, en thème sombre et clair, en grand et en petit format. La fenêtre WebView2 (`MainWindow.cs`) de la 1.5 a été utilisée sur un vrai PC sous Windows 11.
+- Page Configuration : le relevé (`ConfigProbe.cs`) ne fait que lire le registre et les fichiers .json d'OpenXR ; les constats sont tirés dans l'interface (`sensors/ui/config.js`), testés par `tests/config_check.js` (une quarantaine de configurations, en français et en anglais) et lancés par la compilation automatique. La page a été vue dans Chromium avec le programme simulé (configuration saine et configuration à problèmes, français et anglais, grand et petit format). Essayée sur un vrai PC sous Windows 11 (Pimax Dream Air) : runtime, layers, matériel reconnus, désactivation et réactivation des layers. Conseils chiffrés des rapports (1.7) : une hausse de résolution conseillée à 130 % a été appliquée et vérifiée par une seconde session (cible toujours tenue).
 - Rapports en mode manuel (1.6) : la décision (mode, raccourci, changement de mode en jeu, témoin) est testée dans `tests/preview.cpp` ; les deux bancs de test (layer et XRPerfVR) font démarrer et arrêter des enregistrements au raccourci (rapport gardé, trop court, terminé à la fin de la session, mode changé en direct). Le témoin est dessiné dans les trois présentations. Pas encore essayé en jeu.
 - Activation de la layer (1.6, `LayerRegistry.cs`) : compilée et relue, pas encore essayée sous Windows (écriture dans le registre, mise à jour qui garde la layer désactivée).
 - Le script de paquet (`scripts/package.ps1`) est exécuté avec une doublure de `dotnet` : contenu et archive du paquet, vérification du mode autonome, échec de la publication. Le paquet obtenu est ensuite installé par `setup.ps1` dans ses essais. Le workflow GitHub Actions est vérifié pour sa syntaxe seulement : sa première exécution réelle se fera sur GitHub.
@@ -126,10 +127,11 @@ sensors/MainWindow.cs         fenêtre principale : WebView2, messages avec l'in
 sensors/SettingsJson.cs       réglages échangés avec l'interface (JSON) et leurs bornes
 sensors/ReportStore.cs        rapports : lecture des dossiers, session précédente, ouverture, suppression
 sensors/ReportJson.cs         rapports mis en forme pour l'interface (analyses dans la langue choisie)
+sensors/ConfigProbe.cs        relevé de la configuration (registre, fichiers .json OpenXR) pour la page Configuration, sans analyse
 sensors/SessionReport.cs      lecture (français ou anglais) et analyse des rapports, lecture « simple » en phrases (sans interface)
 sensors/LayerRegistry.cs      activation de la layer dans le registre OpenXR (relance élevée « --layer on|off »)
 sensors/Loc.cs                langue des textes du programme (celle de Windows, français ou anglais)
-sensors/ui/                   interface : index.html, app.css, app.js (pages), charts.js (courbes), i18n.js (textes FR / EN), polices
+sensors/ui/                   interface : index.html, app.css, app.js (pages), charts.js (courbes), config.js (constats de la page Configuration), i18n.js (textes FR / EN), polices
 sensors/ui/dev/               programme simulé pour mettre l'interface au point dans un navigateur (non livré)
 layer/src/settings_reader.cpp lecture des réglages envoyés par XRPerfSensors
 layer/src/settings_apply.h    application bornée de ces réglages, noms des présentations et des couleurs
@@ -149,6 +151,7 @@ layer/src/version.rc          ressource de version de la DLL (numéros généré
 layer/src/hardware_info.cpp   modèles du processeur (registre) et de la carte graphique (DXGI) pour les rapports
 scripts/setup.ps1             copie dans le dossier d'installation, enregistrement, relance des capteurs
 scripts/install.ps1           enregistrement de la layer auprès d'OpenXR (uninstall.ps1 : l'inverse)
+tests/config_check.js         tests des constats de la page Configuration (node tests/config_check.js)
 tests/preview.cpp             tests des statistiques + aperçu du panneau en image (cmake -DXRPO_BUILD_TESTS=ON)
 tools/gen_font.py             régénère layer/src/font_data.h (seulement pour changer de police)
 tools/gen_icon.py             redessine sensors/XRPerfSensors.ico (seulement pour changer l'icône)

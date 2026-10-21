@@ -4,6 +4,13 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.7.0 (2026-10-21)
+
+- **Configuration page** in XRPerfSensors: a diagnosis of the PC for VR. It lists the active OpenXR runtime and the other installed ones, the registered OpenXR layers (in loading order, with their state), the runtime for SteamVR games, installed VR software, the processor, memory, graphics cards and their drivers, and the Windows settings that matter (GPU scheduling, Game Mode, power mode). It points out what deserves a look: runtime missing or changed since the last session, orphaned layer or layer without its DLL, XR Perf Overlay registered twice, OpenXR Toolkit still active, two frame generation layers at once, Power saver mode, laptop with two graphics cards... A layer that causes trouble can be **turned off in one click**, with confirmation, without uninstalling it, and turned back on the same way. Nothing else is changed. "Copy diagnosis" button to ask for help (without the Windows account name: paths inside the user folder are written `%USERPROFILE%`).
+- **Advice with numbers in reports**: when the graphics card is the bottleneck, the report gives the render resolution to aim for to hold the pace (for example "about 85 % of the current one, that is 3264 x 3019 per eye"), computed from the GPU time and the frame budget; when it has headroom, how far up to go. When the processor is the bottleneck, how many frames per second it can keep up with, and whether frame generation would bring the target within reach. These are estimates, to check with a new report. In a SteamVR game, the calculation starts from the resolution SteamVR recommends (the game's own cannot be seen from outside).
+- **Headset name** editable in XRPerfSensors (Appearance page): useful under SteamVR, where the headset driver may report another model (a Dream Air seen as "Pimax Crystal"). It applies from the next game launch.
+- SteamVR game reports: the header shows the resolution recommended by SteamVR instead of the "not recorded" graphics API, and comparing two sessions points out when it changed.
+
 ## 1.6.0 (2026-10-19)
 
 - **Turn the OpenXR layer off** without uninstalling it: "OpenXR games (layer)" switch in XRPerfSensors (Panel page, dashboard) and "OpenXR layer enabled" item in the tray icon menu. When off, the layer is no longer loaded into OpenXR games at all; a banner on the dashboard reminds you. An update keeps it off.

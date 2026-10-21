@@ -56,6 +56,7 @@ Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open 
 - **Desktop mirror**: the mirror window for OBS, its position, size, opacity, keep on top.
 - **Measurements**: real GPU time measurement (otherwise an estimate), writing reports (every session, on the `Ctrl+Alt+S` hotkey or never: applies immediately, even in game), processor and graphics card models in the reports, reports folder. GPU measurement and models apply the next time a game starts.
 - **Reports**: see "Session reports".
+- **Configuration**: diagnosis of the PC for VR (see "Configuration diagnosis").
 - **Interface**: language (Windows', French or English), window colors ("same as the panel" in the headset, one of the six themes, or three colors of your own), text size, animations, full screen and opening in full screen.
 
 A session report, with the analysis in sentences on the left and the minute-by-minute curves on the right:
@@ -94,7 +95,7 @@ Settings changed in XRPerfSensors and those changed in game with the keyboard co
 
 The clock shows at the bottom right of the panel (`clock=0` in the `.ini` to remove it).
 
-The last line of the panel gives the headset name and the render resolution per eye (`headset_info=0` to remove it; the panel then gets its original height back). It is the size of the image the game really sends to the headset. When it differs by at least 3 % from the resolution recommended by the runtime, the difference is shown next to it, for example `6268 x 5034 (x1.21)`: the game applies its own render scale (graphics option, `vr.PixelDensity` for an Unreal game, UEVR setting), on top of the supersampling set in the headset software. The session report records both resolutions and points it out in its findings. Under SteamVR, the recommended resolution follows SteamVR's resolution setting (automatic by default), not the headset software's. The name is the one the OpenXR runtime reports: depending on the runtime, it's not always the headset's commercial name (SteamVR gives its driver's name). To show yours, fill in `headset_name=` in the `.ini`, for example `headset_name=Pimax Crystal Light`. The name reported by the runtime is written to the log at each session.
+The last line of the panel gives the headset name and the render resolution per eye (`headset_info=0` to remove it; the panel then gets its original height back). It is the size of the image the game really sends to the headset. When it differs by at least 3 % from the resolution recommended by the runtime, the difference is shown next to it, for example `6268 x 5034 (x1.21)`: the game applies its own render scale (graphics option, `vr.PixelDensity` for an Unreal game, UEVR setting), on top of the supersampling set in the headset software. The session report records both resolutions and points it out in its findings. Under SteamVR, the recommended resolution follows SteamVR's resolution setting (automatic by default), not the headset software's. The name is the one the OpenXR runtime reports: depending on the runtime, it's not always the headset's commercial name (SteamVR gives its driver's name). To show yours, fill in **Headset name** on XRPerfSensors' Appearance page (or `headset_name=` in the `.ini`, for example `headset_name=Pimax Crystal Light`); it applies from the next game launch. The name reported by the runtime is written to the log at each session.
 
 Colors: the FPS is green when the headset rate is held, orange above half, red below. A frame time turns orange then red when it approaches then exceeds the frame budget (11.1 ms at 90 Hz). Temperatures turn orange then red (CPU 85 / 95 °C, GPU 80 / 87 °C).
 
@@ -103,6 +104,20 @@ Colors: the FPS is green when the headset rate is held, orange above half, red b
 The **OpenXR games (layer)** switch (Panel page, dashboard, or the "OpenXR layer enabled" item of the tray icon menu) takes the layer out of OpenXR games without uninstalling it: XRPerfSensors sets its OpenXR registration to "disabled" (value `1` instead of `0` in `HKLM\SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit`, the mechanism OpenXR provides). The OpenXR loader then ignores it completely: it is no longer loaded into games, as if it were not installed. Turning it back on sets the value to `0` again. The change applies the next time a game starts.
 
 Writing to that key needs administrator rights, which XRPerfSensors already has (Windows grants them when it starts, to read the sensors): no other permission is asked. An update with `Installer.bat` keeps the layer off if it was. SteamVR (OpenVR) games have their own switch, "Also in SteamVR games": XRPerfVR doesn't depend on the layer, and can show the panel in an OpenXR game started through SteamVR while the layer is off.
+
+## Configuration diagnosis
+
+The **Configuration** page goes over what matters for VR on the PC:
+
+- **VR chain**: the active OpenXR runtime (the one OpenXR games use) and the other installed ones, the runtime for SteamVR games (SteamVR, or OpenComposite if it was installed system-wide), the headset software version, the last recorded session.
+- **OpenXR layers**: every registered layer, in the order the OpenXR loader reads them, with its state (active, disabled, file missing, DLL not found). The most common ones are recognized by name (OFXR Bridge, OpenXR Toolkit, Quad-Views-Foveated, OpenKneeboard, OpenXR-MotionCompensation...).
+- **Installed VR software**, **hardware** (processor, memory, graphics cards with their video memory and driver version) and **Windows** (version, hardware-accelerated GPU scheduling, Game Mode, power mode).
+
+At the top of the page, the findings: what prevents VR from starting (no runtime, runtime file gone), then what deserves a look (registered layer whose file no longer exists, active layer without its DLL, XR Perf Overlay registered from two folders, OpenXR Toolkit still active, two frame generation layers active at once, Power saver mode, little memory), and finally information (runtime changed since the last session, OpenXR games going through SteamVR while Pimax Play is installed, laptop with two graphics cards). These are leads: the page does not know your intentions, and a deliberate choice (SteamVR as the runtime for a mod, for example) is not a mistake.
+
+**Turning a layer off.** Each layer in the list has a **Turn off** (or **Turn on**) button, and so do the findings about a specific layer (OpenXR Toolkit still active, layer without its DLL). After confirmation, its OpenXR registration is set to "disabled", as with the XR Perf Overlay switch: the layer stays installed, the OpenXR loader ignores it from the next game launch, and a click on **Turn on** brings it back. Only existing registrations are changed: nothing is created or deleted in the registry. An update or reinstall of the mod concerned may turn it back on by itself. This is the only thing the page changes.
+
+**Copy diagnosis** puts it all on the clipboard, as plain text, to paste in a message when you ask for help. Paths inside your user folder are written `%USERPROFILE%`, without your Windows account name; the hardware is included.
 
 ## Watch and attaching to the controllers
 
