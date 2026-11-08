@@ -466,24 +466,30 @@ class VideoProducerD3D12 final : public VideoProducer {
             Log("Video : images du jeu multi-echantillonnees (MSAA), non prises en charge.");
             return false;
         }
-        D3D12_HEAP_PROPERTIES heap = {};
-        heap.Type = D3D12_HEAP_TYPE_DEFAULT;
-        D3D12_RESOURCE_DESC desc = {};
-        desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        // Textures créées par Direct3D 11 (sur la même carte) puis ouvertes ici : l'enregistreur (Direct3D 11)
+        // refuse une texture créée par Direct3D 12 dans certains formats (E_INVALIDARG avec un format sans type,
+        // celui des swapchains de beaucoup de runtimes) ; dans l'autre sens, le partage est toujours accepté.
+        if (!ensureD3D11()) return false;
+        D3D11_TEXTURE2D_DESC desc = {};
         desc.Width = source.width;
         desc.Height = source.height;
-        desc.DepthOrArraySize = 1;
         desc.MipLevels = 1;
+        desc.ArraySize = 1;
         desc.Format = sourceDesc.Format;
         desc.SampleDesc.Count = 1;
-        desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
         const DWORD pid = GetCurrentProcessId();
         wchar_t name[96];
         for (int i = 0; i < kVideoSlots; ++i) {
-            HRESULT hr = m_device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_SHARED, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
-                                                           __uuidof(ID3D12Resource), reinterpret_cast<void**>(m_textures[i].put()));
+            HRESULT hr = m_d3d11->CreateTexture2D(&desc, nullptr, m_shared11[i].put());
+            Com<IDXGIResource1> resource;
+            if (SUCCEEDED(hr)) hr = m_shared11[i]->QueryInterface(__uuidof(IDXGIResource1), reinterpret_cast<void**>(resource.put()));
             VideoTextureName(name, 96, pid, generation, i);
-            if (SUCCEEDED(hr)) hr = m_device->CreateSharedHandle(m_textures[i].get(), nullptr, GENERIC_ALL, name, &m_handles[i]);
+            if (SUCCEEDED(hr))
+                hr = resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, name, &m_handles[i]);
+            if (SUCCEEDED(hr)) hr = m_device->OpenSharedHandle(m_handles[i], __uuidof(ID3D12Resource), reinterpret_cast<void**>(m_textures[i].put()));
             if (SUCCEEDED(hr))
                 hr = m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator),
                                                       reinterpret_cast<void**>(m_allocators[i].put()));
@@ -510,6 +516,40 @@ class VideoProducerD3D12 final : public VideoProducer {
         return true;
     }
 
+    // Appareil Direct3D 11 sur la carte du jeu, seulement pour créer les textures partagées (une fois, au
+    // premier enregistrement ; chargé à la demande : un jeu Direct3D 12 n'a pas toujours d3d11.dll).
+    bool ensureD3D11() {
+        if (m_d3d11) return true;
+        using CreateFactoryFn = HRESULT(WINAPI*)(REFIID, void**);
+        HMODULE dxgi = LoadLibraryW(L"dxgi.dll"), d3d11 = LoadLibraryW(L"d3d11.dll");
+        const auto createFactory = dxgi ? reinterpret_cast<CreateFactoryFn>(reinterpret_cast<void*>(GetProcAddress(dxgi, "CreateDXGIFactory1"))) : nullptr;
+        const auto createDevice = d3d11 ? reinterpret_cast<PFN_D3D11_CREATE_DEVICE>(reinterpret_cast<void*>(GetProcAddress(d3d11, "D3D11CreateDevice"))) : nullptr;
+        if (!createFactory || !createDevice) {
+            Log("Video : Direct3D 11 indisponible (textures partagees d'un jeu Direct3D 12).");
+            return false;
+        }
+        Com<IDXGIFactory1> factory;
+        if (FAILED(createFactory(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(factory.put())))) return false;
+        const LUID luid = m_device->GetAdapterLuid();
+        Com<IDXGIAdapter1> adapter;
+        for (UINT i = 0; factory->EnumAdapters1(i, adapter.put()) != DXGI_ERROR_NOT_FOUND; ++i) {
+            DXGI_ADAPTER_DESC1 desc;
+            if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.AdapterLuid.LowPart == luid.LowPart && desc.AdapterLuid.HighPart == luid.HighPart) break;
+            adapter.reset();
+        }
+        if (!adapter) {
+            Log("Video : carte graphique du jeu introuvable pour Direct3D 11.");
+            return false;
+        }
+        const D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0};
+        const HRESULT hr = createDevice(adapter.get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0, levels, 2, D3D11_SDK_VERSION, m_d3d11.put(), nullptr, nullptr);
+        if (FAILED(hr)) {
+            Log("Video : appareil Direct3D 11 impossible (erreur 0x%08lx).", static_cast<unsigned long>(hr));
+            return false;
+        }
+        return true;
+    }
+
     void releaseResources() override {
         // Copies encore en cours sur la file du jeu : on attend qu'elles finissent (une seconde au plus).
         if (m_fence && m_lastValue > 0 && m_fence->GetCompletedValue() < m_lastValue) {
@@ -523,6 +563,7 @@ class VideoProducerD3D12 final : public VideoProducer {
             m_lists[i].reset();
             m_allocators[i].reset();
             m_textures[i].reset();
+            m_shared11[i].reset();
             if (m_handles[i]) CloseHandle(m_handles[i]);
             m_handles[i] = nullptr;
             m_slotValue[i] = 0;
@@ -589,6 +630,8 @@ class VideoProducerD3D12 final : public VideoProducer {
     Com<ID3D12Device> m_device;
     Com<ID3D12CommandQueue> m_queue;
     Com<ID3D12Resource> m_textures[kVideoSlots];
+    Com<ID3D11Device> m_d3d11;                  // crée les textures partagées (voir createResources)
+    Com<ID3D11Texture2D> m_shared11[kVideoSlots];
     HANDLE m_handles[kVideoSlots] = {};
     Com<ID3D12CommandAllocator> m_allocators[kVideoSlots];
     Com<ID3D12GraphicsCommandList> m_lists[kVideoSlots];
