@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.9.1
+
+- Video: only the recorded eye's image is copied, instead of the whole image sent by the game. When the game puts both eyes in the same image (Metro Awakening, SteamVR's mirror image...), the copy takes half the work and video memory while recording. Dynamic resolution is still supported.
+
 ## 1.9.0
 
 - **Headset video**: records what you see in the headset, without OBS. One eye's image, framed and centered on the direction of the head (canted displays included), is encoded by the graphics card in **H.264, H.265 (HEVC) or AV1** into an MP4 file, with optional **game sound** and **microphone** (output and microphone of your choice). Resolution from 720p to 2160p, 30 to 90 frames per second; *Light* to *Very high* quality, which picks the bitrate from the codec, resolution and frame rate (or bitrate by hand, 2 to 150 Mbit/s); eye, aspect ratio and framing adjustable. In an OpenXR game, the **panel** can be added to the video, in place as in the headset or in a corner. Optional light or strong **stabilization** and **level horizon**: a virtual camera follows the head smoothly, with no change in the headset. `Ctrl+Alt+V` (key of your choice), a button on the new **Video** page, or the tray icon menu start and stop recording; "VID" and the duration show at the top of the panel in the headset. OpenXR games in Direct3D 11 and 12 (through the layer) and SteamVR games (through XRPerfVR). Everything stays on the graphics card, nothing runs when not recording, and a switch turns the feature off.

@@ -269,8 +269,9 @@ class OpenVrBackend final : public VrBackend {
         if (viewDesc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DARRAY && desc.ArraySize > 1) {
             source.subresource = D3D11CalcSubresource(0, viewDesc.Texture2DArray.FirstArraySlice, desc.MipLevels);
         } else if (sameTexture && desc.ArraySize <= 1) {
-            // Les deux yeux côte à côte : la moitié de l'œil enregistré.
-            frame.x = eye == 1 ? desc.Width / 2 : 0;
+            // Les deux yeux côte à côte : seule la moitié de l'œil enregistré est copiée.
+            source.x = eye == 1 ? desc.Width / 2 : 0;
+            source.width = desc.Width / 2;
             frame.width = desc.Width / 2;
         }
         // Image du compositeur : encodée pour l'écran en 8 ou 10 bits, linéaire en virgule flottante.

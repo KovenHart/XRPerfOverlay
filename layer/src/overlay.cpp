@@ -287,19 +287,23 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
     }
     const uint32_t slice = view.subImage.imageArrayIndex < info.arraySize ? view.subImage.imageArrayIndex : 0;
 
+    // Rectangle de l'œil dans la texture, borné à sa taille : la zone copiée à la prochaine image.
+    const XrRect2Di rect = view.subImage.imageRect;
+    const int64_t x0 = rect.offset.x < 0 ? 0 : rect.offset.x, y0 = rect.offset.y < 0 ? 0 : rect.offset.y;
+    const int64_t x1 = std::min<int64_t>(info.width, static_cast<int64_t>(rect.offset.x) + rect.extent.width);
+    const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(rect.offset.y) + rect.extent.height);
+    const bool rectOk = x1 - x0 >= 16 && y1 - y0 >= 16;
+
     // Image copiée quand le jeu l'a rendue : c'est bien celle qu'il soumet (même swapchain, même image,
-    // même tranche) ? Alors elle est publiée avec ce qu'elle montre.
+    // même tranche, et l'œil dans la zone copiée) ? Alors elle est publiée avec ce qu'elle montre.
     if (m_video->pending()) {
-        if (swapchain == m_videoCopiedSwapchain && info.released == static_cast<int64_t>(m_videoCopiedIndex) && slice == previous.slice) {
-            // Rectangle de l'œil dans la texture, borné à sa taille.
-            const XrRect2Di rect = view.subImage.imageRect;
-            const int64_t x0 = rect.offset.x < 0 ? 0 : rect.offset.x, y0 = rect.offset.y < 0 ? 0 : rect.offset.y;
-            const int64_t x1 = std::min<int64_t>(info.width, static_cast<int64_t>(rect.offset.x) + rect.extent.width);
-            const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(rect.offset.y) + rect.extent.height);
-            if (x1 - x0 >= 16 && y1 - y0 >= 16) {
+        const int64_t bx0 = previous.x, by0 = previous.y, bx1 = bx0 + previous.width, by1 = by0 + previous.height;
+        if (swapchain == m_videoCopiedSwapchain && info.released == static_cast<int64_t>(m_videoCopiedIndex) && slice == previous.slice && rectOk &&
+            x0 >= bx0 && y0 >= by0 && x1 <= bx1 && y1 <= by1) {
+            {
                 VideoFrameInfo frame;
-                frame.x = static_cast<uint32_t>(x0);
-                frame.y = static_cast<uint32_t>(y0);
+                frame.x = static_cast<uint32_t>(x0 - bx0);  // la zone copiée est en haut à gauche de la texture partagée
+                frame.y = static_cast<uint32_t>(y0 - by0);
                 frame.width = static_cast<uint32_t>(x1 - x0);
                 frame.height = static_cast<uint32_t>(y1 - y0);
                 frame.linear = VideoFormatIsLinear(info.format);
@@ -322,12 +326,27 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
         }
         m_video->dropPending();
     }
-    // Prochaine copie : cette swapchain, cette tranche.
+    // Prochaine copie : cette swapchain, cette tranche, l'œil seul (pas l'autre œil d'une texture partagée).
+    // Avec une résolution dynamique, l'œil change de taille d'une image à l'autre : la zone copiée réunit
+    // les rectangles vus depuis deux secondes, pour que l'image suivante y tienne encore.
+    if (!rectOk) return;
+    int64_t cx0 = x0, cy0 = y0, cx1 = x1, cy1 = y1;
+    const double now = nowSeconds();
+    if (previous.swapchain == swapchain && previous.slice == slice && previous.width > 0 && m_videoBoxSince >= 0.0 && now - m_videoBoxSince < 2.0) {
+        cx0 = std::min<int64_t>(cx0, previous.x);
+        cy0 = std::min<int64_t>(cy0, previous.y);
+        cx1 = std::max<int64_t>(cx1, static_cast<int64_t>(previous.x) + previous.width);
+        cy1 = std::max<int64_t>(cy1, static_cast<int64_t>(previous.y) + previous.height);
+    } else {
+        m_videoBoxSince = now;
+    }
     m_videoTarget.swapchain = swapchain;
     m_videoTarget.slice = slice;
     m_videoTarget.mipCount = info.mipCount;
-    m_videoTarget.width = info.width;
-    m_videoTarget.height = info.height;
+    m_videoTarget.x = static_cast<uint32_t>(cx0);
+    m_videoTarget.y = static_cast<uint32_t>(cy0);
+    m_videoTarget.width = static_cast<uint32_t>(cx1 - cx0);
+    m_videoTarget.height = static_cast<uint32_t>(cy1 - cy0);
 }
 
 // Où le panneau se trouve dans l'image de l'œil enregistré : coins du calque dessiné à cette image, ramenés
@@ -376,6 +395,8 @@ void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains)
     VideoSource source;
     source.texture = info.images[index];
     source.subresource = m_videoTarget.slice * m_videoTarget.mipCount;  // niveau 0 de la tranche (D3D11CalcSubresource, D3D12CalcSubresource)
+    source.x = m_videoTarget.x;
+    source.y = m_videoTarget.y;
     source.width = m_videoTarget.width;
     source.height = m_videoTarget.height;
     if (m_video->copy(source)) {

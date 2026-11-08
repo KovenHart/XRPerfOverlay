@@ -249,8 +249,10 @@ class Overlay {
     std::mutex m_videoMutex;  // xrReleaseSwapchainImage et xrEndFrame peuvent venir de fils différents
     struct VideoTarget {
         XrSwapchain swapchain = XR_NULL_HANDLE;  // swapchain de l'œil enregistré (vue à la dernière image)
-        uint32_t slice = 0, mipCount = 1, width = 0, height = 0;
+        uint32_t slice = 0, mipCount = 1;
+        uint32_t x = 0, y = 0, width = 0, height = 0;  // zone copiée : l'œil (vu aux dernières images)
     } m_videoTarget;
+    double m_videoBoxSince = -1.0;  // début de la zone copiée actuelle (elle s'agrandit, puis repart de l'œil)
     XrSwapchain m_videoCopiedSwapchain = XR_NULL_HANDLE;  // copie en attente de publication : swapchain et image
     uint32_t m_videoCopiedIndex = 0;
     // Fil de xrEndFrame : en Direct3D 11, le contexte du jeu n'est utilisé que depuis ce fil.
