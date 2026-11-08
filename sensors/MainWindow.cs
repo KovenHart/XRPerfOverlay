@@ -313,6 +313,7 @@ namespace XRPerfSensors
                         case "videoOpenFolder": Later(OpenVideoFolder); break;
                         case "videoPickFolder": Later(PickVideoFolder); break;
                         case "videoDevices": SendVideoDevices(); break;
+                        case "videoHotkeyCapture": _app.PauseVideoHotkey(m.TryGetProperty("on", out JsonElement captureOn) && captureOn.ValueKind == JsonValueKind.True); break;
                         case "copyText":
                             string copied = Str(m, "text");
                             if (!string.IsNullOrEmpty(copied)) Later(() => CopyText(copied));
@@ -447,6 +448,7 @@ namespace XRPerfSensors
                 w.WriteString("encoder", st.Encoder ?? "");
                 w.WriteString("reason", st.State == VideoRecorder.StateStopped ? VideoRecorder.ReasonText(st.Reason, st.HResult) : "");
                 w.WriteBoolean("hotkeyOk", _app.VideoHotkeyOk);
+                w.WriteString("hotkeyText", _app.VideoHotkeyText);
                 w.WriteString("folder", _app.Desktop.VideoFolderOrDefault);
             }));
         }
@@ -858,6 +860,7 @@ namespace XRPerfSensors
                     w.WriteString("gpuName", r.GpuName);
                     Number(w, "cpuLoad", r.CpuLoad); Number(w, "cpuTemp", r.CpuTemp); Number(w, "cpuMHz", r.CpuMHz);
                     Number(w, "gpuLoad", r.GpuLoad); Number(w, "gpuTemp", r.GpuTemp); Number(w, "gpuMHz", r.GpuMHz);
+                    Number(w, "cpuWatts", r.CpuWatts); Number(w, "gpuWatts", r.GpuWatts);
                     Number(w, "vramUsed", r.VramUsedMB); Number(w, "vramTotal", r.VramTotalMB);
                     w.WriteEndObject();
                 }));

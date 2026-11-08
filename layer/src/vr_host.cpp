@@ -442,6 +442,8 @@ void VrHost::sample(double now) {
         data.gpuLoad = sensors.gpuLoad;
         data.gpuTemp = sensors.gpuTemp;
         data.gpuMHz = sensors.gpuMHz;
+        data.cpuWatts = sensors.cpuWatts;
+        data.gpuWatts = sensors.gpuWatts;
         data.vramUsedMB = sensors.vramUsedMB;
         data.vramTotalMB = sensors.vramTotalMB;
         if (stats.valid && stats.fps > 0.f && !std::isnan(sensors.gpuLoad))
@@ -498,6 +500,7 @@ void VrHost::sample(double now) {
     }
 
     data.layout = m_config.layout;
+    data.showPower = m_config.showPower;
     data.theme = ThemeOf(m_config);
     data.english = m_config.english;
     if (data.layout == Layout::Graph) {

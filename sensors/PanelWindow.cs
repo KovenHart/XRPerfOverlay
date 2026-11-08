@@ -552,9 +552,11 @@ namespace XRPerfSensors
         // Stabilisation : la caméra de la vidéo suit la tête avec un temps de retard (léger ou fort).
         public static readonly string[] VideoStabilizations = { "off", "light", "strong" };
         public const int MinVideoOverlaySize = 15, MaxVideoOverlaySize = 50; // largeur du panneau, en % de la largeur de la vidéo
-        // Touches proposées pour Ctrl+Alt+... : lettres et F1 à F12 (codes de touches virtuelles), sauf celles
-        // des raccourcis du casque (O, P, R, F, G, S, voir [hotkeys] dans XRPerfOverlay.ini).
-        public static readonly int[] VideoKeys = BuildVideoKeys();
+        // Raccourci de la vidéo : modificateurs (comme RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows) et touche
+        // (code de touche virtuelle). Ctrl+Alt avec une touche des raccourcis du casque est refusé (voir
+        // [hotkeys] dans XRPerfOverlay.ini : O, P, R, F, G, S, Pg.Préc, Pg.Suiv, Début, Fin).
+        public const int ModAlt = 1, ModCtrl = 2, ModShift = 4, ModWin = 8;
+        private static readonly int[] HeadsetKeys = { 0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24 };
         public const int MinVideoBitrate = 2, MaxVideoBitrate = 150, MinVideoField = 40; // Mbit/s ; % de l'image de l'œil
         public string VideoCodec = "h264";
         public int VideoHeight = 1440;
@@ -575,14 +577,20 @@ namespace XRPerfSensors
         public string VideoCaptureDevice = ""; // identifiant du micro ("" : celui par défaut)
         public string VideoFolder = "";        // "" : Vidéos\XR Perf Overlay
         public int VideoKey = 'V';             // Ctrl+Alt+V ; 0 = sans raccourci
+        public int VideoMods = ModCtrl | ModAlt;
 
-        private static int[] BuildVideoKeys()
+        /// <summary>
+        /// Raccourci possible : une touche ordinaire (pas un modificateur seul) avec au moins un modificateur, ou
+        /// une touche F1 à F24 seule ; pas un raccourci du casque. Touche 0 : pas de raccourci.
+        /// </summary>
+        public static bool ValidVideoHotkey(int mods, int key)
         {
-            var keys = new System.Collections.Generic.List<int>();
-            for (int c = 'A'; c <= 'Z'; c++)
-                if ("OPRFGS".IndexOf((char)c) < 0) keys.Add(c);
-            for (int f = 0; f < 12; f++) keys.Add(0x70 + f);
-            return keys.ToArray();
+            if (key == 0) return true;
+            if (key < 0x08 || key > 0xFE || (mods & ~0xF) != 0) return false;
+            if (key == 0x10 || key == 0x11 || key == 0x12 || key == 0x5B || key == 0x5C || (key >= 0xA0 && key <= 0xA5)) return false;
+            if (mods == 0 && !(key >= 0x70 && key <= 0x87)) return false;
+            if ((mods & (ModCtrl | ModAlt)) == (ModCtrl | ModAlt) && Array.IndexOf(HeadsetKeys, key) >= 0) return false;
+            return true;
         }
 
         public static string DefaultVideoFolder
@@ -664,13 +672,19 @@ namespace XRPerfSensors
                         case "video_overlay_size": if (value >= MinVideoOverlaySize && value <= MaxVideoOverlaySize) settings.VideoOverlaySize = value; break;
                         case "video_game_audio": settings.VideoGameAudio = value != 0; break;
                         case "video_mic": settings.VideoMic = value != 0; break;
-                        case "video_key": if (value == 0 || Array.IndexOf(VideoKeys, value) >= 0) settings.VideoKey = value; break;
+                        case "video_key": if (value >= 0 && value <= 0xFE) settings.VideoKey = value; break;
+                        case "video_mods": if (value >= 0 && value <= 0xF) settings.VideoMods = value; break;
                     }
                 }
             }
             catch (Exception)
             {
                 // Fichier illisible : réglages par défaut.
+            }
+            if (!ValidVideoHotkey(settings.VideoMods, settings.VideoKey))
+            {
+                settings.VideoKey = 'V';
+                settings.VideoMods = ModCtrl | ModAlt;
             }
             return settings;
         }
@@ -743,6 +757,7 @@ namespace XRPerfSensors
                     "video_capture_device=" + OneLine(VideoCaptureDevice),
                     "video_folder=" + OneLine(VideoFolder),
                     "video_key=" + VideoKey.ToString(CultureInfo.InvariantCulture),
+                    "video_mods=" + VideoMods.ToString(CultureInfo.InvariantCulture),
                 });
             }
             catch (Exception)

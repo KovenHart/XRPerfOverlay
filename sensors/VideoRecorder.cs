@@ -411,11 +411,11 @@ namespace XRPerfSensors
         }
     }
 
-    /// <summary>Raccourci clavier global (Ctrl+Alt+touche), reçu même quand un jeu a le clavier.</summary>
+    /// <summary>Raccourci clavier global (modificateurs + touche), reçu même quand un jeu a le clavier.</summary>
     internal sealed class GlobalHotkey : NativeWindow, IDisposable
     {
         private const int WM_HOTKEY = 0x0312;
-        private const uint MOD_ALT = 0x0001, MOD_CONTROL = 0x0002, MOD_NOREPEAT = 0x4000;
+        private const uint MOD_NOREPEAT = 0x4000;  // modificateurs : mêmes valeurs que Settings.ModAlt...
         private const int Id = 0x5650; // "VP"
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -424,8 +424,35 @@ namespace XRPerfSensors
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool UnregisterHotKey(IntPtr window, int id);
 
-        private int _key;
+        private int _key, _mods;
         private bool _registered;
+
+        [DllImport("user32.dll")]
+        private static extern uint MapVirtualKeyW(uint code, uint mapType);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetKeyNameTextW(int lParam, System.Text.StringBuilder text, int size);
+
+        /// <summary>Texte d'un raccourci, par exemple « Ctrl+Alt+V » ou « Ctrl+Maj+Pause » (nom de la touche selon le clavier).</summary>
+        public static string Text(int mods, int key)
+        {
+            if (key == 0) return "";
+            string text = ((mods & Settings.ModCtrl) != 0 ? "Ctrl+" : "") + ((mods & Settings.ModAlt) != 0 ? "Alt+" : "") +
+                          ((mods & Settings.ModShift) != 0 ? Loc.T("Maj+", "Shift+") : "") + ((mods & Settings.ModWin) != 0 ? "Win+" : "");
+            return text + KeyName(key);
+        }
+
+        public static string KeyName(int key)
+        {
+            if (key >= 0x70 && key <= 0x87) return "F" + (key - 0x6F).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if ((key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9')) return ((char)key).ToString();
+            // Autres touches : leur nom selon le clavier de Windows (touches étendues : flèches, Inser, Suppr...).
+            uint scan = MapVirtualKeyW((uint)key, 0 /* MAPVK_VK_TO_VSC */);
+            bool extended = (key >= 0x21 && key <= 0x2E) || key == 0x6F || key == 0x90;
+            var name = new System.Text.StringBuilder(64);
+            if (scan != 0 && GetKeyNameTextW((int)((scan << 16) | (extended ? 1u << 24 : 0u)), name, name.Capacity) > 0) return name.ToString();
+            return "0x" + key.ToString("X2", System.Globalization.CultureInfo.InvariantCulture);
+        }
 
         public event Action Pressed;
 
@@ -434,15 +461,16 @@ namespace XRPerfSensors
             CreateHandle(new CreateParams());
         }
 
-        /// <summary>Touche voulue (0 : aucune). Retourne false si Windows la refuse (déjà prise par un autre programme).</summary>
-        public bool Set(int key)
+        /// <summary>Raccourci voulu (touche 0 : aucun). Retourne false si Windows le refuse (déjà pris par un autre programme).</summary>
+        public bool Set(int mods, int key)
         {
-            if (key == _key && _registered) return true;
+            if (key == _key && mods == _mods && _registered) return true;
             if (_registered) UnregisterHotKey(Handle, Id);
             _registered = false;
             _key = key;
+            _mods = mods;
             if (key == 0) return true;
-            _registered = RegisterHotKey(Handle, Id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, (uint)key);
+            _registered = RegisterHotKey(Handle, Id, (uint)(mods & 0xF) | MOD_NOREPEAT, (uint)key);
             return _registered;
         }
 

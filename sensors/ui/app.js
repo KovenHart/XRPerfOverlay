@@ -420,6 +420,7 @@ window.App = (function () {
   ];
 
   function go(page) {
+    stopHotkeyCapture();
     if (!PAGES.some(p => p.id === page)) page = "dashboard";
     state.page = page;
     send("page", { name: page });
@@ -740,7 +741,8 @@ window.App = (function () {
         k("F"), h("span", { text: t("key.window") }),
         k("G"), h("span", { text: t("key.place") }),
         k("S"), h("span", { text: t("key.record") }),
-        videoEnabled() && get("desktop", "VideoKey") ? [k(keyName(get("desktop", "VideoKey"))), h("span", { text: t("key.video") })] : null)));
+        videoEnabled() && get("desktop", "VideoHotkey") ? [h("span", { class: "combo" }, hotkeyParts(get("desktop", "VideoHotkey")).map(x => h("kbd", { text: x }))),
+          h("span", { text: t("key.video") })] : null)));
     page.appendChild(dash);
   }
 
@@ -781,8 +783,8 @@ window.App = (function () {
     if (state.page === "dashboard") {
       const s = state.sensors || {};
       const hist = state.history;
-      tile("tile-cpu", t("dash.cpu"), s.cpuName, num(s.cpuLoad), " %", [[num(s.cpuTemp) + " °C", t("dash.temp")], [num(s.cpuMHz), "MHz"]], hist.cpuLoad, "var(--s-cpu)", 0, 100);
-      tile("tile-gpu", t("dash.gpu"), s.gpuName, num(s.gpuLoad), " %", [[num(s.gpuTemp) + " °C", t("dash.temp")], [num(s.gpuMHz), "MHz"]], hist.gpuLoad, "var(--s-gpu)", 0, 100);
+      tile("tile-cpu", t("dash.cpu"), s.cpuName, num(s.cpuLoad), " %", [[num(s.cpuTemp) + " °C", t("dash.temp")], [num(s.cpuMHz), "MHz"]].concat(s.cpuWatts != null ? [[num(s.cpuWatts), "W"]] : []), hist.cpuLoad, "var(--s-cpu)", 0, 100);
+      tile("tile-gpu", t("dash.gpu"), s.gpuName, num(s.gpuLoad), " %", [[num(s.gpuTemp) + " °C", t("dash.temp")], [num(s.gpuMHz), "MHz"]].concat(s.gpuWatts != null ? [[num(s.gpuWatts), "W"]] : []), hist.gpuLoad, "var(--s-gpu)", 0, 100);
       const used = s.vramUsed != null ? s.vramUsed / 1024 : null, total = s.vramTotal != null ? s.vramTotal / 1024 : null;
       tile("tile-vram", t("dash.vram"), null, num(used, 1), " " + t("unit.gb"), [[t("dash.of", { total: num(total, 1) }), ""]], null, null, null, null,
         used != null && total ? (100 * used) / total : 0);
@@ -914,6 +916,7 @@ window.App = (function () {
         headsetNameRow(),
         switchCtl("overlay", "PanelSession", t("app.session")),
         switchCtl("overlay", "PanelBattery", t("app.battery"), t("app.battery.help")),
+        switchCtl("overlay", "PowerColumn", t("app.power"), t("app.power.help")),
       ]),
       defaultsButton(),
     ];
@@ -1045,8 +1048,113 @@ window.App = (function () {
     return mb >= 1024 ? num(mb / 1024, 1) + " " + t("unit.gb") : num(mb, 0) + " " + t("unit.mb");
   }
 
-  const keyName = k => (k >= 0x70 && k <= 0x7B ? "F" + (k - 0x6F) : String.fromCharCode(k));
-  const VIDEO_KEYS = [..."ABCDEHIJKLMNQTUVWXYZ"].map(c => c.charCodeAt(0)).concat([...Array(12)].map((_, i) => 0x70 + i));
+  // Raccourci de la vidéo : modificateurs << 16 | touche (code de touche virtuelle Windows). Modificateurs comme
+  // RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows. Mêmes règles que Settings.ValidVideoHotkey (XRPerfSensors).
+  const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
+  const HEADSET_KEYS = [0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24];
+  const MODIFIER_KEYS = [0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+  function keyName(vk) {
+    if (vk >= 0x70 && vk <= 0x87) return "F" + (vk - 0x6F);
+    if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) return String.fromCharCode(vk);
+    if (vk >= 0x60 && vk <= 0x69) return t("key.num") + " " + (vk - 0x60);
+    const named = { 0x08: "key.backspace", 0x09: "key.tab", 0x0D: "key.enter", 0x13: "key.pause", 0x20: "key.space", 0x21: "key.pgup", 0x22: "key.pgdn",
+      0x23: "key.end", 0x24: "key.home", 0x25: "key.left", 0x26: "key.up", 0x27: "key.right", 0x28: "key.down", 0x2D: "key.insert", 0x2E: "key.delete",
+      0x6A: "key.numMul", 0x6B: "key.numAdd", 0x6D: "key.numSub", 0x6F: "key.numDiv", 0x91: "key.scroll" };
+    return named[vk] ? t(named[vk]) : null;
+  }
+  // Morceaux du raccourci (« Ctrl », « Alt », « V »). Touche sans nom connu ici : celui donné par Windows (XRPerfSensors).
+  function hotkeyParts(combo) {
+    const mods = combo >> 16, vk = combo & 0xFFFF;
+    if (!vk) return [];
+    const parts = [];
+    if (mods & MOD_CTRL) parts.push("Ctrl");
+    if (mods & MOD_ALT) parts.push("Alt");
+    if (mods & MOD_SHIFT) parts.push(t("key.shift"));
+    if (mods & MOD_WIN) parts.push("Win");
+    const own = keyName(vk);
+    const windows = state.video && state.video.hotkeyText ? state.video.hotkeyText.split("+").pop() : "";
+    parts.push(own || windows || "0x" + vk.toString(16).toUpperCase());
+    return parts;
+  }
+  const hotkeyText = combo => hotkeyParts(combo).join("+");
+  // null si le raccourci convient, sinon la raison.
+  function hotkeyProblem(mods, vk) {
+    if (MODIFIER_KEYS.includes(vk)) return null;  // modificateur seul : on attend la touche
+    if (!mods && !(vk >= 0x70 && vk <= 0x87)) return t("vid.key.needMod");
+    if ((mods & (MOD_CTRL | MOD_ALT)) === (MOD_CTRL | MOD_ALT) && HEADSET_KEYS.includes(vk)) return t("vid.key.headset", { key: hotkeyText((mods << 16) | vk) });
+    return null;
+  }
+
+  // Saisie d'un raccourci : le prochain appui (avec ses modificateurs) devient le raccourci. Échap annule,
+  // Retour arrière ou Suppr seuls retirent le raccourci. L'ancien est suspendu pendant la saisie.
+  var hotkeyCapture = null;  // var : connue avant cette ligne (go() peut être appelé plus tôt)
+  function stopHotkeyCapture() {
+    if (!hotkeyCapture) return;
+    const c = hotkeyCapture;
+    hotkeyCapture = null;
+    document.removeEventListener("keydown", c.onKey, true);
+    document.removeEventListener("keyup", c.onKeyUp, true);
+    clearTimeout(c.timer);
+    send("videoHotkeyCapture", { on: false });
+    c.done();
+  }
+  function hotkeyRow() {
+    const button = h("button", { class: "btn hotkey-btn", type: "button" });
+    const clear = h("button", { class: "btn", type: "button", text: t("vid.key.clear") });
+    const note = h("div", { class: "video-note", hidden: true });
+    const show = () => {
+      const combo = get("desktop", "VideoHotkey") || 0;
+      button.replaceChildren(...(combo ? hotkeyParts(combo).map(x => h("kbd", { text: x })) : [h("span", { text: t("vid.key.none") })]));
+      button.classList.remove("capturing");
+      clear.disabled = !combo || locked("overlay");
+      button.disabled = locked("overlay");
+    };
+    const live = mods => {
+      const parts = [];
+      if (mods & MOD_CTRL) parts.push("Ctrl");
+      if (mods & MOD_ALT) parts.push("Alt");
+      if (mods & MOD_SHIFT) parts.push(t("key.shift"));
+      if (mods & MOD_WIN) parts.push("Win");
+      button.replaceChildren(...parts.map(x => h("kbd", { text: x })), h("span", { text: (parts.length ? "+ " : "") + t("vid.key.press") }));
+    };
+    const modsOf = e => (e.ctrlKey ? MOD_CTRL : 0) | (e.altKey ? MOD_ALT : 0) | (e.shiftKey ? MOD_SHIFT : 0) | (e.metaKey ? MOD_WIN : 0);
+    button.addEventListener("click", () => {
+      if (hotkeyCapture) { stopHotkeyCapture(); return; }
+      note.hidden = true;
+      button.classList.add("capturing");
+      live(0);
+      const onKey = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!document.body.contains(button)) { stopHotkeyCapture(); return; }
+        const mods = modsOf(e), vk = e.keyCode;
+        if (vk === 0x1B && !mods) { stopHotkeyCapture(); return; }
+        if ((vk === 0x08 || vk === 0x2E) && !mods) { setValue("desktop", "VideoHotkey", 0); stopHotkeyCapture(); return; }
+        if (MODIFIER_KEYS.includes(vk)) { live(mods); return; }
+        const problem = hotkeyProblem(mods, vk);
+        if (problem) {
+          note.textContent = problem;
+          note.hidden = false;
+          live(0);
+          return;
+        }
+        setValue("desktop", "VideoHotkey", (mods << 16) | vk);
+        stopHotkeyCapture();
+      };
+      const onKeyUp = e => { if (MODIFIER_KEYS.includes(e.keyCode)) { e.preventDefault(); live(modsOf(e)); } };
+      hotkeyCapture = { onKey, onKeyUp, done: show, timer: setTimeout(stopHotkeyCapture, 15000) };
+      document.addEventListener("keydown", onKey, true);
+      document.addEventListener("keyup", onKeyUp, true);
+      send("videoHotkeyCapture", { on: true });
+    });
+    button.addEventListener("blur", () => setTimeout(() => { if (hotkeyCapture && document.activeElement !== button) stopHotkeyCapture(); }, 0));
+    clear.addEventListener("click", () => { stopHotkeyCapture(); setValue("desktop", "VideoHotkey", 0); note.hidden = true; });
+    show();
+    refreshers.push(() => { if (!hotkeyCapture) show(); });
+    const r = row(t("vid.key"), t("vid.key.help"), h("div", { class: "row-buttons" }, button, clear));
+    r.querySelector(".row-label").parentNode.appendChild(note);
+    return r;
+  }
 
   function videoEnabled() { return !!get("overlay", "VideoCapture") && !state.unavailable; }
 
@@ -1149,7 +1257,7 @@ window.App = (function () {
         deviceRow("VideoCaptureDevice", t("vid.input"), "capture", () => !!get("desktop", "VideoMic")),
       ], videoEnabled),
       group(t("vid.files"), null, [
-        selectRow("desktop", "VideoKey", t("vid.key"), t("vid.key.help"), [{ value: 0, label: t("vid.key.none") }].concat(VIDEO_KEYS.map(k => ({ value: k, label: "Ctrl+Alt+" + keyName(k) })))),
+        hotkeyRow(),
         folderRow,
       ], videoEnabled),
     ];
@@ -1167,8 +1275,8 @@ window.App = (function () {
     if (folder) folder.textContent = get("desktop", "VideoFolder") || v.folder || "";
     if (!card) return;
     const enabled = videoEnabled();
-    const key = get("desktop", "VideoKey");
-    const hotkey = key ? "Ctrl+Alt+" + keyName(key) : "";
+    const key = get("desktop", "VideoHotkey");
+    const hotkey = key ? hotkeyText(key) : "";
     let title, detail = [], cls = "";
     const notes = [];
     if (!v.available) {

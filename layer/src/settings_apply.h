@@ -104,6 +104,7 @@ inline void ApplySettings(Config& c, const SettingsBlock& s) {
     c.watch.along = clamped(s.watchAlong, kMinHandAlong, kMaxHandAlong, c.watch.along);
     c.watch.lift = clamped(s.watchLift, kMinHandLift, kMaxHandLift, c.watch.lift);
     c.panelElements = s.panelElements & (kWatchSession | kWatchBattery);
+    c.showPower = s.power != 0;
 
     // Fenêtre capturée (la pose dans l'espace ne vient que du .ini et du raccourci Ctrl+Alt+G).
     WindowConfig& w = c.window;

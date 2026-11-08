@@ -80,7 +80,7 @@ Three layouts:
 
 | Layout | Content |
 |---|---|
-| Full | FPS, AVG / MIN / MAX, CPU / GPU table (load, frame time, temperature, clock), VRAM with a gauge. |
+| Full | FPS, AVG / MIN / MAX, CPU / GPU table (load, frame time, temperature, clock or, as an option, power), VRAM with a gauge. |
 | Graph | FPS, AVG / MIN / MAX, frame time graph of the last ten seconds, then CPU and GPU on two lines. |
 | Compact | FPS, AVG / MIN / MAX only. |
 
@@ -209,7 +209,7 @@ The window always shows the panel with an opaque background, even if it is hidde
 
 XRPerfSensors can record what you see in the headset, without OBS: one eye's image, framed in 16:9 (or 4:3, or square), encoded by the graphics card into an MP4 file, with the game sound and, if you want, the microphone.
 
-**Start and stop.** `Ctrl+Alt+V` (key to change on the Video page), the button on the Video page, or "Record headset video" in the tray icon menu. Recording starts with the first image of a VR game: started before the game, it waits ("REC waiting"). While recording, a red square and the duration ("VID 03:12") show at the top of the panel in the headset, and "REC 03:12" at the top of the XRPerfSensors window. The same hotkey stops and finishes the file. If the game closes, the file is finished by itself after 10 seconds; if XRPerfSensors closes, it finishes it before leaving.
+**Start and stop.** `Ctrl+Alt+V` by default (any combination on the Video page: click the hotkey then press the keys you want; an F1 to F24 key can be used alone; the panel's hotkeys are refused), the button on the Video page, or "Record headset video" in the tray icon menu. Recording starts with the first image of a VR game: started before the game, it waits ("REC waiting"). While recording, a red square and the duration ("VID 03:12") show at the top of the panel in the headset, and "REC 03:12" at the top of the XRPerfSensors window. The same hotkey stops and finishes the file. If the game closes, the file is finished by itself after 10 seconds; if XRPerfSensors closes, it finishes it before leaving.
 
 **Files.** In `Videos\XR Perf Overlay` by default ("Change..." on the Video page), named after the game and the time: `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. An MP4 file can only be played once finished: if the PC shuts down abruptly while recording, the current video is lost.
 
@@ -277,6 +277,7 @@ The file stays open for the whole session and each update happens in the system 
 | CPU frame time | Time between the return of `xrWaitFrame` and the call to `xrEndFrame`: what the game takes to make a frame (simulation + render preparation). When the GPU is saturated, this time can include waiting on the GPU. |
 | GPU frame time | By default, an **estimate** (shown with "~"): GPU load × frame duration. It needs `XRPerfSensors`, smooths spikes over about a second and counts all of the card's work. With the real measurement option (Direct3D 11 and 12), the time between two GPU timestamps placed at the start and end of each game frame, averaged between two panel refreshes. See "GPU time: estimate or measurement". |
 | CPU load / temp. / clock | Total load over all cores; package temperature (Intel) or Tctl/Tdie (AMD); clock of the fastest core at that moment. |
+| Power (option) | Instead of the clock (Appearance page, "Power instead of clock speed", or `power=1` in `[overlay]`): power of the graphics card ("GPU Package", the whole board on NVIDIA) and of the processor package, in watts, read by LibreHardwareMonitor. Some processors don't report it: "--". Also on the XRPerfSensors dashboard. |
 | GPU load / temp. / clock | The driver's "GPU Core" sensors (NVIDIA, AMD or Intel). With several cards, the one with the most video memory is followed. |
 | VRAM | Video memory used / total on the card, all programs included. |
 | Headset | System name reported by the OpenXR runtime (`xrGetSystemProperties`), or the one chosen with `headset_name=`. |

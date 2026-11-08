@@ -731,6 +731,8 @@ void Overlay::sample(double now) {
         data.gpuLoad = sensors.gpuLoad;
         data.gpuTemp = sensors.gpuTemp;
         data.gpuMHz = sensors.gpuMHz;
+        data.cpuWatts = sensors.cpuWatts;
+        data.gpuWatts = sensors.gpuWatts;
         data.vramUsedMB = sensors.vramUsedMB;
         data.vramTotalMB = sensors.vramTotalMB;
         // Temps GPU par image, estimé : part du temps où le GPU travaille x durée d'une image.
@@ -800,6 +802,7 @@ void Overlay::sample(double now) {
 
     // Apparence. La courbe n'est préparée que pour la présentation qui l'affiche.
     data.layout = m_config.layout;
+    data.showPower = m_config.showPower;
     data.theme = ThemeOf(m_config);
     data.english = m_config.english;
     if (data.layout == Layout::Graph) {

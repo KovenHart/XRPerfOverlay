@@ -9,7 +9,7 @@
 
   const overlay = {
     Visible: true, Position: 5, Distance: 1.0, OffsetX: 0.34, OffsetY: 0.26, Width: 0.36, Opacity: 0.82, GlobalOpacity: 1.0, FaceViewer: true,
-    Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: false, Layout: Number(params.get("layout") || 0), Theme: Number(params.get("ptheme") || 0),
+    Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: false, PowerColumn: false, Layout: Number(params.get("layout") || 0), Theme: Number(params.get("ptheme") || 0),
     CustomBackground: "#101820", CustomText: "#f0f3f8", CustomAccent: "#7fd1c7", HeadsetName: "Pimax Dream Air",
     Anchor: 0, HandPlacement: 2, GazeOnly: false, HandAlong: 0, HandLift: 0,
     WatchEnabled: true, WatchAnchor: 1, WatchPlacement: 0, WatchStyle: 0, WatchSession: true, WatchBattery: true, WatchFps: true, WatchGazeOnly: true,
@@ -23,7 +23,7 @@
     UiTheme: params.get("theme") || "panel", UiBackground: "#12161c", UiText: "#eef2f7", UiAccent: "#f2a65a", UiScale: 100, UiAnimations: true, UiStartFullscreen: false,
     Language: params.get("lang") || "auto",
     VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30, VideoStabilize: "light", VideoLevel: false,
-    VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoKey: 86,
+    VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoHotkey: (3 << 16) | 86,
   };
   // Enregistrement vidéo simulé : ?video=rec (en cours), wait (en attente d'un jeu), error (dernière fin sur erreur), off.
   const video = { available: true, codecs: params.get("codecs") != null ? Number(params.get("codecs")) : 7, state: 0, seconds: 0, bytes: 0, frames: 0, repeated: 0, dropped: 0,
@@ -48,7 +48,7 @@
   let xrUndo = null;
   const reply = msg => setTimeout(() => window.App.receive(JSON.parse(JSON.stringify(msg))), 0);
 
-  const sensors = { cpuName: "AMD Ryzen 7 9800X3D 8-Core Processor", gpuName: "NVIDIA GeForce RTX 4090", cpuLoad: 31, cpuTemp: 61, cpuMHz: 5040, gpuLoad: 78, gpuTemp: 66, gpuMHz: 2805, vramUsed: 21800, vramTotal: 24564 };
+  const sensors = { cpuName: "AMD Ryzen 7 9800X3D 8-Core Processor", gpuName: "NVIDIA GeForce RTX 4090", cpuLoad: 31, cpuTemp: 61, cpuMHz: 5040, gpuLoad: 78, gpuTemp: 66, gpuMHz: 2805, cpuWatts: 71, gpuWatts: 388, vramUsed: 21800, vramTotal: 24564 };
   const walk = (v, lo, hi, step) => Math.max(lo, Math.min(hi, v + (Math.random() - 0.5) * step));
   function tickSensors() {
     sensors.cpuLoad = walk(sensors.cpuLoad, 12, 70, 8); sensors.cpuTemp = walk(sensors.cpuTemp, 50, 80, 2);

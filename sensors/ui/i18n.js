@@ -74,6 +74,9 @@ window.I18N = {
     "key.pgdn": "Page suiv.",
     "key.home": "Début",
     "key.end": "Fin",
+    "key.shift": "Maj", "key.num": "Pavé num.", "key.backspace": "Retour arrière", "key.tab": "Tab", "key.enter": "Entrée", "key.pause": "Pause",
+    "key.space": "Espace", "key.left": "Gauche", "key.up": "Haut", "key.right": "Droite", "key.down": "Bas", "key.insert": "Inser", "key.delete": "Suppr",
+    "key.numMul": "Pavé num. *", "key.numAdd": "Pavé num. +", "key.numSub": "Pavé num. -", "key.numDiv": "Pavé num. /", "key.scroll": "Arrêt défil",
 
     // Réglages communs
     "set.preview": "Aperçu",
@@ -146,6 +149,8 @@ window.I18N = {
     "app.headset": "Casque et résolution de rendu",
     "app.session": "Temps de session",
     "app.battery": "Batterie des manettes",
+    "app.power": "Puissance au lieu de la fréquence",
+    "app.power.help": "Dernière colonne du tableau CPU / GPU en watts plutôt qu'en MHz. La puissance du processeur n'est pas donnée par tous les modèles (« -- »).",
     "app.battery.help": "La batterie vient du runtime : SteamVR la donne, Pimax OpenXR pas encore. Dans un jeu OpenXR, relancez le jeu après avoir activé cette ligne.",
 
     // Montre
@@ -243,7 +248,11 @@ window.I18N = {
     "vid.device.missing": "Périphérique débranché (celui par défaut sera utilisé)",
     "vid.files": "Raccourci et dossier",
     "vid.key": "Raccourci",
-    "vid.key.help": "Démarre puis arrête l'enregistrement, même en jeu.",
+    "vid.key.help": "Démarre puis arrête l'enregistrement, même en jeu. Cliquez le raccourci puis appuyez sur la combinaison voulue (Échap : annuler).",
+    "vid.key.clear": "Retirer",
+    "vid.key.press": "appuyez sur la combinaison…",
+    "vid.key.needMod": "Ajoutez Ctrl, Alt, Maj ou Win : seules les touches F1 à F24 marchent seules.",
+    "vid.key.headset": "{key} est un raccourci du panneau dans le casque : choisissez-en un autre.",
     "vid.key.none": "Aucun",
     "vid.key.taken": "{key} est déjà pris par un autre programme : choisissez un autre raccourci.",
     "vid.folder": "Dossier des vidéos",
@@ -551,6 +560,9 @@ window.I18N = {
     "key.pgdn": "Page Down",
     "key.home": "Home",
     "key.end": "End",
+    "key.shift": "Shift", "key.num": "Num", "key.backspace": "Backspace", "key.tab": "Tab", "key.enter": "Enter", "key.pause": "Pause",
+    "key.space": "Space", "key.left": "Left", "key.up": "Up", "key.right": "Right", "key.down": "Down", "key.insert": "Insert", "key.delete": "Delete",
+    "key.numMul": "Num *", "key.numAdd": "Num +", "key.numSub": "Num -", "key.numDiv": "Num /", "key.scroll": "Scroll Lock",
 
     "set.preview": "Preview",
     "set.preview.sample": "Sample values, drawn by the layer as in the headset",
@@ -620,6 +632,8 @@ window.I18N = {
     "app.headset": "Headset and render resolution",
     "app.session": "Session time",
     "app.battery": "Controller battery",
+    "app.power": "Power instead of clock speed",
+    "app.power.help": "Last column of the CPU / GPU table in watts rather than MHz. Not every processor reports its power (\"--\").",
     "app.battery.help": "The battery level comes from the runtime: SteamVR provides it, Pimax OpenXR does not yet. In an OpenXR game, restart the game after turning this line on.",
 
     "watch.show": "Show the watch",
@@ -714,7 +728,11 @@ window.I18N = {
     "vid.device.missing": "Device unplugged (the default one will be used)",
     "vid.files": "Hotkey and folder",
     "vid.key": "Hotkey",
-    "vid.key.help": "Starts then stops recording, even in game.",
+    "vid.key.help": "Starts then stops recording, even in game. Click the hotkey then press the combination you want (Esc: cancel).",
+    "vid.key.clear": "Remove",
+    "vid.key.press": "press the combination…",
+    "vid.key.needMod": "Add Ctrl, Alt, Shift or Win: only F1 to F24 work on their own.",
+    "vid.key.headset": "{key} is a hotkey of the panel in the headset: choose another one.",
     "vid.key.none": "None",
     "vid.key.taken": "{key} is already taken by another program: choose another hotkey.",
     "vid.folder": "Video folder",

@@ -245,17 +245,20 @@ const int kSmallRowGpu = 220;
 const int kSmallLoad = 110, kSmallFrame = 210, kSmallTemp = 290, kSmallFreq = 400;
 const int kSmallVramTitle = 446;
 
-void hardwareRowBase(Canvas& cv, const Theme& th, int y, const char* title) {
+// Dernière colonne : fréquence (MHz) ou, en option, puissance (W).
+const char* lastUnit(const PanelData& d) { return d.showPower ? "W" : "MHz"; }
+
+void hardwareRowBase(Canvas& cv, const Theme& th, int y, const char* title, const char* last) {
     cv.text(kFontValue, kPad, y, title, th.accent);
     unitAt(cv, th, kColLoad, y, "%");
     unitAt(cv, th, kColFrame, y, "ms");
     unitAt(cv, th, kColTemp, y, kUnitTemp);
-    unitAt(cv, th, kColFreq, y, "MHz");
+    unitAt(cv, th, kColFreq, y, last);
 }
 
 // `estimated` : le temps par image est une estimation, affichée précédée de "~".
-void hardwareRowValues(Canvas& cv, const Theme& th, int y, float load, float frameMs, float temp, float mhz, float targetFps, float tempWarn,
-                       float tempBad, bool estimated) {
+void hardwareRowValues(Canvas& cv, const Theme& th, int y, float load, float frameMs, float temp, float last, const char* lastUnitText, float targetFps,
+                       float tempWarn, float tempBad, bool estimated) {
     char buf[32];
     fmt(buf, sizeof(buf), "%.0f", load);
     valueAt(cv, kColLoad, y, buf, "%", th.text);
@@ -263,8 +266,8 @@ void hardwareRowValues(Canvas& cv, const Theme& th, int y, float load, float fra
     valueAt(cv, kColFrame, y, buf, "ms", frametimeColor(th, frameMs, targetFps));
     fmt(buf, sizeof(buf), "%.0f", temp);
     valueAt(cv, kColTemp, y, buf, kUnitTemp, tempColor(th, temp, tempWarn, tempBad));
-    fmt(buf, sizeof(buf), "%.0f", mhz);
-    valueAt(cv, kColFreq, y, buf, "MHz", th.text);
+    fmt(buf, sizeof(buf), "%.0f", last);
+    valueAt(cv, kColFreq, y, buf, lastUnitText, th.text);
 }
 
 // --- Bloc FPS, commun à toutes les présentations -------------------------------------------------
@@ -340,8 +343,10 @@ void drawHeader(Canvas& cv, const PanelData& d) {
 void drawClassicBody(Canvas& cv, const PanelData& d) {
     const Theme& th = d.theme;
     char buf[64];
-    hardwareRowValues(cv, th, kRowCpu, d.cpuLoad, d.cpuFrameMs, d.cpuTemp, d.cpuMHz, d.targetFps, kCpuTempWarn, kCpuTempBad, false);
-    hardwareRowValues(cv, th, kRowGpu, d.gpuLoad, d.gpuFrameMs, d.gpuTemp, d.gpuMHz, d.targetFps, kGpuTempWarn, kGpuTempBad, !d.gpuMeasured);
+    hardwareRowValues(cv, th, kRowCpu, d.cpuLoad, d.cpuFrameMs, d.cpuTemp, d.showPower ? d.cpuWatts : d.cpuMHz, lastUnit(d), d.targetFps, kCpuTempWarn,
+                      kCpuTempBad, false);
+    hardwareRowValues(cv, th, kRowGpu, d.gpuLoad, d.gpuFrameMs, d.gpuTemp, d.showPower ? d.gpuWatts : d.gpuMHz, lastUnit(d), d.targetFps, kGpuTempWarn,
+                      kGpuTempBad, !d.gpuMeasured);
 
     // Heure, en bas à droite.
     int rightLimit = Panel::kWidth - kPad;  // bord droit disponible pour la ligne VRAM
@@ -461,8 +466,8 @@ void drawGraph(Canvas& cv, const PanelData& d) {
     cv.text(kFontLabel, legend + 2 * kFontLabel.cellW, kGraphTop - 2, d.gpuMeasured ? "GPU" : "GPU (est.)", th.gpu);
 }
 
-void smallRow(Canvas& cv, const Theme& th, int y, const char* title, float load, float frameMs, float temp, float mhz, float targetFps,
-              float tempWarn, float tempBad, bool sensorsOk, bool estimated) {
+void smallRow(Canvas& cv, const Theme& th, int y, const char* title, float load, float frameMs, float temp, float last, const char* lastUnitText,
+              float targetFps, float tempWarn, float tempBad, bool sensorsOk, bool estimated) {
     char buf[32];
     cv.text(kFontLabel, kPad, y, title, th.accent);
     fmt(buf, sizeof(buf), estimated ? "~%.1f" : "%.1f", frameMs);
@@ -472,8 +477,8 @@ void smallRow(Canvas& cv, const Theme& th, int y, const char* title, float load,
     smallCell(cv, th, kSmallLoad, y, buf, "%", th.text);
     fmt(buf, sizeof(buf), "%.0f", temp);
     smallCell(cv, th, kSmallTemp, y, buf, kUnitTemp, tempColor(th, temp, tempWarn, tempBad));
-    fmt(buf, sizeof(buf), "%.0f", mhz);
-    smallCell(cv, th, kSmallFreq, y, buf, "MHz", th.text);
+    fmt(buf, sizeof(buf), "%.0f", last);
+    smallCell(cv, th, kSmallFreq, y, buf, lastUnitText, th.text);
 }
 
 void drawGraphBody(Canvas& cv, const PanelData& d) {
@@ -481,7 +486,8 @@ void drawGraphBody(Canvas& cv, const PanelData& d) {
     char buf[64];
     drawGraph(cv, d);
 
-    smallRow(cv, th, kSmallRowCpu, "CPU", d.cpuLoad, d.cpuFrameMs, d.cpuTemp, d.cpuMHz, d.targetFps, kCpuTempWarn, kCpuTempBad, d.sensorsOk, false);
+    smallRow(cv, th, kSmallRowCpu, "CPU", d.cpuLoad, d.cpuFrameMs, d.cpuTemp, d.showPower ? d.cpuWatts : d.cpuMHz, lastUnit(d), d.targetFps, kCpuTempWarn,
+             kCpuTempBad, d.sensorsOk, false);
     if (d.clockMinutes >= 0) {
         std::snprintf(buf, sizeof(buf), "%02d:%02d", (d.clockMinutes / 60) % 24, d.clockMinutes % 60);
         cv.textRight(kFontLabel, Panel::kWidth - kPad, kSmallRowCpu, buf, th.text);
@@ -490,14 +496,16 @@ void drawGraphBody(Canvas& cv, const PanelData& d) {
         // Sans capteurs, seul le temps GPU mesuré (option) reste connu : il garde sa place, le message
         // raccourci se met à sa droite.
         if (d.gpuMeasured) {
-            smallRow(cv, th, kSmallRowGpu, "GPU", d.gpuLoad, d.gpuFrameMs, d.gpuTemp, d.gpuMHz, d.targetFps, kGpuTempWarn, kGpuTempBad, false, false);
+            smallRow(cv, th, kSmallRowGpu, "GPU", d.gpuLoad, d.gpuFrameMs, d.gpuTemp, d.showPower ? d.gpuWatts : d.gpuMHz, lastUnit(d), d.targetFps,
+                     kGpuTempWarn, kGpuTempBad, false, false);
             cv.text(kFontLabel, kSmallFrame + 3 * kFontLabel.cellW, kSmallRowGpu, d.english ? "No sensors (XRPerfSensors)" : "Capteurs absents (XRPerfSensors)", th.warn);
         } else {
             cv.text(kFontLabel, kPad, kSmallRowGpu, d.english ? "No sensors: start XRPerfSensors.exe" : "Capteurs absents : lancer XRPerfSensors.exe", th.warn);
         }
         return;
     }
-    smallRow(cv, th, kSmallRowGpu, "GPU", d.gpuLoad, d.gpuFrameMs, d.gpuTemp, d.gpuMHz, d.targetFps, kGpuTempWarn, kGpuTempBad, true, !d.gpuMeasured);
+    smallRow(cv, th, kSmallRowGpu, "GPU", d.gpuLoad, d.gpuFrameMs, d.gpuTemp, d.showPower ? d.gpuWatts : d.gpuMHz, lastUnit(d), d.targetFps, kGpuTempWarn,
+             kGpuTempBad, true, !d.gpuMeasured);
     cv.text(kFontLabel, kSmallVramTitle, kSmallRowGpu, "VRAM", th.accent);
     if (!std::isnan(d.vramUsedMB) && !std::isnan(d.vramTotalMB) && d.vramTotalMB > 0.f)
         std::snprintf(buf, sizeof(buf), "%.1f/%.1f", static_cast<double>(d.vramUsedMB / 1024.f), static_cast<double>(d.vramTotalMB / 1024.f));
@@ -801,9 +809,9 @@ void Panel::buildBase(const PanelData& d, int opacity, int scale) {
         cv.textRight(kFontLabel, kColLoad, headTop, d.english ? "LOAD" : "CHARGE", th.muted);
         cv.textRight(kFontLabel, kColFrame, headTop, "FRAMETIME", th.muted);
         cv.textRight(kFontLabel, kColTemp, headTop, "TEMP.", th.muted);
-        cv.textRight(kFontLabel, kColFreq, headTop, d.english ? "CLOCK" : "FREQ.", th.muted);
-        hardwareRowBase(cv, th, kRowCpu, "CPU");
-        hardwareRowBase(cv, th, kRowGpu, "GPU");
+        cv.textRight(kFontLabel, kColFreq, headTop, d.showPower ? (d.english ? "POWER" : "PUISS.") : (d.english ? "CLOCK" : "FREQ."), th.muted);
+        hardwareRowBase(cv, th, kRowCpu, "CPU", lastUnit(d));
+        hardwareRowBase(cv, th, kRowGpu, "GPU", lastUnit(d));
         cv.fillRect(kPad, 200, kWidth - 2 * kPad, 1, th.line);
     } else if (d.layout == Layout::Graph) {
         cv.fillRect(kGraphLeft, kGraphBottom, kGraphWidth, 1, th.line);  // axe du temps
@@ -823,6 +831,7 @@ void Panel::buildBase(const PanelData& d, int opacity, int scale) {
     m_baseLayout = d.layout;
     m_baseTheme = th;
     m_baseEnglish = d.english;
+    m_basePower = d.showPower;
 }
 
 void Panel::render(const PanelData& d, float bgOpacity, float globalOpacity) {
@@ -833,7 +842,7 @@ void Panel::render(const PanelData& d, float bgOpacity, float globalOpacity) {
     if (globalOpacity > 1.f) globalOpacity = 1.f;
     const int scale = static_cast<int>(globalOpacity * 256.f + 0.5f);
     if (m_base.size() != m_px.size() || opacity != m_baseOpacity || scale != m_baseScale || d.showInfo != m_baseInfo ||
-        d.statusElements != m_baseStatus || d.layout != m_baseLayout || d.english != m_baseEnglish || std::memcmp(&d.theme, &m_baseTheme, sizeof(Theme)) != 0)
+        d.statusElements != m_baseStatus || d.layout != m_baseLayout || d.english != m_baseEnglish || d.showPower != m_basePower || std::memcmp(&d.theme, &m_baseTheme, sizeof(Theme)) != 0)
         buildBase(d, opacity, scale);
     std::memcpy(m_px.data(), m_base.data(), m_px.size());
 

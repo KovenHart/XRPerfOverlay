@@ -33,6 +33,7 @@ namespace XRPerfSensors
             w.WriteBoolean("HeadsetInfo", o.HeadsetInfo);
             w.WriteBoolean("PanelSession", o.PanelSession);
             w.WriteBoolean("PanelBattery", o.PanelBattery);
+            w.WriteBoolean("PowerColumn", o.PowerColumn);
             w.WriteNumber("Layout", o.Layout);
             w.WriteNumber("Theme", o.Theme);
             w.WriteString("CustomBackground", Hex(o.CustomBackground));
@@ -105,7 +106,7 @@ namespace XRPerfSensors
             w.WriteString("VideoRenderDevice", d.VideoRenderDevice);
             w.WriteString("VideoCaptureDevice", d.VideoCaptureDevice);
             w.WriteString("VideoFolder", d.VideoFolderOrDefault);
-            w.WriteNumber("VideoKey", d.VideoKey);
+            w.WriteNumber("VideoHotkey", d.VideoKey == 0 ? 0 : (d.VideoMods << 16) | d.VideoKey);  // modificateurs << 16 | touche
             w.WriteEndObject();
         }
 
@@ -168,6 +169,7 @@ namespace XRPerfSensors
                     return true;
                 case "PanelSession": if (!Bool(v, out b)) return false; o.PanelSession = b; return true;
                 case "PanelBattery": if (!Bool(v, out b)) return false; o.PanelBattery = b; return true;
+                case "PowerColumn": if (!Bool(v, out b)) return false; o.PowerColumn = b; return true;
                 case "Layout": if (!Int(v, 0, OverlaySettings.LayoutNames.Length - 1, out i)) return false; o.Layout = i; return true;
                 case "Theme": if (!Int(v, 0, OverlaySettings.ThemeNames.Length - 1, out i)) return false; o.Theme = i; return true;
                 case "CustomBackground": if (!ColorOf(v, out c)) return false; o.CustomBackground = c; return true;
@@ -259,7 +261,11 @@ namespace XRPerfSensors
                 case "VideoMic": if (!Bool(v, out b)) return Change.None; d.VideoMic = b; return Change.Video;
                 case "VideoRenderDevice": if (text == null || text.Length > 250) return Change.None; d.VideoRenderDevice = text; return Change.Video;
                 case "VideoCaptureDevice": if (text == null || text.Length > 250) return Change.None; d.VideoCaptureDevice = text; return Change.Video;
-                case "VideoKey": if (!Int(v, 0, 255, out i) || (i != 0 && Array.IndexOf(Settings.VideoKeys, i) < 0)) return Change.None; d.VideoKey = i; return Change.Video;
+                case "VideoHotkey":
+                    if (!Int(v, 0, 0xFFFFF, out i) || !Settings.ValidVideoHotkey(i >> 16, i & 0xFFFF)) return Change.None;
+                    d.VideoKey = i & 0xFFFF;
+                    if (d.VideoKey != 0) d.VideoMods = i >> 16;
+                    return Change.Video;
             }
             return Change.None;
         }

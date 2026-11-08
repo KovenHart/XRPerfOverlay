@@ -80,7 +80,7 @@ Trois présentations :
 
 | Présentation | Contenu |
 |---|---|
-| Complète | FPS, AVG / MIN / MAX, tableau CPU / GPU (charge, frametime, température, fréquence), VRAM avec jauge. |
+| Complète | FPS, AVG / MIN / MAX, tableau CPU / GPU (charge, frametime, température, fréquence ou, en option, puissance), VRAM avec jauge. |
 | Graphique | FPS, AVG / MIN / MAX, courbe du temps d'image des dix dernières secondes, puis CPU et GPU sur deux lignes. |
 | Compacte | FPS, AVG / MIN / MAX seulement. |
 
@@ -209,7 +209,7 @@ La fenêtre montre toujours le panneau avec un fond opaque, même s'il est masqu
 
 XRPerfSensors peut filmer ce que vous voyez dans le casque, sans OBS : l'image d'un œil, cadrée en 16:9 (ou 4:3, ou carré), encodée par la carte graphique dans un fichier MP4, avec le son du jeu et, si vous le voulez, le micro.
 
-**Démarrer et arrêter.** `Ctrl+Alt+V` (touche à changer dans la page Vidéo), le bouton de la page Vidéo, ou « Enregistrer la vidéo du casque » dans le menu de l'icône. L'enregistrement commence avec la première image d'un jeu VR : lancé avant le jeu, il attend (« REC en attente »). Pendant l'enregistrement, un carré rouge et la durée (« VID 03:12 ») s'affichent en haut du panneau dans le casque, et « REC 03:12 » en haut de la fenêtre de XRPerfSensors. Le même raccourci arrête et termine le fichier. Si le jeu se ferme, le fichier est terminé tout seul au bout de 10 secondes ; si XRPerfSensors se ferme, il le termine avant de partir.
+**Démarrer et arrêter.** `Ctrl+Alt+V` par défaut (n'importe quelle combinaison dans la page Vidéo : cliquez le raccourci puis appuyez sur les touches voulues ; une touche F1 à F24 peut servir seule ; les raccourcis du panneau sont refusés), le bouton de la page Vidéo, ou « Enregistrer la vidéo du casque » dans le menu de l'icône. L'enregistrement commence avec la première image d'un jeu VR : lancé avant le jeu, il attend (« REC en attente »). Pendant l'enregistrement, un carré rouge et la durée (« VID 03:12 ») s'affichent en haut du panneau dans le casque, et « REC 03:12 » en haut de la fenêtre de XRPerfSensors. Le même raccourci arrête et termine le fichier. Si le jeu se ferme, le fichier est terminé tout seul au bout de 10 secondes ; si XRPerfSensors se ferme, il le termine avant de partir.
 
 **Fichiers.** Dans `Vidéos\XR Perf Overlay` par défaut (« Changer... » dans la page Vidéo), nommés d'après le jeu et l'heure : `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. Un fichier MP4 n'est lisible qu'une fois terminé : si le PC s'arrête brutalement pendant l'enregistrement, la vidéo en cours est perdue.
 
@@ -280,6 +280,7 @@ Le fichier reste ouvert pendant toute la session et chaque mise à jour se fait 
 | GPU frametime | Par défaut, **estimation** (affichée « ~ ») : charge GPU × durée d'une image. Elle a besoin de `XRPerfSensors`, lisse les pics sur environ une seconde et compte tout le travail de la carte. Avec l'option de mesure réelle (Direct3D 11 et 12), écart entre deux horodatages GPU posés au début et à la fin de chaque image du jeu, moyenné entre deux rafraîchissements du panneau. Voir « Temps GPU : estimation ou mesure ». |
 | CPU charge / temp. / fréq. | Charge totale tous cœurs ; température du boîtier (Intel) ou Tctl/Tdie (AMD) ; fréquence du cœur le plus rapide à cet instant. |
 | GPU charge / temp. / fréq. | Capteurs « GPU Core » du pilote (NVIDIA, AMD ou Intel). S'il y a plusieurs cartes, celle qui a le plus de mémoire vidéo est suivie. |
+| Puiss. (option) | À la place de la fréquence (page Apparence, « Puissance au lieu de la fréquence », ou `power=1` dans `[overlay]`) : puissance de la carte graphique (« GPU Package », toute la carte chez NVIDIA) et du boîtier du processeur, en watts, lues par LibreHardwareMonitor. Certains processeurs ne la donnent pas : « -- ». Aussi sur le tableau de bord de XRPerfSensors. |
 | VRAM | Mémoire vidéo utilisée / totale de la carte, tous programmes confondus. |
 | Casque | Nom du système annoncé par le runtime OpenXR (`xrGetSystemProperties`), ou celui choisi avec `headset_name=`. |
 | Résolution « par oeil » | Taille, en pixels, de l'image que le jeu soumet au runtime pour le premier œil à chaque `xrEndFrame`. C'est la résolution à laquelle le jeu rend réellement, après ses propres réglages (échelle de résolution, DLSS...) : elle diffère en général de la résolution des écrans du casque, car le runtime demande une image plus grande pour compenser la déformation des lentilles. Si un autre outil agrandit l'image après la layer (mise à l'échelle placée plus bas dans la chaîne), c'est la taille avant cet outil qui est affichée. Avec un rendu en quatre vues (« quad views »), il s'agit de la vue périphérique. |

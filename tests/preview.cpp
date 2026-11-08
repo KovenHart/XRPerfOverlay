@@ -624,6 +624,16 @@ static void testPreviewApi() {
     ref.render(d, 1.f, 1.f);
     assert(!std::memcmp(px.data(), ref.pixels(), px.size()));
     assert(px[((static_cast<size_t>(40) * Panel::kWidth) + 320) * 4 + 3] == 255);   // toujours opaque sur le bureau
+    // Puissance demandée par les réglages : même dessin que le panneau avec l'option.
+    {
+        SettingsBlock sp = s; sp.power = 1;
+        SensorBlock sw = sensors; sw.cpuWatts = 78.f; sw.gpuWatts = 412.f;
+        assert(xrpoRenderPreview(&sp, &sw, 12.5, 17 * 60 + 36, "Pimax Crystal Light", px.data(), size) > 0);
+        PanelData dp = d; dp.showPower = true; dp.cpuWatts = 78.f; dp.gpuWatts = 412.f;
+        Panel refPower;
+        refPower.render(dp, 1.f, 1.f);
+        assert(!std::memcmp(px.data(), refPower.pixels(), px.size()));
+    }
 
     // Sans capteurs, sans ligne d'informations, autres presentations ; nom trop long ou absent.
     s.headsetInfo = 0; s.clock = 0;
@@ -848,7 +858,7 @@ static void testReportControl(const std::string& dir) {
     b.reportMode = 3; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
     b.reportMode = 9; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
     b.reportMode = 0; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
-    assert(offsetof(SettingsBlock, reportMode) == 188 && sizeof(SettingsBlock) == 192);
+    assert(offsetof(SettingsBlock, reportMode) == 188 && offsetof(SettingsBlock, power) == 192 && sizeof(SettingsBlock) == 200);
 
     // Automatique : enregistre dès le début, le raccourci ne fait rien.
     ReportControl rc;
@@ -1248,6 +1258,20 @@ int main(int argc, char** argv) {
     d.vramUsedMB = 9.8f * 1024.f; d.vramTotalMB = 24.f * 1024.f;
     panel.render(d, 0.82f);
     writePpm(panel, dir + "/panel_ok.ppm", 96, 128, 112);
+    // Puissance à la place de la fréquence (option) : complète et graphique, valeur absente comprise.
+    {
+        PanelData p = d;
+        p.showPower = true; p.cpuWatts = 78.f; p.gpuWatts = 412.f;
+        panel.render(p, 0.82f);
+        writePpm(panel, dir + "/panel_power.ppm", 96, 128, 112);
+        p.cpuWatts = std::numeric_limits<float>::quiet_NaN();
+        p.english = true;
+        panel.render(p, 0.82f);
+        writePpm(panel, dir + "/panel_power_nocpu_en.ppm", 96, 128, 112);
+        p.layout = Layout::Graph; p.english = false; p.cpuWatts = 78.f;
+        panel.render(p, 0.82f);
+        writePpm(panel, dir + "/panel_power_graph.ppm", 96, 128, 112, Panel::kBodyHeight);
+    }
 
     // Avec génération d'images et horloge : 36 images du jeu, 72 envoyées au casque.
     {

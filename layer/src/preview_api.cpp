@@ -76,6 +76,8 @@ int xrpoRenderPreview(const xrpo::SettingsBlock* settings, const xrpo::SensorBlo
             data.gpuLoad = sensors->gpuLoad;
             data.gpuTemp = sensors->gpuTemp;
             data.gpuMHz = sensors->gpuMHz;
+            data.cpuWatts = sensors->cpuWatts;
+            data.gpuWatts = sensors->gpuWatts;
             data.vramUsedMB = sensors->vramUsedMB;
             data.vramTotalMB = sensors->vramTotalMB;
             if (!std::isnan(sensors->gpuLoad)) data.gpuFrameMs = data.gpuFrameEstimateMs = (sensors->gpuLoad / 100.f) * (1000.f / data.fps);
@@ -90,6 +92,7 @@ int xrpoRenderPreview(const xrpo::SettingsBlock* settings, const xrpo::SensorBlo
         const std::string name = headsetName ? AsciiText(headsetName, 256) : std::string();
         std::memcpy(data.headset, name.c_str(), name.size() + 1);  // AsciiText borne la longueur à 47 caractères
         data.layout = config.layout;
+        data.showPower = config.showPower;
         data.theme = ThemeOf(config);
         data.english = config.english;
 

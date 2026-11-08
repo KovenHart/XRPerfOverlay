@@ -96,6 +96,7 @@ struct Config {
     bool clock = true;                  // afficher l'heure dans le panneau
     bool headsetInfo = true;            // ligne "casque et résolution de rendu" en bas du panneau
     uint32_t panelElements = 0;         // ligne "session / batterie" du panneau : kWatchSession | kWatchBattery
+    bool showPower = false;             // dernière colonne du tableau CPU / GPU : puissance (W) au lieu de la fréquence
     Layout layout = Layout::Classic;    // présentation du panneau
     ThemeId theme = ThemeId::Dark;      // couleurs
     Rgb customBackground = {14, 17, 22};  // les trois couleurs du thème personnalisé

@@ -11,7 +11,7 @@ namespace xrpo {
 
 constexpr wchar_t kSharedBlockName[] = L"Local\\XRPerfOverlay.Sensors";
 constexpr uint32_t kSharedBlockMagic = 0x4F505258;  // "XRPO"
-constexpr uint32_t kSharedBlockVersion = 1;
+constexpr uint32_t kSharedBlockVersion = 2;  // 2 : puissance du processeur et de la carte graphique
 
 struct SensorBlock {
     uint32_t magic;        // offset 0
@@ -27,9 +27,11 @@ struct SensorBlock {
     float gpuMHz;          // 44
     float vramUsedMB;      // 48
     float vramTotalMB;     // 52
-};                         // 56 octets ; NaN = valeur indisponible
+    float cpuWatts;        // 56 : puissance du processeur (boîtier), W
+    float gpuWatts;        // 60 : puissance de la carte graphique, W
+};                         // 64 octets ; NaN = valeur indisponible
 
-static_assert(sizeof(SensorBlock) == 56, "la disposition doit rester identique a celle de Program.cs");
+static_assert(sizeof(SensorBlock) == 64, "la disposition doit rester identique a celle de Program.cs");
 
 // 2. Image du panneau, pour l'afficher dans une fenêtre du bureau (capture OBS) : la mémoire est
 //    créée par XRPerfSensors.exe, qui signale qu'il la regarde ; la layer y copie alors le panneau.
@@ -53,7 +55,8 @@ static_assert(sizeof(PanelShareHeader) == 32, "la disposition doit rester identi
 //    par XRPerfSensors dans XRPerfOverlay.ini, que la layer lit au lancement d'un jeu.
 constexpr wchar_t kSettingsBlockName[] = L"Local\\XRPerfOverlay.Settings";
 constexpr uint32_t kSettingsBlockMagic = 0x53505258;  // "XRPS"
-constexpr uint32_t kSettingsBlockVersion = 5;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports
+constexpr uint32_t kSettingsBlockVersion = 6;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
+                                               // 6 : puissance à la place de la fréquence
 
 struct SettingsBlock {
     uint32_t magic;             // offset 0
@@ -107,9 +110,12 @@ struct SettingsBlock {
     uint32_t language;          // 184 : 0 = celle de Windows, 1 = français, 2 = anglais
     // Rapports de session (version 5) ; la taille reste un multiple de 8, à cause de changeTickMs.
     uint32_t reportMode;        // 188 : 0 = celui du .ini, 1 = automatique, 2 = manuel (Ctrl+Alt+S), 3 = aucun
-};                              // 192 octets
+    // Dernière colonne du tableau CPU / GPU (version 6).
+    uint32_t power;             // 192 : 0 = fréquence (MHz), 1 = puissance (W)
+    uint32_t reserved6;         // 196
+};                              // 200 octets
 
-static_assert(sizeof(SettingsBlock) == 192, "la disposition doit rester identique a celle de OverlaySettings.cs");
+static_assert(sizeof(SettingsBlock) == 200, "la disposition doit rester identique a celle de OverlaySettings.cs");
 
 // 4. Image d'une fenêtre du bureau (un chat, par exemple), capturée par XRPerfSensors.exe (bibliothèque
 //    XRPerfCapture.dll) et affichée dans le casque par la layer ou par XRPerfVR. La mémoire est créée par
