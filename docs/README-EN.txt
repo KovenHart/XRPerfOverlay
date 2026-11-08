@@ -51,7 +51,7 @@ XRPerfSensors icon near the clock: double-click it (or right-click > Open XR Per
 the program's window. A menu on the left leads to each page:
   - Dashboard: the panel as it appears in the headset, quick switches, the processor, graphics
     card and video memory live, the last session;
-  - Panel, Appearance, Watch, Window, Desktop mirror (for OBS), Measurements: all the settings,
+  - Panel, Appearance, Watch, Window, Desktop mirror (for OBS), Video, Measurements: all the settings,
     applied immediately, even in game. The Panel page also has the "OpenXR games (layer)" switch:
     when off, the layer is no longer loaded into OpenXR games at all (applies the next time a
     game starts);
@@ -70,6 +70,14 @@ Reports (Measurements page, "Write a report"): every session (default), on hotke
 On hotkey: Ctrl+Alt+S starts recording (red dot and "REC" at the top of the panel), Ctrl+Alt+S
 again stops it and writes the report for that stretch only. Under 5 seconds: nothing is written.
 Works in SteamVR games too.
+
+Headset video (Video page): Ctrl+Alt+V (or the hotkey of your choice) starts then stops recording
+one eye's image to MP4 (H.264, H.265 or AV1 with the graphics card's encoder, quality of your
+choice), with optional game sound and microphone. Also optional: the panel in the video (in place
+or in a corner), stabilization and a level horizon. With other layers (Pimax NR, OpenXR Toolkit...),
+the recorded image is the one the headset receives. Files in Videos\XR Perf Overlay. "VID" and the
+duration show at the top of the panel while recording. OpenXR games (Direct3D 11 and 12) and
+SteamVR games.
 
 Language: French or English for everything (window, icon menu, panel and watch in the headset,
 reports). By default, the Windows language. Change it on the Interface page.

@@ -53,7 +53,7 @@ Icône XRPerfSensors près de l'horloge : double-cliquez dessus (ou clic droit >
 Overlay) pour ouvrir la fenêtre du programme. Un menu à gauche mène à chaque page :
   - Tableau de bord : le panneau tel qu'il apparaît dans le casque, les interrupteurs rapides,
     le processeur, la carte graphique et la mémoire vidéo en direct, la dernière session ;
-  - Panneau, Apparence, Montre, Fenêtre, Miroir bureau (pour OBS), Mesures : tous les réglages,
+  - Panneau, Apparence, Montre, Fenêtre, Miroir bureau (pour OBS), Vidéo, Mesures : tous les réglages,
     appliqués aussitôt, même en jeu. La page Panneau a aussi l'interrupteur « Jeux OpenXR (layer) » :
     désactivée, la layer n'est plus chargée du tout dans les jeux OpenXR (pris en compte au
     prochain lancement d'un jeu) ;
@@ -72,6 +72,14 @@ Rapports (page Mesures, « Écrire un rapport ») : à chaque session (par défa
 jamais. Au raccourci : Ctrl+Alt+S démarre l'enregistrement (point rouge et « REC » en haut du
 panneau), Ctrl+Alt+S de nouveau l'arrête et écrit le rapport de ce passage seulement. Moins de
 5 secondes : rien n'est écrit. Fonctionne aussi dans les jeux SteamVR.
+
+Vidéo du casque (page Vidéo) : Ctrl+Alt+V (ou le raccourci de votre choix) démarre puis arrête
+l'enregistrement de l'image d'un œil en MP4 (H.264, H.265 ou AV1 par l'encodeur de la carte
+graphique, qualité au choix), avec le son du jeu et le micro en option. En option aussi : le
+panneau dans la vidéo (à sa place ou dans un coin), la stabilisation et l'horizon droit. Avec
+d'autres layers (Pimax NR, OpenXR Toolkit...), l'image enregistrée est celle que reçoit le casque.
+Fichiers dans Vidéos\XR Perf Overlay. « VID » et la durée s'affichent en haut du panneau pendant
+l'enregistrement. Jeux OpenXR (Direct3D 11 et 12) et jeux SteamVR.
 
 Langue : français ou anglais pour tout (fenêtre, menu de l'icône, panneau et montre dans le casque,
 rapports). Par défaut, celle de Windows. À changer dans la page Interface.

@@ -298,6 +298,12 @@ namespace XRPerfSensors
                             Later(() => MoveXrLayer(moveId, moveManifest, delta));
                             break;
                         case "undoXrLayers": Later(UndoXrLayers); break;
+                        case "removeXrLayer":
+                            int orphanId = m.TryGetProperty("id", out JsonElement orphanIdElement) && orphanIdElement.ValueKind == JsonValueKind.Number &&
+                                           orphanIdElement.TryGetInt32(out int orphanNumber) ? orphanNumber : -1;
+                            string orphanManifest = Str(m, "manifest"), orphanLabel = Str(m, "label");
+                            Later(() => RemoveXrLayer(orphanId, orphanManifest, orphanLabel));
+                            break;
                         case "setXrLayer":
                             int xrId = m.TryGetProperty("id", out JsonElement xrIdElement) && xrIdElement.ValueKind == JsonValueKind.Number &&
                                        xrIdElement.TryGetInt32(out int xrNumber) ? xrNumber : -1;
@@ -305,6 +311,15 @@ namespace XRPerfSensors
                             string xrLabel = Str(m, "label"), xrManifest = Str(m, "manifest");
                             Later(() => SetXrLayer(xrId, xrManifest, xrOn, xrLabel));
                             break;
+                        case "videoStart":
+                            string refused = _app.StartVideo();
+                            if (refused != null) PostToast(refused);
+                            break;
+                        case "videoStop": _app.StopVideo(); break;
+                        case "videoOpenFolder": Later(OpenVideoFolder); break;
+                        case "videoPickFolder": Later(PickVideoFolder); break;
+                        case "videoDevices": SendVideoDevices(); break;
+                        case "videoHotkeyCapture": _app.PauseVideoHotkey(m.TryGetProperty("on", out JsonElement captureOn) && captureOn.ValueKind == JsonValueKind.True); break;
                         case "copyText":
                             string copied = Str(m, "text");
                             if (!string.IsNullOrEmpty(copied)) Later(() => CopyText(copied));
@@ -358,6 +373,7 @@ namespace XRPerfSensors
                 w.WriteString("reportsFolder", folders.Count > 0 ? folders[0] : "");
             }));
             Post(ReportJson.List(_reports.Reports, _reports.Folders, _reports.PreviousOf, Loc.English));
+            PostVideo();
             _lastStatus = "";
             SlowTick();
             FastTick();
@@ -413,6 +429,95 @@ namespace XRPerfSensors
             PostOverlay();
         }
 
+        // --- Enregistrement vidéo ------------------------------------------------------------------------
+
+        /// <summary>État de l'enregistrement vidéo (toutes les secondes, et après chaque changement).</summary>
+        public void PostVideo()
+        {
+            if (!_pageReady) return;
+            VideoRecorder video = _app.Video;
+            VideoRecorder.Status st = video != null ? video.Current() : new VideoRecorder.Status { File = "", Game = "", Encoder = "" };
+            Post(Json(w =>
+            {
+                w.WriteString("type", "video");
+                w.WriteBoolean("available", video != null && video.Available);
+                w.WriteNumber("codecs", video != null ? video.Codecs : 0);
+                w.WriteNumber("state", st.State);
+                w.WriteNumber("seconds", Math.Round(st.Seconds, 1));
+                w.WriteNumber("bytes", st.Bytes);
+                w.WriteNumber("frames", st.Frames);
+                w.WriteNumber("repeated", st.Repeated);
+                w.WriteNumber("dropped", st.Dropped);
+                w.WriteNumber("audio", st.Audio);
+                w.WriteString("file", st.File ?? "");
+                w.WriteString("game", st.Game ?? "");
+                w.WriteString("encoder", st.Encoder ?? "");
+                w.WriteString("reason", st.State == VideoRecorder.StateStopped ? VideoRecorder.ReasonText(st.Reason, st.HResult) : "");
+                w.WriteBoolean("hotkeyOk", _app.VideoHotkeyOk);
+                w.WriteString("hotkeyText", _app.VideoHotkeyText);
+                w.WriteString("folder", _app.Desktop.VideoFolderOrDefault);
+            }));
+        }
+
+        private void SendVideoDevices()
+        {
+            VideoRecorder video = _app.Video;
+            if (video == null) return;
+            // Liste lue à part (quelques dizaines de millisecondes), puis envoyée.
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                List<KeyValuePair<string, string>> render = video.Devices(false), capture = video.Devices(true);
+                Later(() => Post(Json(w =>
+                {
+                    w.WriteString("type", "videoDevices");
+                    foreach (var list in new[] { new { Name = "render", Items = render }, new { Name = "capture", Items = capture } })
+                    {
+                        w.WriteStartArray(list.Name);
+                        foreach (KeyValuePair<string, string> d in list.Items)
+                        {
+                            w.WriteStartObject();
+                            w.WriteString("id", d.Key);
+                            w.WriteString("name", d.Value);
+                            w.WriteEndObject();
+                        }
+                        w.WriteEndArray();
+                    }
+                })));
+            });
+        }
+
+        private void OpenVideoFolder()
+        {
+            string folder = _app.Desktop.VideoFolderOrDefault;
+            try
+            {
+                Directory.CreateDirectory(folder);
+                Process.Start(new ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, Loc.T("Impossible d'ouvrir le dossier : ", "Could not open the folder: ") + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void PickVideoFolder()
+        {
+            using (var dialog = new FolderBrowserDialog
+            {
+                Description = Loc.T("Dossier des vidéos du casque", "Folder for headset videos"),
+                UseDescriptionForTitle = true,
+                SelectedPath = _app.Desktop.VideoFolderOrDefault,
+                ShowNewFolderButton = true,
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath)) return;
+                _app.Desktop.VideoFolder = string.Equals(dialog.SelectedPath, Settings.DefaultVideoFolder, StringComparison.OrdinalIgnoreCase) ? "" : dialog.SelectedPath;
+                _app.VideoChanged();
+                PostDesktop();
+                PostVideo();
+            }
+        }
+
         // Un réglage changé dans la page.
         private void OnSet(string scope, string key, JsonElement value)
         {
@@ -434,6 +539,7 @@ namespace XRPerfSensors
                 case SettingsJson.Change.Mirror: _app.DesktopChanged(); break;
                 case SettingsJson.Change.Capture: _app.CaptureChanged(); FastTick(); break;
                 case SettingsJson.Change.Interface: _app.SaveDesktopSoon(); break;
+                case SettingsJson.Change.Video: _app.VideoChanged(); PostVideo(); break;
                 case SettingsJson.Change.Language:
                     d.Save();
                     if (d.Language != before)
@@ -595,6 +701,38 @@ namespace XRPerfSensors
                 : outcome == LayerRegistry.Outcome.Cancelled ? Loc.T("Autorisation refusée : la layer n'a pas été modifiée.", "Permission refused: the layer was not changed.")
                 : outcome == LayerRegistry.Outcome.Missing ? Loc.T("Cette inscription n'existe plus : la liste est mise à jour.", "This registration no longer exists: the list is being updated.")
                 : Loc.T("La layer n'a pas pu être modifiée (registre inaccessible).", "The layer could not be changed (registry not accessible)."));
+            SendConfig();
+        }
+
+        // Retirer l'inscription d'une layer désinstallée (fichier .json absent), après confirmation.
+        private async void RemoveXrLayer(int id, string manifest, string label)
+        {
+            XrLayerInfo layer = _lastConfig?.Layers.FirstOrDefault(l => l.Id == id);
+            if (layer == null || string.IsNullOrEmpty(layer.RawName) || !string.Equals(layer.Manifest, manifest, StringComparison.Ordinal) || layer.Ours)
+            {
+                PostToast(Loc.T("La liste des layers a changé : elle est mise à jour, recommencez.", "The list of layers has changed: it is being updated, try again."));
+                SendConfig();
+                return;
+            }
+            if (string.IsNullOrEmpty(label)) label = layer.Name ?? Path.GetFileNameWithoutExtension(layer.RawName);
+            string question = string.Format(Loc.T(
+                "Le fichier de « {0} » n'existe plus : son inscription dans le registre est un reste de désinstallation.\n\nRetirer cette inscription ?",
+                "The file of « {0} » no longer exists: its registry entry is a leftover from an uninstall.\n\nRemove this entry?"), label);
+            if (MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            LayerRegistry.Outcome outcome;
+            try
+            {
+                outcome = await LayerRegistry.RemoveOrphanAsync(layer.Machine, layer.RawName);
+            }
+            catch (Exception)
+            {
+                outcome = LayerRegistry.Outcome.Failed;
+            }
+            if (IsDisposed) return;
+            PostToast(outcome == LayerRegistry.Outcome.Done ? Loc.T("Inscription retirée.", "Entry removed.")
+                : outcome == LayerRegistry.Outcome.Cancelled ? Loc.T("Autorisation refusée : l'inscription n'a pas été retirée.", "Permission refused: the entry was not removed.")
+                : outcome == LayerRegistry.Outcome.Missing ? Loc.T("Cette inscription n'existe plus, ou son fichier est revenu : la liste est mise à jour.", "This entry no longer exists, or its file is back: the list is being updated.")
+                : Loc.T("L'inscription n'a pas pu être retirée (registre inaccessible).", "The entry could not be removed (registry not accessible)."));
             SendConfig();
         }
 
@@ -760,6 +898,7 @@ namespace XRPerfSensors
                     w.WriteString("gpuName", r.GpuName);
                     Number(w, "cpuLoad", r.CpuLoad); Number(w, "cpuTemp", r.CpuTemp); Number(w, "cpuMHz", r.CpuMHz);
                     Number(w, "gpuLoad", r.GpuLoad); Number(w, "gpuTemp", r.GpuTemp); Number(w, "gpuMHz", r.GpuMHz);
+                    Number(w, "cpuWatts", r.CpuWatts); Number(w, "gpuWatts", r.GpuWatts);
                     Number(w, "vramUsed", r.VramUsedMB); Number(w, "vramTotal", r.VramTotalMB);
                     w.WriteEndObject();
                 }));

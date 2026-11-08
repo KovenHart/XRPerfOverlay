@@ -29,6 +29,8 @@ window.App = (function () {
     watchImage: null,
     windowImage: null,
     captureStatus: "",
+    video: null,          // état de l'enregistrement vidéo (message "video")
+    videoDevices: null,   // sorties et entrées audio
     windows: [],
     reports: [],
     reportFolders: [],
@@ -94,6 +96,7 @@ window.App = (function () {
     watch: '<circle cx="12" cy="12" r="6"/><path d="M12 9.5V12l1.6 1.2M9 6.5 9.6 3h4.8l.6 3.5M9 17.5l.6 3.5h4.8l.6-3.5"/>',
     window: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 8.5h18M6.5 6.3h.01M9 6.3h.01"/><path d="M8 13h8M8 16h5"/>',
     mirror: '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 21h6M12 17v4"/><rect x="6" y="7.5" width="7" height="4.5" rx="1"/>',
+    video: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="m15.5 10.2 6-3.2v10l-6-3.2"/>',
     measures: '<path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/><path d="M4 18h2M18 18h2M12 10V8"/>',
     reports: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 17v-3M13 17v-5M16 17v-2"/>',
     interface: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
@@ -169,6 +172,19 @@ window.App = (function () {
         state.fullscreen = !!msg.on;
         renderTopbar();
         if (state.page === "interface") renderPage();
+        break;
+      case "video": {
+        const before = state.video;
+        state.video = msg;
+        // Le bouton et l'état changent sur place ; la page n'est redessinée que si les codecs viennent d'être connus.
+        if (state.page === "video" && before && before.codecs !== msg.codecs) renderPage();
+        else updateVideo();
+        if (!before || before.state !== msg.state || msg.state !== 0) renderTopbar();
+        break;
+      }
+      case "videoDevices":
+        state.videoDevices = { render: msg.render || [], capture: msg.capture || [] };
+        if (state.page === "video") fillDevices();
         break;
       case "status":
         if (msg.game) state.game = msg.game;
@@ -396,6 +412,7 @@ window.App = (function () {
     { id: "window", icon: "window" },
     { group: "nav.group.pc" },
     { id: "desktop", icon: "mirror" },
+    { id: "video", icon: "video" },
     { id: "measures", icon: "measures" },
     { id: "reports", icon: "reports" },
     { id: "config", icon: "config" },
@@ -403,6 +420,7 @@ window.App = (function () {
   ];
 
   function go(page) {
+    stopHotkeyCapture();
     if (!PAGES.some(p => p.id === page)) page = "dashboard";
     state.page = page;
     send("page", { name: page });
@@ -463,7 +481,13 @@ window.App = (function () {
     const pill = h("span", { class: "pill " + (g === "live" ? "live" : g === "paused" ? "paused" : ""), id: "game-pill" }, h("i", { class: "dot" }), t("game." + (g === "live" ? "live" : g === "paused" ? "paused" : "none")));
     const fs = h("button", { class: "btn icon ghost", type: "button", title: t(state.fullscreen ? "top.exitFullscreen" : "top.fullscreen"), "aria-label": t(state.fullscreen ? "top.exitFullscreen" : "top.fullscreen"), onclick: toggleFullscreen },
       icon(state.fullscreen ? "compress" : "expand"));
-    bar.replaceChildren(h("h1", { text: t("nav." + state.page) }), h("div", { class: "actions" }, pill, fs));
+    // Enregistrement vidéo en cours (ou en attente d'un jeu) : témoin sur toutes les pages, qui mène à la page Vidéo.
+    const v = state.video;
+    const rec = v && (v.state === 1 || v.state === 2 || v.state === 3)
+      ? h("button", { class: "pill rec" + (v.state === 2 ? " on" : ""), type: "button", title: t("nav.video"), onclick: () => go("video") }, h("i", { class: "dot" }),
+          v.state === 2 ? "REC " + clock(v.seconds) : t(v.state === 1 ? "vid.pill.waiting" : "vid.pill.finishing"))
+      : null;
+    bar.replaceChildren(h("h1", { text: t("nav." + state.page) }), h("div", { class: "actions" }, rec, pill, fs));
   }
 
   function toggleFullscreen() {
@@ -494,7 +518,7 @@ window.App = (function () {
     page.className = "page";
     const builder = {
       dashboard: renderDashboard, panel: renderPanelPage, appearance: renderAppearancePage, watch: renderWatchPage,
-      window: renderWindowPage, desktop: renderDesktopPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage,
+      window: renderWindowPage, desktop: renderDesktopPage, video: renderVideoPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage,
       interface: renderInterfacePage,
     }[state.page];
     page.replaceChildren();
@@ -716,7 +740,9 @@ window.App = (function () {
         k(t("key.home") + " / " + t("key.end")), h("span", { text: t("key.opacity") }),
         k("F"), h("span", { text: t("key.window") }),
         k("G"), h("span", { text: t("key.place") }),
-        k("S"), h("span", { text: t("key.record") }))));
+        k("S"), h("span", { text: t("key.record") }),
+        videoEnabled() && get("desktop", "VideoHotkey") ? [h("span", { class: "combo" }, hotkeyParts(get("desktop", "VideoHotkey")).map(x => h("kbd", { text: x }))),
+          h("span", { text: t("key.video") })] : null)));
     page.appendChild(dash);
   }
 
@@ -757,8 +783,8 @@ window.App = (function () {
     if (state.page === "dashboard") {
       const s = state.sensors || {};
       const hist = state.history;
-      tile("tile-cpu", t("dash.cpu"), s.cpuName, num(s.cpuLoad), " %", [[num(s.cpuTemp) + " °C", t("dash.temp")], [num(s.cpuMHz), "MHz"]], hist.cpuLoad, "var(--s-cpu)", 0, 100);
-      tile("tile-gpu", t("dash.gpu"), s.gpuName, num(s.gpuLoad), " %", [[num(s.gpuTemp) + " °C", t("dash.temp")], [num(s.gpuMHz), "MHz"]], hist.gpuLoad, "var(--s-gpu)", 0, 100);
+      tile("tile-cpu", t("dash.cpu"), s.cpuName, num(s.cpuLoad), " %", [[num(s.cpuTemp) + " °C", t("dash.temp")], [num(s.cpuMHz), "MHz"]].concat(s.cpuWatts != null ? [[num(s.cpuWatts), "W"]] : []), hist.cpuLoad, "var(--s-cpu)", 0, 100);
+      tile("tile-gpu", t("dash.gpu"), s.gpuName, num(s.gpuLoad), " %", [[num(s.gpuTemp) + " °C", t("dash.temp")], [num(s.gpuMHz), "MHz"]].concat(s.gpuWatts != null ? [[num(s.gpuWatts), "W"]] : []), hist.gpuLoad, "var(--s-gpu)", 0, 100);
       const used = s.vramUsed != null ? s.vramUsed / 1024 : null, total = s.vramTotal != null ? s.vramTotal / 1024 : null;
       tile("tile-vram", t("dash.vram"), null, num(used, 1), " " + t("unit.gb"), [[t("dash.of", { total: num(total, 1) }), ""]], null, null, null, null,
         used != null && total ? (100 * used) / total : 0);
@@ -890,6 +916,7 @@ window.App = (function () {
         headsetNameRow(),
         switchCtl("overlay", "PanelSession", t("app.session")),
         switchCtl("overlay", "PanelBattery", t("app.battery"), t("app.battery.help")),
+        switchCtl("overlay", "PowerColumn", t("app.power"), t("app.power.help")),
       ]),
       defaultsButton(),
     ];
@@ -1007,6 +1034,289 @@ window.App = (function () {
     settingsLayout(page, form, panelStage());
   }
 
+  // --- Vidéo du casque --------------------------------------------------------------------------
+
+  // Durée en mm:ss (ou h:mm:ss).
+  function clock(seconds) {
+    const s = Math.max(0, Math.floor(seconds || 0));
+    const two = n => String(n).padStart(2, "0");
+    return s >= 3600 ? Math.floor(s / 3600) + ":" + two(Math.floor(s / 60) % 60) + ":" + two(s % 60) : two(Math.floor(s / 60)) + ":" + two(s % 60);
+  }
+
+  function bytesText(bytes) {
+    const mb = (bytes || 0) / (1024 * 1024);
+    return mb >= 1024 ? num(mb / 1024, 1) + " " + t("unit.gb") : num(mb, 0) + " " + t("unit.mb");
+  }
+
+  // Raccourci de la vidéo : modificateurs << 16 | touche (code de touche virtuelle Windows). Modificateurs comme
+  // RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows. Mêmes règles que Settings.ValidVideoHotkey (XRPerfSensors).
+  const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
+  const HEADSET_KEYS = [0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24];
+  const MODIFIER_KEYS = [0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+  function keyName(vk) {
+    if (vk >= 0x70 && vk <= 0x87) return "F" + (vk - 0x6F);
+    if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) return String.fromCharCode(vk);
+    if (vk >= 0x60 && vk <= 0x69) return t("key.num") + " " + (vk - 0x60);
+    const named = { 0x08: "key.backspace", 0x09: "key.tab", 0x0D: "key.enter", 0x13: "key.pause", 0x20: "key.space", 0x21: "key.pgup", 0x22: "key.pgdn",
+      0x23: "key.end", 0x24: "key.home", 0x25: "key.left", 0x26: "key.up", 0x27: "key.right", 0x28: "key.down", 0x2D: "key.insert", 0x2E: "key.delete",
+      0x6A: "key.numMul", 0x6B: "key.numAdd", 0x6D: "key.numSub", 0x6F: "key.numDiv", 0x91: "key.scroll" };
+    return named[vk] ? t(named[vk]) : null;
+  }
+  // Morceaux du raccourci (« Ctrl », « Alt », « V »). Touche sans nom connu ici : celui donné par Windows (XRPerfSensors).
+  function hotkeyParts(combo) {
+    const mods = combo >> 16, vk = combo & 0xFFFF;
+    if (!vk) return [];
+    const parts = [];
+    if (mods & MOD_CTRL) parts.push("Ctrl");
+    if (mods & MOD_ALT) parts.push("Alt");
+    if (mods & MOD_SHIFT) parts.push(t("key.shift"));
+    if (mods & MOD_WIN) parts.push("Win");
+    const own = keyName(vk);
+    const windows = state.video && state.video.hotkeyText ? state.video.hotkeyText.split("+").pop() : "";
+    parts.push(own || windows || "0x" + vk.toString(16).toUpperCase());
+    return parts;
+  }
+  const hotkeyText = combo => hotkeyParts(combo).join("+");
+  // null si le raccourci convient, sinon la raison.
+  function hotkeyProblem(mods, vk) {
+    if (MODIFIER_KEYS.includes(vk)) return null;  // modificateur seul : on attend la touche
+    if (!mods && !(vk >= 0x70 && vk <= 0x87)) return t("vid.key.needMod");
+    if ((mods & (MOD_CTRL | MOD_ALT)) === (MOD_CTRL | MOD_ALT) && HEADSET_KEYS.includes(vk)) return t("vid.key.headset", { key: hotkeyText((mods << 16) | vk) });
+    return null;
+  }
+
+  // Saisie d'un raccourci : le prochain appui (avec ses modificateurs) devient le raccourci. Échap annule,
+  // Retour arrière ou Suppr seuls retirent le raccourci. L'ancien est suspendu pendant la saisie.
+  var hotkeyCapture = null;  // var : connue avant cette ligne (go() peut être appelé plus tôt)
+  function stopHotkeyCapture() {
+    if (!hotkeyCapture) return;
+    const c = hotkeyCapture;
+    hotkeyCapture = null;
+    document.removeEventListener("keydown", c.onKey, true);
+    document.removeEventListener("keyup", c.onKeyUp, true);
+    clearTimeout(c.timer);
+    send("videoHotkeyCapture", { on: false });
+    c.done();
+  }
+  function hotkeyRow() {
+    const button = h("button", { class: "btn hotkey-btn", type: "button" });
+    const clear = h("button", { class: "btn", type: "button", text: t("vid.key.clear") });
+    const note = h("div", { class: "video-note", hidden: true });
+    const show = () => {
+      const combo = get("desktop", "VideoHotkey") || 0;
+      button.replaceChildren(...(combo ? hotkeyParts(combo).map(x => h("kbd", { text: x })) : [h("span", { text: t("vid.key.none") })]));
+      button.classList.remove("capturing");
+      clear.disabled = !combo || locked("overlay");
+      button.disabled = locked("overlay");
+    };
+    const live = mods => {
+      const parts = [];
+      if (mods & MOD_CTRL) parts.push("Ctrl");
+      if (mods & MOD_ALT) parts.push("Alt");
+      if (mods & MOD_SHIFT) parts.push(t("key.shift"));
+      if (mods & MOD_WIN) parts.push("Win");
+      button.replaceChildren(...parts.map(x => h("kbd", { text: x })), h("span", { text: (parts.length ? "+ " : "") + t("vid.key.press") }));
+    };
+    const modsOf = e => (e.ctrlKey ? MOD_CTRL : 0) | (e.altKey ? MOD_ALT : 0) | (e.shiftKey ? MOD_SHIFT : 0) | (e.metaKey ? MOD_WIN : 0);
+    button.addEventListener("click", () => {
+      if (hotkeyCapture) { stopHotkeyCapture(); return; }
+      note.hidden = true;
+      button.classList.add("capturing");
+      live(0);
+      const onKey = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!document.body.contains(button)) { stopHotkeyCapture(); return; }
+        const mods = modsOf(e), vk = e.keyCode;
+        if (vk === 0x1B && !mods) { stopHotkeyCapture(); return; }
+        if ((vk === 0x08 || vk === 0x2E) && !mods) { setValue("desktop", "VideoHotkey", 0); stopHotkeyCapture(); return; }
+        if (MODIFIER_KEYS.includes(vk)) { live(mods); return; }
+        const problem = hotkeyProblem(mods, vk);
+        if (problem) {
+          note.textContent = problem;
+          note.hidden = false;
+          live(0);
+          return;
+        }
+        setValue("desktop", "VideoHotkey", (mods << 16) | vk);
+        stopHotkeyCapture();
+      };
+      const onKeyUp = e => { if (MODIFIER_KEYS.includes(e.keyCode)) { e.preventDefault(); live(modsOf(e)); } };
+      hotkeyCapture = { onKey, onKeyUp, done: show, timer: setTimeout(stopHotkeyCapture, 15000) };
+      document.addEventListener("keydown", onKey, true);
+      document.addEventListener("keyup", onKeyUp, true);
+      send("videoHotkeyCapture", { on: true });
+    });
+    button.addEventListener("blur", () => setTimeout(() => { if (hotkeyCapture && document.activeElement !== button) stopHotkeyCapture(); }, 0));
+    clear.addEventListener("click", () => { stopHotkeyCapture(); setValue("desktop", "VideoHotkey", 0); note.hidden = true; });
+    show();
+    refreshers.push(() => { if (!hotkeyCapture) show(); });
+    const r = row(t("vid.key"), t("vid.key.help"), h("div", { class: "row-buttons" }, button, clear));
+    r.querySelector(".row-label").parentNode.appendChild(note);
+    return r;
+  }
+
+  function videoEnabled() { return !!get("overlay", "VideoCapture") && !state.unavailable; }
+
+  // Débit d'une qualité (Mbit/s), même calcul que VideoRecorder.PresetBitrate (XRPerfSensors) : référence
+  // H.264 1080p à 60 images/s, H.265 et AV1 à 70 % et 60 %, selon les pixels (exposant 0,8) et la cadence (0,75).
+  const VIDEO_QUALITIES = ["light", "balanced", "high", "max", "custom"];
+  function presetBitrate(quality, codec, height, aspectText, fps) {
+    const reference = { light: 10, balanced: 16, max: 40 }[quality] || 24;
+    const codecFactor = codec === "hevc" ? 0.7 : codec === "av1" ? 0.6 : 1;
+    const aspect = aspectText === "4:3" ? 4 / 3 : aspectText === "1:1" ? 1 : 16 / 9;
+    const pixels = (height * Math.round(height * aspect)) / (1920 * 1080);
+    return Math.max(2, Math.min(150, Math.round(reference * codecFactor * Math.pow(pixels, 0.8) * Math.pow(fps / 60, 0.75))));
+  }
+  function videoBitrate() {
+    const q = get("desktop", "VideoQuality");
+    if (q === "custom") return get("desktop", "VideoBitrate");
+    return presetBitrate(q, get("desktop", "VideoCodec"), get("desktop", "VideoHeight"), get("desktop", "VideoAspect"), get("desktop", "VideoFps"));
+  }
+  // Taille d'une minute de vidéo (1 Mbit/s : 7,5 Mo par minute).
+  function perMinute(mbps) {
+    const mb = mbps * 7.5;
+    return mb >= 1000 ? num(mb / 1000, 1) + " " + t("unit.gb") : num(mb, 0) + " " + t("unit.mb");
+  }
+
+  // Ligne dont l'explication dépend des réglages (mise à jour à chaque changement).
+  function liveHelp(r, text) {
+    const help = r.querySelector(".row-help");
+    const f = () => { help.textContent = text(); };
+    refreshers.push(f);
+    f();
+    return r;
+  }
+
+  // Liste des sorties (son du jeu) ou des entrées (micro) : « par défaut » puis celles de Windows.
+  function deviceRow(key, label, kind, enabled) {
+    const sel = h("select", { class: "select", "aria-label": label, "data-devices": kind, "data-key": key });
+    sel.addEventListener("change", () => setValue("desktop", key, sel.value));
+    const r = row(label, null, sel, { enabled });
+    fillDevice(sel);
+    return r;
+  }
+
+  function fillDevice(sel) {
+    const kind = sel.dataset.devices, key = sel.dataset.key;
+    const list = (state.videoDevices && state.videoDevices[kind]) || [];
+    const current = get("desktop", key) || "";
+    const options = [{ id: "", name: t(kind === "render" ? "vid.device.defaultOut" : "vid.device.defaultIn") }].concat(list);
+    // Périphérique choisi mais débranché : gardé dans la liste, signalé.
+    if (current && !list.some(d => d.id === current)) options.push({ id: current, name: t("vid.device.missing") });
+    sel.replaceChildren(...options.map(d => h("option", { value: d.id, text: d.name })));
+    sel.value = current;
+    sel.disabled = locked("overlay");
+  }
+
+  function fillDevices() { document.querySelectorAll("select[data-devices]").forEach(fillDevice); }
+
+  function renderVideoPage(page) {
+    refreshers = [];
+    const v = state.video || {};
+    const codecs = v.codecs == null ? -1 : v.codecs;
+    const codecOptions = ["h264", "hevc", "av1"].map((c, i) => ({ value: c, label: t("vid.codec." + c) + (codecs >= 0 && !(codecs & (1 << i)) ? " (" + t("vid.unavailable") + ")" : "") }));
+    const folderRow = row(t("vid.folder"), get("desktop", "VideoFolder") || v.folder || " ", h("div", { class: "row-buttons" },
+      h("button", { class: "btn", type: "button", onclick: () => send("videoPickFolder") }, t("vid.folder.change")),
+      h("button", { class: "btn", type: "button", onclick: () => send("videoOpenFolder") }, icon("folder"), t("vid.folder.open"))));
+    folderRow.querySelector(".row-help").id = "video-folder";
+    const form = [
+      group(t("vid.title"), null, [
+        switchCtl("overlay", "VideoCapture", t("vid.enable"), t("vid.enable.help")),
+        h("div", { class: "video-card", id: "video-card", "aria-live": "polite" }),
+        segRow("overlay", "VideoSource", t("vid.source"), t("vid.source.help"), [{ value: "final", label: t("vid.source.final") }, { value: "game", label: t("vid.source.game") }],
+          { enabled: videoEnabled }),
+      ]),
+      group(t("vid.image"), t("vid.image.help"), [
+        selectRow("desktop", "VideoCodec", t("vid.codec"), t("vid.codec.help"), codecOptions),
+        selectRow("desktop", "VideoHeight", t("vid.resolution"), null, [720, 1080, 1440, 2160].map(x => ({ value: x, label: x === 2160 ? "2160p (4K)" : x + "p" }))),
+        segRow("desktop", "VideoFps", t("vid.fps"), t("vid.fps.help"), [30, 60, 72, 90].map(x => ({ value: x, label: String(x) }))),
+        liveHelp(selectRow("desktop", "VideoQuality", t("vid.quality"), " ", VIDEO_QUALITIES.map(q => ({ value: q, label: t("vid.quality." + q) }))),
+          () => t(get("desktop", "VideoQuality") === "custom" ? "vid.quality.helpCustom" : "vid.quality.help", { mbps: num(videoBitrate()), size: perMinute(videoBitrate()) })),
+        sliderRow("desktop", "VideoBitrate", t("vid.bitrate"), t("vid.bitrate.help"), 2, 150, x => num(x) + " " + t("unit.mbps"),
+          { enabled: () => get("desktop", "VideoQuality") === "custom" }),
+        segRow("desktop", "VideoEye", t("vid.eye"), null, [{ value: 0, label: t("vid.eye.left") }, { value: 1, label: t("vid.eye.right") }]),
+        segRow("desktop", "VideoAspect", t("vid.aspect"), null, ["16:9", "4:3", "1:1"].map(a => ({ value: a, label: a }))),
+        sliderRow("desktop", "VideoField", t("vid.field"), t("vid.field.help"), 40, 100, pct),
+      ], videoEnabled),
+      group(t("vid.motion"), t("vid.motion.help"), [
+        liveHelp(segRow("desktop", "VideoStabilize", t("vid.stabilize"), " ", ["off", "light", "strong"].map(o => ({ value: o, label: t("vid.stabilize." + o) }))),
+          () => t("vid.stabilize.help." + (get("desktop", "VideoStabilize") || "off"))),
+        switchCtl("desktop", "VideoLevel", t("vid.level"), t("vid.level.help")),
+      ], videoEnabled),
+      group(t("vid.panel"), t("vid.panel.help"), [
+        liveHelp(segRow("desktop", "VideoOverlay", t("vid.overlay"), " ", ["off", "place", "corner"].map(o => ({ value: o, label: t("vid.overlay." + o) }))),
+          () => t("vid.overlay.help." + (get("desktop", "VideoOverlay") || "off"))),
+        selectRow("desktop", "VideoOverlayCorner", t("vid.corner"), null, ["topleft", "topright", "bottomleft", "bottomright"].map(c => ({ value: c, label: t("vid.corner." + c) })),
+          { enabled: () => get("desktop", "VideoOverlay") === "corner" }),
+        sliderRow("desktop", "VideoOverlaySize", t("vid.overlaySize"), t("vid.overlaySize.help"), 15, 50, pct,
+          { enabled: () => get("desktop", "VideoOverlay") === "corner" }),
+      ], videoEnabled),
+      group(t("vid.sound"), t("vid.sound.help"), [
+        switchCtl("desktop", "VideoGameAudio", t("vid.game"), t("vid.game.help")),
+        deviceRow("VideoRenderDevice", t("vid.output"), "render", () => !!get("desktop", "VideoGameAudio")),
+        switchCtl("desktop", "VideoMic", t("vid.mic"), null),
+        deviceRow("VideoCaptureDevice", t("vid.input"), "capture", () => !!get("desktop", "VideoMic")),
+      ], videoEnabled),
+      group(t("vid.files"), null, [
+        hotkeyRow(),
+        folderRow,
+      ], videoEnabled),
+    ];
+    settingsLayout(page, form, null);
+    refreshers.push(updateVideo);
+    updateVideo();
+    if (!state.videoDevices) send("videoDevices");
+  }
+
+  // Carte d'état : ce qui se passe, et le bouton qui va avec. Mise à jour chaque seconde sans redessiner la page.
+  function updateVideo() {
+    const card = document.getElementById("video-card");
+    const folder = document.getElementById("video-folder");
+    const v = state.video || { state: 0, available: true };
+    if (folder) folder.textContent = get("desktop", "VideoFolder") || v.folder || "";
+    if (!card) return;
+    const enabled = videoEnabled();
+    const key = get("desktop", "VideoHotkey");
+    const hotkey = key ? hotkeyText(key) : "";
+    let title, detail = [], cls = "";
+    const notes = [];
+    if (!v.available) {
+      title = t("vid.state.missing");
+    } else if (v.state === 2) {
+      cls = " on";
+      title = "REC " + clock(v.seconds);
+      const audio = v.audio || 0;
+      const sound = (audio & 3) === 3 ? t("vid.audio.both") : audio & 1 ? t("vid.audio.game") : audio & 2 ? t("vid.audio.mic") : t("vid.audio.none");
+      detail = [v.game, bytesText(v.bytes), v.encoder || t("vid.codec." + get("desktop", "VideoCodec")), sound].filter(Boolean);
+      if (audio & 4) notes.push(t("vid.audio.gameFailed"));
+      if (audio & 8) notes.push(t("vid.audio.micFailed"));
+      if (v.frames > 120 && v.dropped > v.frames / 20) notes.push(t("vid.dropped"));
+    } else if (v.state === 1) {
+      cls = " wait";
+      title = t("vid.state.waiting");
+      detail = [t("vid.state.waiting.help")];
+    } else if (v.state === 3) {
+      title = t("vid.state.finishing");
+    } else {
+      title = enabled ? t("vid.state.ready") : t("vid.state.off");
+      if (enabled) detail = [hotkey ? t("vid.state.ready.key", { key: hotkey }) : t("vid.state.ready.nokey")];
+      if (v.reason) notes.push(v.reason);
+      else if (v.file) detail.push(t("vid.last", { file: v.file.split("\\").pop() }));
+    }
+    if (enabled && key && v.hotkeyOk === false) notes.push(t("vid.key.taken", { key: hotkey }));
+    const recording = v.state === 1 || v.state === 2;
+    const button = recording
+      ? h("button", { class: "btn danger", type: "button", onclick: () => send("videoStop") }, t("vid.stop"))
+      : h("button", { class: "btn primary", type: "button", disabled: !enabled || !v.available || v.state === 3, onclick: () => send("videoStart") }, icon("video"), t("vid.start"));
+    card.className = "video-card" + cls;
+    card.replaceChildren(
+      h("div", { class: "video-state" }, h("i", { class: "rec-dot" }), h("div", null, h("div", { class: "video-title", text: title }),
+        detail.length ? h("div", { class: "row-help", text: detail.join(" · ") }) : null,
+        notes.map(n => h("div", { class: "video-note", text: n })))),
+      button);
+  }
+
   // --- Mesures --------------------------------------------------------------------------------
 
   // Mode des rapports : l'explication suit le mode choisi.
@@ -1084,6 +1394,9 @@ window.App = (function () {
 
   // Bouton « Désactiver » / « Réactiver » d'une layer : le programme demande confirmation avant de désactiver.
   function layerButton(action, named) {
+    if (action.remove)
+      return h("button", { class: "btn small", type: "button", onclick: () => send("removeXrLayer", { id: action.id, manifest: action.manifest, label: action.label }) },
+        t("cfg.layer.remove"));
     const text = action.on ? t("cfg.layer.enable") : named ? t("cfg.layer.disableNamed", { name: action.label }) : t("cfg.layer.disable");
     return h("button", { class: "btn small" + (action.on ? "" : " danger"), type: "button",
       onclick: () => send("setXrLayer", { id: action.id, manifest: action.manifest, on: action.on, label: action.label }) }, text);

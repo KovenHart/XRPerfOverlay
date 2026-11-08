@@ -24,7 +24,7 @@ namespace XRPerfSensors
     {
         public const string ManifestName = "XR_APILAYER_NOVENDOR_perf_overlay.json";
         public const string CommandArgument = "--layer";
-        /// <summary>Instance relancée en administrateur pour une autre layer : « --xrlayer on|off &lt;nom en base64&gt; ».</summary>
+        /// <summary>Instance relancée en administrateur pour une autre layer : « --xrlayer on|off|remove &lt;nom en base64&gt; ».</summary>
         public const string OtherArgument = "--xrlayer";
         private const string KeyPath = @"SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit";
 
@@ -187,6 +187,43 @@ namespace XRPerfSensors
         // n'est inscrit à la place d'un installateur. Les inscriptions de HKCU (ce compte) se modifient sans
         // droits administrateur ; celles de HKLM en demandent.
 
+        // Exception à la règle ci-dessus : l'inscription d'une layer dont le fichier .json n'existe plus (reste
+        // d'une désinstallation) peut être retirée. Le chargeur OpenXR l'ignore déjà ; rien ne peut être perdu.
+        // Vérifié ici, au moment de l'écriture (aussi dans l'instance administrateur) : un fichier présent bloque.
+        private static bool RemoveOrphan(RegistryHive hive, string valueName)
+        {
+            if (string.IsNullOrEmpty(valueName) || File.Exists(Environment.ExpandEnvironmentVariables(valueName))) return false;
+            using (RegistryKey root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64))
+            using (RegistryKey key = root.OpenSubKey(KeyPath, true))
+            {
+                if (key == null || !key.GetValueNames().Contains(valueName, StringComparer.Ordinal)) return false;
+                try { OpenXrLayers.BackupNow(); } catch (Exception) { }
+                key.DeleteValue(valueName, false);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Retire l'inscription d'une layer désinstallée (fichier .json absent). Pour HKLM sans droits
+        /// administrateur, Windows demande l'autorisation. Missing : inscription absente, ou fichier présent.
+        /// </summary>
+        public static Task<Outcome> RemoveOrphanAsync(bool machine, string valueName)
+        {
+            if (string.IsNullOrEmpty(valueName)) return Task.FromResult(Outcome.Missing);
+            if (!machine || IsElevated())
+            {
+                try
+                {
+                    return Task.FromResult(RemoveOrphan(machine ? RegistryHive.LocalMachine : RegistryHive.CurrentUser, valueName) ? Outcome.Done : Outcome.Missing);
+                }
+                catch (Exception)
+                {
+                    return Task.FromResult(Outcome.Failed);
+                }
+            }
+            return RunElevated("remove", valueName);
+        }
+
         private static bool WriteOther(RegistryHive hive, string valueName, bool enabled)
         {
             using (RegistryKey root = RegistryKey.OpenBaseKey(hive, RegistryView.Registry64))
@@ -211,6 +248,18 @@ namespace XRPerfSensors
         /// </summary>
         public static int RunOtherCommand(string value, string encodedName)
         {
+            if (string.Equals(value, "remove", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    string orphan = Encoding.UTF8.GetString(Convert.FromBase64String(encodedName ?? ""));
+                    return orphan.Length > 0 && RemoveOrphan(RegistryHive.LocalMachine, orphan) ? 0 : 2;
+                }
+                catch (Exception)
+                {
+                    return 1;
+                }
+            }
             bool enabled;
             if (string.Equals(value, "on", StringComparison.OrdinalIgnoreCase)) enabled = true;
             else if (string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)) enabled = false;
@@ -246,6 +295,12 @@ namespace XRPerfSensors
                     return Task.FromResult(Outcome.Failed);
                 }
             }
+            return RunElevated(enabled ? "on" : "off", valueName);
+        }
+
+        // Relance XRPerfSensors en administrateur pour une autre layer (« --xrlayer action nom ») et attend son code.
+        private static Task<Outcome> RunElevated(string action, string valueName)
+        {
             string exe = Environment.ProcessPath;
             if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return Task.FromResult(Outcome.Failed);
             string encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(valueName));
@@ -254,7 +309,7 @@ namespace XRPerfSensors
                 Process process;
                 try
                 {
-                    process = Process.Start(new ProcessStartInfo(exe, OtherArgument + " " + (enabled ? "on" : "off") + " " + encoded)
+                    process = Process.Start(new ProcessStartInfo(exe, OtherArgument + " " + action + " " + encoded)
                     {
                         UseShellExecute = true,
                         Verb = "runas",

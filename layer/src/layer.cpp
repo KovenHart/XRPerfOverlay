@@ -11,6 +11,7 @@
 //
 // Règle de conduite : en cas de doute ou d'erreur, on s'efface et on laisse passer l'appel d'origine.
 
+#include <atomic>
 #include <cstring>
 #include <initializer_list>
 #include <memory>
@@ -22,6 +23,7 @@
 #include "log.h"
 #include "output_tap.h"
 #include "overlay.h"
+#include "swapchain_registry.h"
 #include "version.h"
 #include "xr.h"
 
@@ -41,6 +43,19 @@ NextFunctions g_next;
 bool g_active = false;  // false : la layer se contente de transmettre les appels
 std::shared_ptr<Overlay> g_overlay;
 std::shared_ptr<HandInput> g_hands;  // manettes et batterie (nul si rien n'est demandé)
+// Enregistrement vidéo permis dans ce jeu ([video] capture) : les swapchains du jeu sont alors suivies.
+bool g_videoHooks = false;
+// Jamais détruit (comme l'overlay à la fin du processus) : un appel tardif d'un autre fil reste sans danger.
+SwapchainRegistry& g_swapchains = *new SwapchainRegistry();
+// Image enregistrée en bas de la chaîne (après les autres layers, [video] source=final) : les swapchains
+// sont alors suivies par le maillon de sortie, et la copie se fait là, au lieu de l'entrée de la layer.
+std::atomic<bool> g_videoOutput{false};
+SwapchainRegistry& g_outputSwapchains = *new SwapchainRegistry();
+
+std::shared_ptr<Overlay> currentOverlay() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_overlay;
+}
 
 std::shared_ptr<HandInput> hands() {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -169,6 +184,8 @@ XrResult XRAPI_CALL hook_xrDestroySession(XrSession session) {
         overlay.reset();
     }
     if (auto h = hands()) h->sessionDestroying(session);
+    if (g_videoHooks) g_swapchains.clear();  // les swapchains de la session disparaissent avec elle
+    g_outputSwapchains.clear();
     return g_next.DestroySession(session);
 }
 
@@ -227,6 +244,55 @@ XrResult XRAPI_CALL hook_xrBeginFrame(XrSession session, const XrFrameBeginInfo*
     return result;
 }
 
+// Swapchains du jeu (enregistrement vidéo) : appel transmis tel quel, puis simple relevé.
+XrResult XRAPI_CALL hook_xrCreateSwapchain(XrSession session, const XrSwapchainCreateInfo* createInfo, XrSwapchain* swapchain) {
+    const XrResult result = g_next.CreateSwapchain(session, createInfo, swapchain);
+    if (XR_SUCCEEDED(result) && createInfo && swapchain) {
+        try {
+            g_swapchains.created(*swapchain, *createInfo);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL hook_xrDestroySwapchain(XrSwapchain swapchain) {
+    try {
+        g_swapchains.destroyed(swapchain);
+    } catch (...) {
+    }
+    return g_next.DestroySwapchain(swapchain);
+}
+
+XrResult XRAPI_CALL hook_xrAcquireSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageAcquireInfo* acquireInfo, uint32_t* index) {
+    const XrResult result = g_next.AcquireSwapchainImage(swapchain, acquireInfo, index);
+    if (XR_SUCCEEDED(result) && index) {
+        try {
+            g_swapchains.acquired(swapchain, *index);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL hook_xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageReleaseInfo* releaseInfo) {
+    // Enregistrement vidéo : l'image est copiée juste avant d'être rendue, tant qu'elle est encore au jeu
+    // (état garanti par OpenXR, aucun accès concurrent du runtime).
+    try {
+        if (!g_videoOutput.load(std::memory_order_relaxed))
+            if (auto overlay = currentOverlay()) overlay->videoRelease(swapchain, g_swapchains);
+    } catch (...) {
+    }
+    const XrResult result = g_next.ReleaseSwapchainImage(swapchain, releaseInfo);
+    if (XR_SUCCEEDED(result)) {
+        try {
+            g_swapchains.released(swapchain);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
 XrResult XRAPI_CALL hook_xrEndFrame(XrSession session, const XrFrameEndInfo* frameEndInfo) {
     if (!g_active || !frameEndInfo) return g_next.EndFrame(session, frameEndInfo);
 
@@ -242,6 +308,13 @@ XrResult XRAPI_CALL hook_xrEndFrame(XrSession session, const XrFrameEndInfo* fra
         if (overlay) added = overlay->onEndFrame(quads, frameEndInfo->displayTime, allowLayer);
     } catch (...) {
         added = 0;
+    }
+    // Enregistrement vidéo : copie de l'image d'un œil, avant de la passer au runtime.
+    if (overlay && g_videoHooks && !g_videoOutput.load(std::memory_order_relaxed)) {
+        try {
+            overlay->captureVideo(*frameEndInfo, g_swapchains, nullptr);
+        } catch (...) {
+        }
     }
     if (added <= 0 || frameEndInfo->layerCount + static_cast<uint32_t>(added) > kMaxLayers) {
         const XrResult result = g_next.EndFrame(session, frameEndInfo);
@@ -293,8 +366,15 @@ struct OutputFunctions {
     PFN_xrWaitFrame WaitFrame = nullptr;
     PFN_xrEndFrame EndFrame = nullptr;
     PFN_xrReleaseSwapchainImage ReleaseSwapchainImage = nullptr;
+    // Enregistrement vidéo de l'image envoyée au casque.
+    PFN_xrCreateSwapchain CreateSwapchain = nullptr;
+    PFN_xrDestroySwapchain DestroySwapchain = nullptr;
+    PFN_xrAcquireSwapchainImage AcquireSwapchainImage = nullptr;
+    PFN_xrEnumerateSwapchainImages EnumerateSwapchainImages = nullptr;
+    bool video() const { return CreateSwapchain && DestroySwapchain && AcquireSwapchainImage && EnumerateSwapchainImages; }
 };
 OutputFunctions g_output;
+bool g_outputVideoWanted = false;  // demandé à la création de l'instance ([video] source=final)
 PFN_xrGetInstanceProcAddr g_outputGetInstanceProcAddr = nullptr;  // xrGetInstanceProcAddr du runtime
 
 uint64_t swapchainKey(XrSwapchain swapchain) {
@@ -313,15 +393,67 @@ XrResult XRAPI_CALL output_xrWaitFrame(XrSession session, const XrFrameWaitInfo*
     return result;
 }
 
+// Swapchains vues en bas de la chaîne (celles du jeu et celles des layers du dessous), pour l'enregistrement
+// vidéo de l'image envoyée au casque : appel transmis tel quel, puis simple relevé.
+XrResult XRAPI_CALL output_xrCreateSwapchain(XrSession session, const XrSwapchainCreateInfo* createInfo, XrSwapchain* swapchain) {
+    const XrResult result = g_output.CreateSwapchain(session, createInfo, swapchain);
+    if (XR_SUCCEEDED(result) && createInfo && swapchain) {
+        try {
+            g_outputSwapchains.created(*swapchain, *createInfo);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL output_xrDestroySwapchain(XrSwapchain swapchain) {
+    try {
+        g_outputSwapchains.destroyed(swapchain);
+    } catch (...) {
+    }
+    return g_output.DestroySwapchain(swapchain);
+}
+
+XrResult XRAPI_CALL output_xrAcquireSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageAcquireInfo* acquireInfo, uint32_t* index) {
+    const XrResult result = g_output.AcquireSwapchainImage(swapchain, acquireInfo, index);
+    if (XR_SUCCEEDED(result) && index) {
+        try {
+            g_outputSwapchains.acquired(swapchain, *index);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
 XrResult XRAPI_CALL output_xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageReleaseInfo* releaseInfo) {
+    const bool video = g_videoOutput.load(std::memory_order_relaxed);
+    if (video) {
+        try {
+            if (auto overlay = currentOverlay()) overlay->videoRelease(swapchain, g_outputSwapchains);
+        } catch (...) {
+        }
+    }
     const XrResult result = g_output.ReleaseSwapchainImage(swapchain, releaseInfo);
     // Une image de cette swapchain vient d'être rendue au runtime : sa prochaine soumission montrera
     // un contenu nouveau. (La texture de notre propre panneau n'est pas une image du jeu.)
     if (XR_SUCCEEDED(result) && !t_ownSwapchainCall) g_outputTap.swapchains.onRelease(swapchainKey(swapchain));
+    if (XR_SUCCEEDED(result) && video) {
+        try {
+            g_outputSwapchains.released(swapchain);
+        } catch (...) {
+        }
+    }
     return result;
 }
 
 XrResult XRAPI_CALL output_xrEndFrame(XrSession session, const XrFrameEndInfo* frameEndInfo) {
+    // Enregistrement vidéo : l'image telle que le runtime la reçoit (traitée par les layers du dessous).
+    if (frameEndInfo && g_videoOutput.load(std::memory_order_relaxed)) {
+        try {
+            if (auto overlay = currentOverlay()) overlay->captureVideo(*frameEndInfo, g_outputSwapchains, g_output.EnumerateSwapchainImages);
+        } catch (...) {
+        }
+    }
     const XrResult result = g_output.EndFrame(session, frameEndInfo);
     if (XR_FAILED(result) || !frameEndInfo || frameEndInfo->layerCount == 0 || !frameEndInfo->layers) return result;
     g_outputTap.submitted.fetch_add(1, std::memory_order_relaxed);
@@ -361,6 +493,14 @@ XrResult XRAPI_CALL output_xrGetInstanceProcAddr(XrInstance instance, const char
         *function = reinterpret_cast<PFN_xrVoidFunction>(output_xrEndFrame);
     else if (g_output.ReleaseSwapchainImage && std::strcmp(name, "xrReleaseSwapchainImage") == 0)
         *function = reinterpret_cast<PFN_xrVoidFunction>(output_xrReleaseSwapchainImage);
+    else if (g_outputVideoWanted && g_output.video()) {
+        if (std::strcmp(name, "xrCreateSwapchain") == 0)
+            *function = reinterpret_cast<PFN_xrVoidFunction>(output_xrCreateSwapchain);
+        else if (std::strcmp(name, "xrDestroySwapchain") == 0)
+            *function = reinterpret_cast<PFN_xrVoidFunction>(output_xrDestroySwapchain);
+        else if (std::strcmp(name, "xrAcquireSwapchainImage") == 0)
+            *function = reinterpret_cast<PFN_xrVoidFunction>(output_xrAcquireSwapchainImage);
+    }
     return result;
 }
 
@@ -382,6 +522,12 @@ XrResult XRAPI_CALL output_xrCreateApiLayerInstance(const XrInstanceCreateInfo* 
     resolve(getProcAddr, *instance, "xrWaitFrame", output.WaitFrame);
     resolve(getProcAddr, *instance, "xrEndFrame", output.EndFrame);
     resolve(getProcAddr, *instance, "xrReleaseSwapchainImage", output.ReleaseSwapchainImage);
+    if (g_outputVideoWanted) {
+        resolve(getProcAddr, *instance, "xrCreateSwapchain", output.CreateSwapchain);
+        resolve(getProcAddr, *instance, "xrDestroySwapchain", output.DestroySwapchain);
+        resolve(getProcAddr, *instance, "xrAcquireSwapchainImage", output.AcquireSwapchainImage);
+        resolve(getProcAddr, *instance, "xrEnumerateSwapchainImages", output.EnumerateSwapchainImages);
+    }
     if (output.WaitFrame && output.EndFrame && output.ReleaseSwapchainImage) {
         g_output = output;
         g_outputTap.installed.store(true, std::memory_order_relaxed);
@@ -416,6 +562,13 @@ XrResult XRAPI_CALL layer_xrGetInstanceProcAddr(XrInstance instance, const char*
         {"xrWaitFrame", reinterpret_cast<PFN_xrVoidFunction>(hook_xrWaitFrame), g_next.WaitFrame != nullptr},
         {"xrBeginFrame", reinterpret_cast<PFN_xrVoidFunction>(hook_xrBeginFrame), g_next.BeginFrame != nullptr},
         {"xrEndFrame", reinterpret_cast<PFN_xrVoidFunction>(hook_xrEndFrame), g_next.EndFrame != nullptr},
+        // Seulement si l'enregistrement vidéo est permis (réglage lu au lancement du jeu).
+        {"xrCreateSwapchain", reinterpret_cast<PFN_xrVoidFunction>(hook_xrCreateSwapchain), g_next.CreateSwapchain != nullptr && g_videoHooks},
+        {"xrDestroySwapchain", reinterpret_cast<PFN_xrVoidFunction>(hook_xrDestroySwapchain), g_next.DestroySwapchain != nullptr && g_videoHooks},
+        {"xrAcquireSwapchainImage", reinterpret_cast<PFN_xrVoidFunction>(hook_xrAcquireSwapchainImage),
+         g_next.AcquireSwapchainImage != nullptr && g_videoHooks},
+        {"xrReleaseSwapchainImage", reinterpret_cast<PFN_xrVoidFunction>(hook_xrReleaseSwapchainImage),
+         g_next.ReleaseSwapchainImage != nullptr && g_videoHooks},
         // Seulement si le suivi des manettes est prévu (réglages lus au lancement du jeu).
         {"xrSuggestInteractionProfileBindings", reinterpret_cast<PFN_xrVoidFunction>(hook_xrSuggestInteractionProfileBindings),
          g_next.SuggestInteractionProfileBindings != nullptr && handHooks},
@@ -492,7 +645,9 @@ XrResult XRAPI_CALL layer_xrCreateApiLayerInstance(const XrInstanceCreateInfo* i
     // La liste d'origine, qui appartient au chargeur, n'est pas modifiée.
     XrApiLayerNextInfo nodes[kMaxChain + 1];
     size_t below = 0;
-    bool spliceable = !excluded && config.measureOutput != 0;
+    // Enregistrement vidéo de l'image envoyée au casque : le maillon suit aussi les swapchains.
+    const bool videoFinal = !excluded && config.videoCapture && config.videoFinal;
+    bool spliceable = !excluded && (config.measureOutput != 0 || videoFinal);
     bool framegenBelow = false;
     char belowNames[256] = "";
     for (const XrApiLayerNextInfo* node = chained.nextInfo; node; node = node->next) {
@@ -508,7 +663,10 @@ XrResult XRAPI_CALL layer_xrCreateApiLayerInstance(const XrInstanceCreateInfo* i
     }
     // En mode automatique, le maillon n'est ajouté que si un outil de génération d'images est présent :
     // sans lui, il n'y aurait rien de plus à mesurer.
-    if (config.measureOutput < 0 && !framegenBelow) spliceable = false;
+    if (config.measureOutput < 0 && !framegenBelow && !videoFinal) spliceable = false;
+    g_outputVideoWanted = spliceable && videoFinal;
+    g_videoOutput.store(false, std::memory_order_relaxed);
+    g_outputSwapchains.clear();
     g_outputTap.installed.store(false, std::memory_order_relaxed);
     g_outputTap.reached.store(false, std::memory_order_relaxed);
 
@@ -604,6 +762,10 @@ XrResult XRAPI_CALL layer_xrCreateApiLayerInstance(const XrInstanceCreateInfo* i
         const bool hooksUsable = g_next.DestroyInstance && g_next.CreateSession && g_next.DestroySession && g_next.WaitFrame &&
                                  g_next.BeginFrame && g_next.EndFrame && g_next.overlayUsable();
         g_active = !excluded && hooksUsable;
+        g_videoHooks = g_active && config.videoCapture;
+        const bool videoOutput = g_videoHooks && g_outputVideoWanted && g_outputTap.installed.load(std::memory_order_relaxed) && g_output.video();
+        g_videoOutput.store(videoOutput, std::memory_order_relaxed);
+        if (videoOutput) Log("Video : image enregistree en sortie de chaine (apres les layers du dessous).");
         const char* application = info ? info->applicationInfo.applicationName : "?";
         Log("Instance OpenXR creee pour \"%s\" (%s) : overlay %s (XR Perf Overlay %s).", application, Narrow(exe).c_str(),
             excluded ? "desactive (processus exclu dans le .ini)" : (hooksUsable ? "pret" : "desactive (fonctions OpenXR manquantes)"), XRPO_VERSION);

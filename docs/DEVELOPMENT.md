@@ -12,6 +12,7 @@ Building from source, building and publishing the package, code layout. To simpl
 | `sensors/` | `XRPerfSensors.exe` (C#), run separately: reads the PC's sensors and passes them to the layer; its window (interface in `sensors/ui/`) configures the overlay and shows the reports. |
 | `layer/src/vr_*.cpp` | `XRPerfVR.exe` (C++), started by XRPerfSensors: panel, watch and reports in SteamVR (OpenVR) games. |
 | `layer/src/window_capture.cpp` | `XRPerfCapture.dll` (C++), loaded by XRPerfSensors: captures the window shown in the headset. |
+| `layer/src/video_record.cpp` | `XRPerfRecord.dll` (C++), loaded by XRPerfSensors: headset video recording (GPU conversion, hardware encoder through Media Foundation, WASAPI sound). |
 
 ## Two ways to get it
 
@@ -101,6 +102,11 @@ layer/src/report_control.h    when to write a report: automatic, manual (Ctrl+Al
 layer/src/session_stats.h     whole-session totals and text report formatting, French or English (read by SessionReport.cs)
 layer/src/vr_host.cpp         XRPerfVR: OpenVR games (waiting for SteamVR, sessions, measurements, layers, reports)
 layer/src/window_capture.cpp  XRPerfCapture.dll: window capture (Windows capture API) to shared memory
+layer/src/swapchain_registry.h  video: the game's swapchains (format, last rendered image), followed only if [video] capture=1
+layer/src/video_producer.cpp  video: copies one eye's image to shared textures (Direct3D 11 / 12), never waits
+layer/src/video_math.h        video: which frames to copy, framing centered on the head, panel position in the video, stabilization, sound timeline (tested in preview.cpp)
+layer/src/video_record.cpp    XRPerfRecord.dll: shared textures -> framed image + panel -> NV12 (shaders) -> hardware encoder, PC sound and microphone, MP4
+sensors/VideoRecorder.cs      video: shared memory, XRPerfRecord.dll control, global hotkey (RegisterHotKey)
 layer/src/settings_apply.h    bounded application of the settings sent by XRPerfSensors (including the language)
 layer/src/shared_block.h      shared memory format (must stay aligned with sensors/*.cs)
 sensors/Program.cs            sensor reading, notification icon and its menu

@@ -51,6 +51,7 @@ namespace XRPerfSensors
         public bool Clock = true;
         public bool HeadsetInfo = true;
         public bool PanelSession, PanelBattery;  // ligne « session / batterie » du panneau (option, désactivée par défaut)
+        public bool PowerColumn;                 // dernière colonne du tableau CPU / GPU : puissance (W) au lieu de la fréquence
         public int Layout;
         public int Theme;
         public Color CustomBackground = Color.FromArgb(14, 17, 22);
@@ -93,6 +94,8 @@ namespace XRPerfSensors
         public bool ReportHardware = true; // [summary] hardware : modèles du processeur et de la carte graphique dans les rapports
         public string SummaryFolder = "";  // [summary] folder : dossier des rapports (vide = "sessions" à côté de la DLL)
         public bool OpenVR = true;         // [openvr] enabled : XRPerfVR (panneau, montre, rapports dans les jeux SteamVR / OpenVR)
+        public bool VideoCapture = true;   // [video] capture : enregistrement vidéo du casque possible (layer et XRPerfVR)
+        public bool VideoFinal = true;     // [video] source : image envoyée au casque (après les autres layers) ou celle du jeu
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetPrivateProfileStringW(string section, string key, string defaultValue, StringBuilder result, uint size, string path);
@@ -175,6 +178,7 @@ namespace XRPerfSensors
             s.HeadsetInfo = ReadBool(path, "headset_info", s.HeadsetInfo);
             s.PanelSession = ReadBool(path, "session", s.PanelSession);
             s.PanelBattery = ReadBool(path, "battery", s.PanelBattery);
+            s.PowerColumn = ReadBool(path, "power", s.PowerColumn);
             s.Layout = ReadName(path, "layout", LayoutNames, s.Layout);
             s.Theme = ReadName(path, "theme", ThemeNames, s.Theme);
             s.CustomBackground = ReadColor(path, "custom_background", s.CustomBackground);
@@ -190,6 +194,8 @@ namespace XRPerfSensors
             s.ReportHardware = ReadBool(path, "summary", "hardware", s.ReportHardware);
             s.SummaryFolder = ReadText(path, "summary", "folder");
             s.OpenVR = ReadBool(path, "openvr", "enabled", s.OpenVR);
+            s.VideoCapture = ReadBool(path, "video", "capture", s.VideoCapture);
+            s.VideoFinal = ReadText(path, "video", "source").Trim().ToLowerInvariant() != "game";
 
             s.Anchor = ReadName(path, "anchor", AnchorNames, s.Anchor);
             s.HandPlacement = ReadName(path, "hand_position", PlacementNames, s.HandPlacement);
@@ -274,6 +280,7 @@ namespace XRPerfSensors
             else ok &= WritePrivateProfileStringW(Section, "headset_name", HeadsetName, path);
             ok &= WritePrivateProfileStringW(Section, "session", PanelSession ? "1" : "0", path);
             ok &= WritePrivateProfileStringW(Section, "battery", PanelBattery ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW(Section, "power", PowerColumn ? "1" : "0", path);
             ok &= WritePrivateProfileStringW(Section, "layout", LayoutNames[Layout], path);
             ok &= WritePrivateProfileStringW(Section, "theme", ThemeNames[Theme], path);
             ok &= WritePrivateProfileStringW(Section, "custom_background", Hex(CustomBackground), path);
@@ -284,6 +291,8 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW("summary", "mode", ReportModeNames[Math.Min(ReportModeNames.Length - 1, Math.Max(0, ReportMode))], path);
             ok &= WritePrivateProfileStringW("summary", "hardware", ReportHardware ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("openvr", "enabled", OpenVR ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW("video", "capture", VideoCapture ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW("video", "source", VideoFinal ? "final" : "game", path);
             ok &= WritePrivateProfileStringW(Section, "anchor", AnchorNames[Anchor], path);
             ok &= WritePrivateProfileStringW(Section, "hand_position", PlacementNames[HandPlacement], path);
             ok &= WritePrivateProfileStringW(Section, "gaze_only", GazeOnly ? "1" : "0", path);
@@ -330,7 +339,7 @@ namespace XRPerfSensors
 
         /// <summary>
         /// Les réglages au format du bloc partagé avec la layer (SettingsBlock dans
-        /// layer/src/shared_block.h : mêmes offsets, 192 octets).
+        /// layer/src/shared_block.h : mêmes offsets, 200 octets).
         /// </summary>
         /// <param name="generation">Numéro de cet état des réglages.</param>
         /// <param name="changeTick">Environment.TickCount64 au dernier changement fait par l'utilisateur, 0 s'il n'y en a pas eu.</param>
@@ -386,6 +395,7 @@ namespace XRPerfSensors
             Put(block, 184, Language == 1 ? 1u : Language == 2 ? 2u : Loc.Resolve("auto") == "en" ? 2u : 1u);
             // Mode des rapports : 1 = automatique, 2 = manuel, 3 = aucun (0 laisserait celui du .ini).
             Put(block, 188, (uint)(Math.Min(ReportOff, Math.Max(ReportAuto, ReportMode)) + 1));
+            Put(block, 192, PowerColumn ? 1u : 0u);
             return block;
         }
     }
@@ -396,9 +406,9 @@ namespace XRPerfSensors
     /// </summary>
     internal sealed class SettingsShare : IDisposable
     {
-        public const int Size = 192;
+        public const int Size = 200;
         public const uint Magic = 0x53505258; // "XRPS"
-        public const uint Version = 5;
+        public const uint Version = 6;
 
         private const string Name = @"Local\XRPerfOverlay.Settings";
         private const int OffsetSequence = 8;
@@ -570,14 +580,14 @@ namespace XRPerfSensors
             }
         }
 
-        /// <summary>Capteurs au format du bloc partagé (SensorBlock, 56 octets), ou null s'ils ne sont pas encore lus.</summary>
+        /// <summary>Capteurs au format du bloc partagé (SensorBlock, 64 octets), ou null s'ils ne sont pas encore lus.</summary>
         private static byte[] SensorBytes(Readings r)
         {
             if (r == null) return null;
-            var block = new byte[56];
+            var block = new byte[64];
             BitConverter.GetBytes(0x4F505258u).CopyTo(block, 0); // "XRPO"
-            BitConverter.GetBytes(1u).CopyTo(block, 4);
-            float[] values = { r.CpuLoad, r.CpuTemp, r.CpuMHz, r.GpuLoad, r.GpuTemp, r.GpuMHz, r.VramUsedMB, r.VramTotalMB };
+            BitConverter.GetBytes(2u).CopyTo(block, 4);
+            float[] values = { r.CpuLoad, r.CpuTemp, r.CpuMHz, r.GpuLoad, r.GpuTemp, r.GpuMHz, r.VramUsedMB, r.VramTotalMB, r.CpuWatts, r.GpuWatts };
             for (int i = 0; i < values.Length; i++) BitConverter.GetBytes(values[i]).CopyTo(block, 24 + 4 * i);
             return block;
         }

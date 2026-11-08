@@ -160,10 +160,13 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
     c.keyWindowToggle = readInt(c, L"hotkeys", L"window_toggle", c.keyWindowToggle, 0, 255);
     c.keyWindowPlace = readInt(c, L"hotkeys", L"window_place", c.keyWindowPlace, 0, 255);
     c.keyRecord = readInt(c, L"hotkeys", L"record", c.keyRecord, 0, 255);
+    c.videoCapture = readInt(c, L"video", L"capture", 1, 0, 1) != 0;
+    c.videoFinal = lower(readString(c, L"video", L"source")) != L"game";
 
     c.clock = readInt(c, L"overlay", L"clock", 1, 0, 1) != 0;
     c.headsetInfo = readInt(c, L"overlay", L"headset_info", 1, 0, 1) != 0;
     c.panelElements = (readInt(c, L"overlay", L"session", 0, 0, 1) ? kWatchSession : 0u) | (readInt(c, L"overlay", L"battery", 0, 0, 1) ? kWatchBattery : 0u);
+    c.showPower = readInt(c, L"overlay", L"power", 0, 0, 1) != 0;
     const std::wstring headset = readString(c, L"overlay", L"headset_name");
     c.headsetName = AsciiText(headset.c_str(), headset.size());
     const std::wstring language = lower(readString(c, L"overlay", L"language"));

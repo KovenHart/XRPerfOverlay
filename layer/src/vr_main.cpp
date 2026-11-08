@@ -8,6 +8,7 @@
 // Code de sortie 2 : SteamVR s'est fermé et a demandé aux applications de quitter (à relancer avec
 // --after-quit) ; 0 : arrêt demandé.
 #include <windows.h>
+#include <timeapi.h>
 #include <shellapi.h>
 
 #include <cwchar>
@@ -80,6 +81,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         DWORD waitCount = 0;
         if (stop) waits[waitCount++] = stop;
         if (parent) waits[waitCount++] = parent;
+        bool fineTimer = false;
         for (;;) {
             host.tick();
             // SteamVR a demandé aux applications de quitter et le programme s'y est engagé : il se termine,
@@ -88,10 +90,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
                 exitCode = 2;
                 break;
             }
-            // Pause d'environ 20 ms, interrompue par une demande d'arrêt ou la fin de XRPerfSensors.
-            const DWORD result = waitCount ? WaitForMultipleObjects(waitCount, waits, FALSE, 20) : (Sleep(20), WAIT_TIMEOUT);
+            // Pause d'environ 20 ms (4 ms pendant un enregistrement vidéo, pour suivre la cadence du casque),
+            // interrompue par une demande d'arrêt ou la fin de XRPerfSensors.
+            // Pendant un enregistrement, minuterie de Windows à 1 ms (sinon une pause de 4 ms en dure 15).
+            const bool busy = host.videoBusy();
+            if (busy != fineTimer) {
+                if (busy) timeBeginPeriod(1);
+                else timeEndPeriod(1);
+                fineTimer = busy;
+            }
+            const DWORD pause = busy ? 4 : 20;
+            const DWORD result = waitCount ? WaitForMultipleObjects(waitCount, waits, FALSE, pause) : (Sleep(pause), WAIT_TIMEOUT);
             if (result != WAIT_TIMEOUT) break;
         }
+        if (fineTimer) timeEndPeriod(1);
         host.stop();
     }
     Log(exitCode == 2 ? "XRPerfVR arrete (fermeture de SteamVR)." : "XRPerfVR arrete.");

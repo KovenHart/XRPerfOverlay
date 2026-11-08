@@ -106,6 +106,9 @@ if errorlevel 1 exit /b 13
 rem XRPerfCapture.dll (fenetre du bureau affichee dans le casque) : chargee par XRPerfSensors.
 copy /y build\layer\Release\XRPerfCapture.dll "%OUT%\sensors\"
 if errorlevel 1 exit /b 13
+rem XRPerfRecord.dll (enregistrement video du casque) : chargee par XRPerfSensors.
+copy /y build\layer\Release\XRPerfRecord.dll "%OUT%\sensors\"
+if errorlevel 1 exit /b 13
 echo.
 echo Compilation terminee.
 exit /b 0

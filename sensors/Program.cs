@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -26,6 +27,7 @@ namespace XRPerfSensors
         public float CpuLoad = float.NaN, CpuTemp = float.NaN, CpuMHz = float.NaN;
         public float GpuLoad = float.NaN, GpuTemp = float.NaN, GpuMHz = float.NaN;
         public float VramUsedMB = float.NaN, VramTotalMB = float.NaN;
+        public float CpuWatts = float.NaN, GpuWatts = float.NaN;
         public string CpuName = "?", GpuName = "?";
     }
 
@@ -36,9 +38,9 @@ namespace XRPerfSensors
     internal sealed class SharedBlock : IDisposable
     {
         private const string Name = @"Local\XRPerfOverlay.Sensors";
-        private const int Size = 56;
+        private const int Size = 64;
         private const uint Magic = 0x4F505258; // "XRPO"
-        private const uint Version = 1;
+        private const uint Version = 2; // 2 : puissance du processeur et de la carte graphique
 
         private const uint PAGE_READWRITE = 0x04;
         private const uint FILE_MAP_WRITE = 0x0002;
@@ -135,6 +137,8 @@ namespace XRPerfSensors
             WriteFloat(44, r.GpuMHz);
             WriteFloat(48, r.VramUsedMB);
             WriteFloat(52, r.VramTotalMB);
+            WriteFloat(56, r.CpuWatts);
+            WriteFloat(60, r.GpuWatts);
 
             Thread.MemoryBarrier();
             Marshal.WriteInt32(_view, 8, ++_sequence);
@@ -225,6 +229,9 @@ namespace XRPerfSensors
                 r.CpuMHz = Aggregate(_cpu, SensorType.Clock,
                     s => s.Name.Contains("Core #") && !s.Name.Contains("Effective"), values => values.Max());
                 if (float.IsNaN(r.CpuMHz)) r.CpuMHz = Value(_cpu, SensorType.Clock, "Cores (Average)");
+
+                // Puissance du boîtier ("Package" chez AMD, "CPU Package" chez Intel) ; absente sur certains processeurs.
+                r.CpuWatts = Value(_cpu, SensorType.Power, "Package", "CPU Package", "CPU Cores");
             }
 
             if (_gpu != null)
@@ -234,6 +241,9 @@ namespace XRPerfSensors
                 r.GpuTemp = Value(_gpu, SensorType.Temperature, "GPU Core", "GPU Hot Spot");
                 if (float.IsNaN(r.GpuTemp)) r.GpuTemp = Aggregate(_gpu, SensorType.Temperature, s => true, values => values.Max());
                 r.GpuMHz = Value(_gpu, SensorType.Clock, "GPU Core");
+                // Puissance de la carte : "GPU Package" (NVIDIA, AMD), "GPU Power" (Intel Arc), sinon la plus grande mesure.
+                r.GpuWatts = Value(_gpu, SensorType.Power, "GPU Package", "GPU Power", "GPU Board Power", "GPU Core");
+                if (float.IsNaN(r.GpuWatts)) r.GpuWatts = Aggregate(_gpu, SensorType.Power, s => true, values => values.Max());
                 r.VramUsedMB = Value(_gpu, SensorType.SmallData, "GPU Memory Used", "D3D Dedicated Memory Used");
                 r.VramTotalMB = Value(_gpu, SensorType.SmallData, "GPU Memory Total", "D3D Dedicated Memory Total");
             }
@@ -327,6 +337,10 @@ namespace XRPerfSensors
         private readonly VrCompanion _vr;
         // Fenêtre du bureau capturée pour le casque (null si la mémoire partagée n'a pas pu être créée).
         private readonly WindowCapture _capture;
+        // Enregistrement vidéo du casque (null si la mémoire partagée n'a pas pu être créée) et son raccourci.
+        private readonly VideoRecorder _video;
+        private readonly GlobalHotkey _videoHotkey;
+        private ToolStripMenuItem _videoItem;
         private bool _overlayDirty;
         private bool _saveErrorShown;
 
@@ -413,6 +427,22 @@ namespace XRPerfSensors
             {
                 _capture = null;
             }
+            try
+            {
+                _video = new VideoRecorder(exeFolder);
+                _video.CodecsKnown += () =>
+                {
+                    MainWindow main = _main;
+                    if (main != null && !main.IsDisposed && main.IsHandleCreated) main.BeginInvoke(new Action(() => { if (!main.IsDisposed) main.PostVideo(); }));
+                };
+                _videoHotkey = new GlobalHotkey();
+                _videoHotkey.Pressed += ToggleVideo;
+            }
+            catch (Exception)
+            {
+                _video = null;
+            }
+            UpdateVideoHotkey();
 
             _uiTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             _uiTimer.Tick += (s, e) =>
@@ -420,6 +450,8 @@ namespace XRPerfSensors
                 RefreshTooltip();
                 UpdateVrCompanion(); // relance XRPerfVR s'il s'est arrêté
                 UpdateCapture();     // capture de fenêtre demandée (ou plus) par un jeu VR
+                if (_video != null && _main != null && !_main.IsDisposed) _main.PostVideo();
+                if (_videoItem != null && _video != null) _videoItem.Checked = _video.Busy;
             };
             _uiTimer.Start();
         }
@@ -431,6 +463,86 @@ namespace XRPerfSensors
         /// <summary>Non nul : les réglages du casque ne peuvent pas être enregistrés, et pourquoi.</summary>
         public string Unavailable { get { return _settingsUnavailable; } }
         public WindowCapture Capture { get { return _capture; } }
+        public VideoRecorder Video { get { return _video; } }
+        /// <summary>Le raccourci de la vidéo est enregistré auprès de Windows (false : pris par un autre programme).</summary>
+        public bool VideoHotkeyOk { get { return _videoHotkey == null || _settings.VideoKey == 0 || _videoHotkeyPaused || _videoHotkey.Registered; } }
+
+        // --- Enregistrement vidéo ------------------------------------------------------------------------
+
+        /// <summary>Fonction permise (réglage [video] capture) et bibliothèque présente.</summary>
+        public bool VideoEnabled { get { return _video != null && _settingsUnavailable == null && _overlay.VideoCapture; } }
+
+        public void ToggleVideo()
+        {
+            if (_video == null) return;
+            if (_video.Busy) StopVideo();
+            else StartVideo();
+        }
+
+        /// <summary>Démarre l'enregistrement ; retourne la raison d'un refus (null : démarré).</summary>
+        public string StartVideo()
+        {
+            if (_video == null) return Loc.T("Enregistrement vidéo indisponible.", "Video recording unavailable.");
+            if (!VideoEnabled)
+                return Loc.T("L'enregistrement vidéo est désactivé (page Vidéo).", "Video recording is turned off (Video page).");
+            string refused = _video.Start(_settings);
+            if (_main != null && !_main.IsDisposed) _main.PostVideo();
+            if (refused != null && (_main == null || _main.IsDisposed || !_main.Visible))
+                _icon.ShowBalloonTip(6000, "XRPerfSensors", refused, ToolTipIcon.Warning);
+            return refused;
+        }
+
+        public void StopVideo()
+        {
+            if (_video == null) return;
+            _video.StopAsync().ContinueWith(t =>
+            {
+                MainWindow main = _main;
+                if (main != null && !main.IsDisposed && main.IsHandleCreated) main.BeginInvoke(new Action(() => { if (!main.IsDisposed) main.PostVideo(); }));
+            });
+            if (_main != null && !_main.IsDisposed) _main.PostVideo();
+        }
+
+        /// <summary>Un réglage de la vidéo a changé : enregistré, raccourci mis à jour.</summary>
+        public void VideoChanged()
+        {
+            SaveDesktopSoon();
+            UpdateVideoHotkey();
+        }
+
+        // Raccourci présent tant que la fonction est permise.
+        private void UpdateVideoHotkey()
+        {
+            if (_videoHotkey == null) return;
+            // Pendant la saisie d'un nouveau raccourci (page Vidéo), l'ancien est libéré : sinon Windows le garderait pour lui.
+            bool active = VideoEnabled && !_videoHotkeyPaused;
+            bool ok = _videoHotkey.Set(_settings.VideoMods, active ? _settings.VideoKey : 0);
+            int combo = (_settings.VideoMods << 16) | _settings.VideoKey;
+            if (ok) _videoHotkeyWarned = 0;
+            if (!ok && _settings.VideoKey != 0 && _videoHotkeyWarned != combo)
+            {
+                _videoHotkeyWarned = combo;
+                _icon.ShowBalloonTip(6000, "XRPerfSensors",
+                    string.Format(Loc.T("Le raccourci {0} de la vidéo est déjà pris par un autre programme : choisissez-en un autre (page Vidéo).",
+                                        "The video hotkey {0} is already taken by another program: choose another one (Video page)."), VideoHotkeyText),
+                    ToolTipIcon.Warning);
+            }
+            if (_videoItem != null) _videoItem.Enabled = VideoEnabled;
+        }
+
+        private int _videoHotkeyWarned;
+        private bool _videoHotkeyPaused;
+
+        /// <summary>Saisie d'un raccourci dans la page Vidéo : le raccourci actuel est suspendu pendant ce temps.</summary>
+        public void PauseVideoHotkey(bool paused)
+        {
+            _videoHotkeyPaused = paused;
+            UpdateVideoHotkey();
+        }
+
+        /// <summary>Raccourci de la vidéo en texte (« Ctrl+Alt+V »), vide s'il n'y en a pas.</summary>
+        public string VideoHotkeyText { get { return GlobalHotkey.Text(_settings.VideoMods, _settings.VideoKey); } }
+
         public Readings Latest { get { return _latest; } }
         public string SensorError { get { return _error; } }
         public string LayerVersion { get { return _layerVersion; } }
@@ -587,6 +699,7 @@ namespace XRPerfSensors
             if (_settingsShare != null) _settingsShare.Publish(_overlay, true);
             UpdateVrCompanion();
             UpdateCapture();
+            UpdateVideoHotkey();
             _overlayDirty = true;
             _saveTimer.Stop();
             _saveTimer.Start();
@@ -601,6 +714,7 @@ namespace XRPerfSensors
             o.Visible = fresh.Visible; o.Position = fresh.Position; o.Distance = fresh.Distance; o.OffsetX = fresh.OffsetX; o.OffsetY = fresh.OffsetY;
             o.Width = fresh.Width; o.Opacity = fresh.Opacity; o.GlobalOpacity = fresh.GlobalOpacity; o.FaceViewer = fresh.FaceViewer;
             o.Clock = fresh.Clock; o.HeadsetInfo = fresh.HeadsetInfo; o.PanelSession = fresh.PanelSession; o.PanelBattery = fresh.PanelBattery;
+            o.PowerColumn = fresh.PowerColumn;
             o.Layout = fresh.Layout; o.Theme = fresh.Theme;
             o.CustomBackground = fresh.CustomBackground; o.CustomText = fresh.CustomText; o.CustomAccent = fresh.CustomAccent;
             o.Anchor = fresh.Anchor; o.HandPlacement = fresh.HandPlacement; o.GazeOnly = fresh.GazeOnly; o.HandAlong = fresh.HandAlong; o.HandLift = fresh.HandLift;
@@ -714,6 +828,15 @@ namespace XRPerfSensors
             _layerItem = new ToolStripMenuItem(Loc.T("Layer OpenXR activée", "OpenXR layer enabled"));
             _layerItem.Click += (s, e) => SetLayerEnabled(!_layerItem.Checked);
             menu.Items.Add(_layerItem);
+            // Enregistrement vidéo : démarrer ou arrêter (comme le raccourci).
+            string videoKey = _settings.VideoKey != 0 ? " (" + VideoHotkeyText + ")" : "";
+            _videoItem = new ToolStripMenuItem(Loc.T("Enregistrer la vidéo du casque", "Record headset video") + videoKey)
+            {
+                Enabled = VideoEnabled,
+                Checked = _video != null && _video.Busy,
+            };
+            _videoItem.Click += (s, e) => ToggleVideo();
+            menu.Items.Add(_videoItem);
             menu.Opening += (s, e) => LayerChanged();
             if (!LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled)
             {
@@ -879,6 +1002,8 @@ namespace XRPerfSensors
             _uiTimer.Stop(); // plus de relance de XRPerfVR à partir d'ici
             _vr.Dispose();   // rapport en cours terminé par XRPerfVR avant la fermeture
             if (_capture != null) _capture.Dispose();  // capture arrêtée avant la fin du programme
+            if (_videoHotkey != null) _videoHotkey.Dispose();
+            if (_video != null) _video.Dispose();      // vidéo en cours terminée (fichier lisible) avant la fin
             _stop.Set();
             _worker.Join(3000);
             FlushOverlaySave();

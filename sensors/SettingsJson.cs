@@ -33,6 +33,7 @@ namespace XRPerfSensors
             w.WriteBoolean("HeadsetInfo", o.HeadsetInfo);
             w.WriteBoolean("PanelSession", o.PanelSession);
             w.WriteBoolean("PanelBattery", o.PanelBattery);
+            w.WriteBoolean("PowerColumn", o.PowerColumn);
             w.WriteNumber("Layout", o.Layout);
             w.WriteNumber("Theme", o.Theme);
             w.WriteString("CustomBackground", Hex(o.CustomBackground));
@@ -61,6 +62,8 @@ namespace XRPerfSensors
             w.WriteString("ReportMode", OverlaySettings.ReportModeNames[Math.Min(2, Math.Max(0, o.ReportMode))]);
             w.WriteBoolean("ReportHardware", o.ReportHardware);
             w.WriteBoolean("OpenVR", o.OpenVR);
+            w.WriteBoolean("VideoCapture", o.VideoCapture);
+            w.WriteString("VideoSource", o.VideoFinal ? "final" : "game");
             w.WriteEndObject();
         }
 
@@ -86,6 +89,25 @@ namespace XRPerfSensors
             w.WriteNumber("UiScale", d.UiScale);
             w.WriteBoolean("UiAnimations", d.UiAnimations);
             w.WriteBoolean("UiStartFullscreen", d.UiStartFullscreen);
+            w.WriteString("VideoCodec", d.VideoCodec);
+            w.WriteNumber("VideoHeight", d.VideoHeight);
+            w.WriteNumber("VideoFps", d.VideoFps);
+            w.WriteString("VideoQuality", d.VideoQuality);
+            w.WriteNumber("VideoBitrate", d.VideoBitrate);
+            w.WriteNumber("VideoEye", d.VideoEye);
+            w.WriteString("VideoAspect", d.VideoAspect);
+            w.WriteNumber("VideoField", d.VideoField);
+            w.WriteString("VideoOverlay", d.VideoOverlay);
+            w.WriteString("VideoOverlayCorner", d.VideoOverlayCorner);
+            w.WriteNumber("VideoOverlaySize", d.VideoOverlaySize);
+            w.WriteString("VideoStabilize", d.VideoStabilize);
+            w.WriteBoolean("VideoLevel", d.VideoLevel);
+            w.WriteBoolean("VideoGameAudio", d.VideoGameAudio);
+            w.WriteBoolean("VideoMic", d.VideoMic);
+            w.WriteString("VideoRenderDevice", d.VideoRenderDevice);
+            w.WriteString("VideoCaptureDevice", d.VideoCaptureDevice);
+            w.WriteString("VideoFolder", d.VideoFolderOrDefault);
+            w.WriteNumber("VideoHotkey", d.VideoKey == 0 ? 0 : (d.VideoMods << 16) | d.VideoKey);  // modificateurs << 16 | touche
             w.WriteEndObject();
         }
 
@@ -148,6 +170,7 @@ namespace XRPerfSensors
                     return true;
                 case "PanelSession": if (!Bool(v, out b)) return false; o.PanelSession = b; return true;
                 case "PanelBattery": if (!Bool(v, out b)) return false; o.PanelBattery = b; return true;
+                case "PowerColumn": if (!Bool(v, out b)) return false; o.PowerColumn = b; return true;
                 case "Layout": if (!Int(v, 0, OverlaySettings.LayoutNames.Length - 1, out i)) return false; o.Layout = i; return true;
                 case "Theme": if (!Int(v, 0, OverlaySettings.ThemeNames.Length - 1, out i)) return false; o.Theme = i; return true;
                 case "CustomBackground": if (!ColorOf(v, out c)) return false; o.CustomBackground = c; return true;
@@ -188,12 +211,18 @@ namespace XRPerfSensors
                     }
                 case "ReportHardware": if (!Bool(v, out b)) return false; o.ReportHardware = b; return true;
                 case "OpenVR": if (!Bool(v, out b)) return false; o.OpenVR = b; return true;
+                case "VideoCapture": if (!Bool(v, out b)) return false; o.VideoCapture = b; return true;
+                case "VideoSource":
+                    string source = v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                    if (source != "final" && source != "game") return false;
+                    o.VideoFinal = source == "final";
+                    return true;
             }
             return false;
         }
 
         /// <summary>Ce qu'un réglage du bureau change, pour savoir quoi mettre à jour.</summary>
-        public enum Change { None, Mirror, Capture, Interface, Language }
+        public enum Change { None, Mirror, Capture, Interface, Language, Video }
 
         /// <summary>Applique un réglage du bureau (fenêtre miroir, capture, interface, langue).</summary>
         public static Change ApplyDesktop(Settings d, string key, JsonElement v)
@@ -221,6 +250,28 @@ namespace XRPerfSensors
                 case "UiScale": if (!Int(v, Settings.MinUiScale, Settings.MaxUiScale, out i)) return Change.None; d.UiScale = i; return Change.Interface;
                 case "UiAnimations": if (!Bool(v, out b)) return Change.None; d.UiAnimations = b; return Change.Interface;
                 case "UiStartFullscreen": if (!Bool(v, out b)) return Change.None; d.UiStartFullscreen = b; return Change.Interface;
+                case "VideoCodec": if (Array.IndexOf(Settings.VideoCodecs, text) < 0) return Change.None; d.VideoCodec = text; return Change.Video;
+                case "VideoHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.VideoHeights, i) < 0) return Change.None; d.VideoHeight = i; return Change.Video;
+                case "VideoFps": if (!Int(v, 0, 1000, out i) || Array.IndexOf(Settings.VideoRates, i) < 0) return Change.None; d.VideoFps = i; return Change.Video;
+                case "VideoBitrate": if (!Int(v, Settings.MinVideoBitrate, Settings.MaxVideoBitrate, out i)) return Change.None; d.VideoBitrate = i; return Change.Video;
+                case "VideoQuality": if (Array.IndexOf(Settings.VideoQualities, text) < 0) return Change.None; d.VideoQuality = text; return Change.Video;
+                case "VideoOverlay": if (Array.IndexOf(Settings.VideoOverlays, text) < 0) return Change.None; d.VideoOverlay = text; return Change.Video;
+                case "VideoOverlayCorner": if (Array.IndexOf(Settings.VideoCorners, text) < 0) return Change.None; d.VideoOverlayCorner = text; return Change.Video;
+                case "VideoStabilize": if (Array.IndexOf(Settings.VideoStabilizations, text) < 0) return Change.None; d.VideoStabilize = text; return Change.Video;
+                case "VideoLevel": if (!Bool(v, out b)) return Change.None; d.VideoLevel = b; return Change.Video;
+                case "VideoOverlaySize": if (!Int(v, Settings.MinVideoOverlaySize, Settings.MaxVideoOverlaySize, out i)) return Change.None; d.VideoOverlaySize = i; return Change.Video;
+                case "VideoEye": if (!Int(v, 0, 1, out i)) return Change.None; d.VideoEye = i; return Change.Video;
+                case "VideoAspect": if (Array.IndexOf(Settings.VideoAspects, text) < 0) return Change.None; d.VideoAspect = text; return Change.Video;
+                case "VideoField": if (!Int(v, Settings.MinVideoField, 100, out i)) return Change.None; d.VideoField = i; return Change.Video;
+                case "VideoGameAudio": if (!Bool(v, out b)) return Change.None; d.VideoGameAudio = b; return Change.Video;
+                case "VideoMic": if (!Bool(v, out b)) return Change.None; d.VideoMic = b; return Change.Video;
+                case "VideoRenderDevice": if (text == null || text.Length > 250) return Change.None; d.VideoRenderDevice = text; return Change.Video;
+                case "VideoCaptureDevice": if (text == null || text.Length > 250) return Change.None; d.VideoCaptureDevice = text; return Change.Video;
+                case "VideoHotkey":
+                    if (!Int(v, 0, 0xFFFFF, out i) || !Settings.ValidVideoHotkey(i >> 16, i & 0xFFFF)) return Change.None;
+                    d.VideoKey = i & 0xFFFF;
+                    if (d.VideoKey != 0) d.VideoMods = i >> 16;
+                    return Change.Video;
             }
             return Change.None;
         }

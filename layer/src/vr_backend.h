@@ -73,6 +73,17 @@ class VrBackend {
     virtual void show(VrOverlay overlay, bool visible) = 0;
     // Change quand les images envoyées ont été perdues (textures recréées) : elles sont alors à renvoyer.
     virtual uint32_t imageGeneration() { return 0; }
+
+    // --- Enregistrement vidéo (XRPerfSensors) -----------------------------------------------------
+    // À chaque tour, pendant un jeu que XRPerfVR prend en charge : fournit l'image miroir de SteamVR à
+    // l'enregistreur s'il en demande. `game` : nom du jeu, pour le nom du fichier.
+    virtual void videoTick(double now, const std::string& game) { (void)now; (void)game; }
+    // Plus de jeu pris en charge : ne plus fournir d'images.
+    virtual void videoStop() {}
+    // Durée de l'enregistrement en cours (témoin du panneau), négative s'il n'y en a pas.
+    virtual double videoSeconds() { return -1.0; }
+    // Des images sont fournies en ce moment : la boucle de XRPerfVR tourne plus vite.
+    virtual bool videoBusy() { return false; }
 };
 
 }  // namespace xrpo

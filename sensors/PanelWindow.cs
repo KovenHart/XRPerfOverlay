@@ -538,6 +538,67 @@ namespace XRPerfSensors
         public bool UiAnimations = true;
         public bool UiStartFullscreen;
         public int WinX = int.MinValue, WinY = int.MinValue, WinWidth = 1280, WinHeight = 820; // fenêtre principale
+
+        // Enregistrement vidéo du casque (VideoRecorder.cs).
+        public static readonly string[] VideoCodecs = { "h264", "hevc", "av1" };
+        public static readonly int[] VideoHeights = { 720, 1080, 1440, 2160 };
+        public static readonly int[] VideoRates = { 30, 60, 72, 90 };
+        public static readonly string[] VideoAspects = { "16:9", "4:3", "1:1" };
+        // Qualité : débit calculé selon le codec, la résolution et la cadence (VideoRecorder.PresetBitrate), ou choisi à la main.
+        public static readonly string[] VideoQualities = { "light", "balanced", "high", "max", "custom" };
+        // Panneau de performances dans la vidéo d'un jeu OpenXR : non, à sa place dans le casque, ou dans un coin.
+        public static readonly string[] VideoOverlays = { "off", "place", "corner" };
+        public static readonly string[] VideoCorners = { "topleft", "topright", "bottomleft", "bottomright" };
+        // Stabilisation : la caméra de la vidéo suit la tête avec un temps de retard (léger ou fort).
+        public static readonly string[] VideoStabilizations = { "off", "light", "strong" };
+        public const int MinVideoOverlaySize = 15, MaxVideoOverlaySize = 50; // largeur du panneau, en % de la largeur de la vidéo
+        // Raccourci de la vidéo : modificateurs (comme RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows) et touche
+        // (code de touche virtuelle). Ctrl+Alt avec une touche des raccourcis du casque est refusé (voir
+        // [hotkeys] dans XRPerfOverlay.ini : O, P, R, F, G, S, Pg.Préc, Pg.Suiv, Début, Fin).
+        public const int ModAlt = 1, ModCtrl = 2, ModShift = 4, ModWin = 8;
+        private static readonly int[] HeadsetKeys = { 0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24 };
+        public const int MinVideoBitrate = 2, MaxVideoBitrate = 150, MinVideoField = 40; // Mbit/s ; % de l'image de l'œil
+        public string VideoCodec = "h264";
+        public int VideoHeight = 1440;
+        public int VideoFps = 60;
+        public string VideoQuality = "high";
+        public int VideoBitrate = 30;           // débit choisi à la main (qualité « custom »)
+        public int VideoEye;                   // 0 = gauche, 1 = droit
+        public string VideoAspect = "16:9";
+        public int VideoField = 75;            // part de l'image de l'œil gardée, en %
+        public string VideoOverlay = "off";
+        public string VideoOverlayCorner = "topleft";
+        public int VideoOverlaySize = 30;
+        public string VideoStabilize = "off";
+        public bool VideoLevel;                // horizon droit
+        public bool VideoGameAudio = true;
+        public bool VideoMic;
+        public string VideoRenderDevice = "";  // identifiant Windows de la sortie audio enregistrée ("" : celle par défaut)
+        public string VideoCaptureDevice = ""; // identifiant du micro ("" : celui par défaut)
+        public string VideoFolder = "";        // "" : Vidéos\XR Perf Overlay
+        public int VideoKey = 'V';             // Ctrl+Alt+V ; 0 = sans raccourci
+        public int VideoMods = ModCtrl | ModAlt;
+
+        /// <summary>
+        /// Raccourci possible : une touche ordinaire (pas un modificateur seul) avec au moins un modificateur, ou
+        /// une touche F1 à F24 seule ; pas un raccourci du casque. Touche 0 : pas de raccourci.
+        /// </summary>
+        public static bool ValidVideoHotkey(int mods, int key)
+        {
+            if (key == 0) return true;
+            if (key < 0x08 || key > 0xFE || (mods & ~0xF) != 0) return false;
+            if (key == 0x10 || key == 0x11 || key == 0x12 || key == 0x5B || key == 0x5C || (key >= 0xA0 && key <= 0xA5)) return false;
+            if (mods == 0 && !(key >= 0x70 && key <= 0x87)) return false;
+            if ((mods & (ModCtrl | ModAlt)) == (ModCtrl | ModAlt) && Array.IndexOf(HeadsetKeys, key) >= 0) return false;
+            return true;
+        }
+
+        public static string DefaultVideoFolder
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "XR Perf Overlay"); }
+        }
+
+        public string VideoFolderOrDefault { get { return string.IsNullOrWhiteSpace(VideoFolder) ? DefaultVideoFolder : VideoFolder; } }
         public bool WinMaximized;
 
         private static string FilePath
@@ -562,12 +623,21 @@ namespace XRPerfSensors
                     // Textes (titre de fenêtre, programme) : gardés tels quels.
                     if (key == "capture_title") { settings.CaptureTitle = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "capture_process") { settings.CaptureProcess = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "video_folder") { settings.VideoFolder = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "video_render_device") { settings.VideoRenderDevice = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "video_capture_device") { settings.VideoCaptureDevice = line.Substring(equals + 1).Trim(); continue; }
                     string text = line.Substring(equals + 1).Trim();
                     if (key == "language") { if (Array.IndexOf(Loc.Names, text) >= 0) settings.Language = text; continue; }
                     if (key == "ui_theme") { if (Array.IndexOf(UiThemes, text) >= 0) settings.UiTheme = text; continue; }
                     if (key == "ui_background") { if (IsColor(text)) settings.UiBackground = text; continue; }
                     if (key == "ui_text") { if (IsColor(text)) settings.UiText = text; continue; }
                     if (key == "ui_accent") { if (IsColor(text)) settings.UiAccent = text; continue; }
+                    if (key == "video_codec") { if (Array.IndexOf(VideoCodecs, text) >= 0) settings.VideoCodec = text; continue; }
+                    if (key == "video_aspect") { if (Array.IndexOf(VideoAspects, text) >= 0) settings.VideoAspect = text; continue; }
+                    if (key == "video_quality") { if (Array.IndexOf(VideoQualities, text) >= 0) settings.VideoQuality = text; continue; }
+                    if (key == "video_overlay") { if (Array.IndexOf(VideoOverlays, text) >= 0) settings.VideoOverlay = text; continue; }
+                    if (key == "video_stabilize") { if (Array.IndexOf(VideoStabilizations, text) >= 0) settings.VideoStabilize = text; continue; }
+                    if (key == "video_overlay_corner") { if (Array.IndexOf(VideoCorners, text) >= 0) settings.VideoOverlayCorner = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
                     {
@@ -593,12 +663,28 @@ namespace XRPerfSensors
                         case "win_width": if (value >= 600 && value <= 20000) settings.WinWidth = value; break;
                         case "win_height": if (value >= 400 && value <= 20000) settings.WinHeight = value; break;
                         case "win_maximized": settings.WinMaximized = value != 0; break;
+                        case "video_height": if (Array.IndexOf(VideoHeights, value) >= 0) settings.VideoHeight = value; break;
+                        case "video_fps": if (Array.IndexOf(VideoRates, value) >= 0) settings.VideoFps = value; break;
+                        case "video_bitrate": if (value >= MinVideoBitrate && value <= MaxVideoBitrate) settings.VideoBitrate = value; break;
+                        case "video_eye": if (value == 0 || value == 1) settings.VideoEye = value; break;
+                        case "video_field": if (value >= MinVideoField && value <= 100) settings.VideoField = value; break;
+                        case "video_level": settings.VideoLevel = value != 0; break;
+                        case "video_overlay_size": if (value >= MinVideoOverlaySize && value <= MaxVideoOverlaySize) settings.VideoOverlaySize = value; break;
+                        case "video_game_audio": settings.VideoGameAudio = value != 0; break;
+                        case "video_mic": settings.VideoMic = value != 0; break;
+                        case "video_key": if (value >= 0 && value <= 0xFE) settings.VideoKey = value; break;
+                        case "video_mods": if (value >= 0 && value <= 0xF) settings.VideoMods = value; break;
                     }
                 }
             }
             catch (Exception)
             {
                 // Fichier illisible : réglages par défaut.
+            }
+            if (!ValidVideoHotkey(settings.VideoMods, settings.VideoKey))
+            {
+                settings.VideoKey = 'V';
+                settings.VideoMods = ModCtrl | ModAlt;
             }
             return settings;
         }
@@ -652,6 +738,26 @@ namespace XRPerfSensors
                     "win_width=" + WinWidth.ToString(CultureInfo.InvariantCulture),
                     "win_height=" + WinHeight.ToString(CultureInfo.InvariantCulture),
                     "win_maximized=" + (WinMaximized ? 1 : 0),
+                    "video_codec=" + VideoCodec,
+                    "video_height=" + VideoHeight.ToString(CultureInfo.InvariantCulture),
+                    "video_fps=" + VideoFps.ToString(CultureInfo.InvariantCulture),
+                    "video_quality=" + VideoQuality,
+                    "video_bitrate=" + VideoBitrate.ToString(CultureInfo.InvariantCulture),
+                    "video_eye=" + VideoEye.ToString(CultureInfo.InvariantCulture),
+                    "video_aspect=" + VideoAspect,
+                    "video_field=" + VideoField.ToString(CultureInfo.InvariantCulture),
+                    "video_overlay=" + VideoOverlay,
+                    "video_overlay_corner=" + VideoOverlayCorner,
+                    "video_overlay_size=" + VideoOverlaySize.ToString(CultureInfo.InvariantCulture),
+                    "video_stabilize=" + VideoStabilize,
+                    "video_level=" + (VideoLevel ? 1 : 0),
+                    "video_game_audio=" + (VideoGameAudio ? 1 : 0),
+                    "video_mic=" + (VideoMic ? 1 : 0),
+                    "video_render_device=" + OneLine(VideoRenderDevice),
+                    "video_capture_device=" + OneLine(VideoCaptureDevice),
+                    "video_folder=" + OneLine(VideoFolder),
+                    "video_key=" + VideoKey.ToString(CultureInfo.InvariantCulture),
+                    "video_mods=" + VideoMods.ToString(CultureInfo.InvariantCulture),
                 });
             }
             catch (Exception)

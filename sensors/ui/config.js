@@ -191,7 +191,7 @@
     for (const l of layers) {
       const label = layerLabel(l);
       const status = layerStatus(l);
-      if (status === "missing") add("Warning", "cfg.f.layerOrphan", { name: label, path: l.manifest });
+      if (status === "missing") add("Warning", "cfg.f.layerOrphan", { name: label, path: l.manifest }, l.id != null && !l.ours ? { id: l.id, manifest: l.manifest, remove: true, label } : null);
       else if (status === "unreadable") add("Warning", "cfg.f.layerUnreadable", { name: label, path: l.manifest });
       else if (status === "nolib") add("Warning", "cfg.f.layerLib", { name: label, path: l.library || "" }, offAction(l));
       else if (l.enabled && l.disabledByEnvironment) add("Info", "cfg.f.layerEnvOff", { name: label, env: l.disableEnvironment });
@@ -279,7 +279,8 @@
       id: "layers", title: t("cfg.layers"), help: t("cfg.layers.help"),
       rows: (cfg.layers || []).map(l => ({
         label: layerLabel(l), value: t("cfg.layer." + layerStatus(l)), status: layerStatus(l),
-        toggle: canToggle(l) ? { id: l.id, manifest: l.manifest, on: !l.enabled, label: layerLabel(l) } : null,
+        toggle: canToggle(l) ? { id: l.id, manifest: l.manifest, on: !l.enabled, label: layerLabel(l) }
+          : layerStatus(l) === "missing" && l.id != null && !l.ours ? { id: l.id, manifest: l.manifest, remove: true, label: layerLabel(l) } : null,
         move: moveFor(cfg.layers, l),
         tags: [l.ours && l.current ? t("cfg.tag.thisInstall") : null, l.scope === "user" ? t("cfg.tag.user") : null].filter(Boolean),
         sub: (l.description ? l.description + " · " : "") + (l.manifest || ""),

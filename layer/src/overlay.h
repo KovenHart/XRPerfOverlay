@@ -25,6 +25,8 @@
 #include "stats.h"
 #include "report_control.h"
 #include "summary_file.h"
+#include "swapchain_registry.h"
+#include "video_producer.h"
 #include "window_share.h"
 #include "xr.h"
 
@@ -62,6 +64,14 @@ class Overlay {
     // Après un xrEndFrame accepté par le runtime : relève la résolution de l'image soumise par le jeu.
     // Ne prend aucun verrou.
     void onFrameSubmitted(const XrFrameEndInfo& frameEndInfo) noexcept;
+
+    // Enregistrement vidéo (XRPerfSensors) : au début de xrEndFrame, publie l'image d'un œil copiée quand
+    // le jeu l'a rendue, et note quelle swapchain copier à l'image suivante ; juste avant chaque
+    // xrReleaseSwapchainImage du jeu, copie l'image si c'est celle de l'œil enregistré.
+    // `enumerate` : xrEnumerateSwapchainImages à utiliser pour ces swapchains (nul : celui de la suite de la
+    // chaîne ; en bas de la chaîne, celui du runtime).
+    void captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains, PFN_xrEnumerateSwapchainImages enumerate);
+    void videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains);
 
     // Le runtime a refusé une image contenant notre calque.
     void onLayerRejected(XrResult result);
@@ -101,6 +111,8 @@ class Overlay {
     // Calque accroché à une main : espace et pose, ou false s'il ne doit pas être affiché maintenant
     // (main non suivie, ou pas regardée en mode « seulement quand je la regarde »).
     enum class HandResult { NotOnHand, Show, Hide };
+    void videoPanelPlacement(const XrCompositionLayerProjection& projection, const XrCompositionLayerProjectionView& view, XrTime displayTime,
+                             VideoFrameInfo& frame);
     HandResult handQuad(Anchor anchor, HandPlacement placement, float along, float lift, bool gazeOnly, XrTime displayTime, bool& looked,
                         XrSpace& space, XrPosef& pose);
     // Même chose avec la pose dans le repère de la poignée déjà calculée (`hand` : 0 gauche, 1 droite).
@@ -231,6 +243,29 @@ class Overlay {
     std::string m_runtimeText;  // runtime OpenXR et sa version
     std::atomic<uint64_t> m_renderSize{0};  // largeur << 32 | hauteur de l'image d'un œil, 0 = inconnue
     Hotkeys m_hotkeys;
+    // Enregistrement vidéo (nul si non permis ou API graphique non gérée). Utilisé sur le fil de xrEndFrame.
+    std::unique_ptr<VideoProducer> m_video;
+    bool m_videoD3D12 = false;
+    std::mutex m_videoMutex;  // xrReleaseSwapchainImage et xrEndFrame peuvent venir de fils différents
+    struct VideoTarget {
+        XrSwapchain swapchain = XR_NULL_HANDLE;  // swapchain de l'œil enregistré (vue à la dernière image)
+        uint32_t slice = 0, mipCount = 1, width = 0, height = 0;
+    } m_videoTarget;
+    XrSwapchain m_videoCopiedSwapchain = XR_NULL_HANDLE;  // copie en attente de publication : swapchain et image
+    uint32_t m_videoCopiedIndex = 0;
+    // Fil de xrEndFrame : en Direct3D 11, le contexte du jeu n'est utilisé que depuis ce fil.
+    std::atomic<DWORD> m_videoEndFrameThread{0};
+    double m_videoSeconds = -1.0;  // dernière durée lue (témoin du panneau)
+    // Panneau dans la vidéo (jeu OpenXR : le runtime l'ajoute après l'image du jeu, l'enregistreur le dessine).
+    std::unique_ptr<Panel> m_videoPanel;  // même dessin que dans le casque, préparé au relevé
+    struct VideoQuad {
+        bool shown = false;   // panneau affiché dans le casque (réglage)
+        bool placed = false;  // ... et dessiné à cette image, à cet endroit
+        XrSpace space = XR_NULL_HANDLE;
+        XrPosef pose = {};
+        XrExtent2Df size = {};
+    } m_videoQuad;  // écrit par onEndFrame, lu par captureVideo (en bas de la chaîne, parfois sur un autre fil)
+    std::mutex m_videoQuadMutex;
     // Signal pour XRPerfVR (jeux SteamVR) : la layer mesure et affiche dans ce processus.
     LayerPresence m_presence;
 

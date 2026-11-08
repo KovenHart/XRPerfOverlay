@@ -96,6 +96,7 @@ struct Config {
     bool clock = true;                  // afficher l'heure dans le panneau
     bool headsetInfo = true;            // ligne "casque et résolution de rendu" en bas du panneau
     uint32_t panelElements = 0;         // ligne "session / batterie" du panneau : kWatchSession | kWatchBattery
+    bool showPower = false;             // dernière colonne du tableau CPU / GPU : puissance (W) au lieu de la fréquence
     Layout layout = Layout::Classic;    // présentation du panneau
     ThemeId theme = ThemeId::Dark;      // couleurs
     Rgb customBackground = {14, 17, 22};  // les trois couleurs du thème personnalisé
@@ -111,6 +112,12 @@ struct Config {
     ReportMode reportMode = ReportMode::Auto;  // quand écrire un rapport de session
     bool summaryHardware = true;        // modèles du processeur et de la carte graphique dans le résumé
     bool gpuTiming = false;             // mesurer le temps GPU par horodatages (sinon : estimation seule)
+    // Enregistrement vidéo possible dans ce jeu ([video] capture) : la layer suit alors les images des
+    // swapchains du jeu pour pouvoir les copier quand XRPerfSensors enregistre. 0 : rien de tout ça.
+    bool videoCapture = true;
+    // Image enregistrée quand d'autres layers sont sous la nôtre : true = celle envoyée au casque, après
+    // leur traitement (Pimax NR, OpenXR Toolkit...) ; false = celle du jeu.
+    bool videoFinal = true;
     std::wstring summaryFolder;         // dossier des résumés (par défaut : "sessions" à côté de la DLL)
     std::wstring iniPath;
 };

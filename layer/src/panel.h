@@ -72,6 +72,9 @@ struct PanelData {
     float gpuMHz = std::numeric_limits<float>::quiet_NaN();
     float vramUsedMB = std::numeric_limits<float>::quiet_NaN();
     float vramTotalMB = std::numeric_limits<float>::quiet_NaN();
+    float cpuWatts = std::numeric_limits<float>::quiet_NaN();
+    float gpuWatts = std::numeric_limits<float>::quiet_NaN();
+    bool showPower = false;  // dernière colonne : puissance (W) au lieu de la fréquence (MHz)
 
     // Ligne de session (option) sous le corps du panneau : temps de session et batterie des manettes.
     uint32_t statusElements = 0;  // kWatchSession | kWatchBattery ; 0 : pas de ligne
@@ -96,6 +99,8 @@ struct PanelData {
     // 0 = rien, 1 = en cours (avec sa durée), 2 = rapport écrit, 3 = trop court, pas de rapport.
     int recordState = 0;
     double recordSeconds = 0.0;
+    // Enregistrement vidéo en cours (XRPerfSensors) : durée en secondes, négative s'il n'y en a pas.
+    double videoSeconds = -1.0;
 
     // Présentation "graphique" : temps d'image des dernières secondes, de la plus ancienne colonne
     // (indice 0) à la plus récente. Valeurs en millisecondes, 0 = pas d'image dans cette tranche.
@@ -146,6 +151,7 @@ class Panel {
     Layout m_baseLayout = Layout::Classic;
     Theme m_baseTheme = {};
     bool m_baseEnglish = false;
+    bool m_basePower = false;
 };
 
 // --- Montre ------------------------------------------------------------------------------------

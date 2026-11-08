@@ -182,6 +182,11 @@ kbd {
   background: var(--raised); color: var(--text-2); white-space: nowrap;
 }
 
+/* Raccourci de la vidéo : bouton qui montre la combinaison, et attend la nouvelle pendant la saisie. */
+.hotkey-btn { gap: 4px; min-width: 150px; justify-content: center; }
+.hotkey-btn kbd { font-size: .78rem; }
+.hotkey-btn.capturing { border-color: var(--accent); color: var(--accent); }
+
 /* --- Pages de réglages ------------------------------------------------------------------------- */
 
 .settings { display: grid; grid-template-columns: minmax(0, 680px) minmax(300px, 1fr); gap: 32px; align-items: start; max-width: 1440px; }
@@ -537,6 +542,27 @@ table.grid .delta-cell { width: 26%; min-width: 120px; }
   .row { grid-template-columns: minmax(0, 1fr); }
   .row-control { justify-content: flex-start; }
 }
+
+/* --- Vidéo du casque ----------------------------------------------------------------------------- */
+
+.video-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 16px 18px; margin: 4px 0 14px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line);
+}
+.video-state { display: flex; align-items: flex-start; gap: 14px; min-width: 0; flex: 1 1 320px; }
+.video-title { font-size: 1.15rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.video-note { margin-top: 6px; color: var(--warn); font-size: .9rem; }
+.rec-dot { flex: none; width: 14px; height: 14px; margin-top: 5px; border-radius: 3px; background: var(--muted); }
+.video-card.on { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.video-card.on .rec-dot { background: var(--bad); animation: rec-blink 1.6s ease-in-out infinite; }
+.video-card.wait .rec-dot { background: var(--warn); }
+@keyframes rec-blink { 50% { opacity: .35; } }
+.row-buttons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.pill.rec { cursor: pointer; border: 0; font: inherit; }
+.pill.rec .dot { border-radius: 2px; background: var(--warn); }
+.pill.rec.on { background: var(--bad-wash); color: var(--text); font-variant-numeric: tabular-nums; }
+.pill.rec.on .dot { background: var(--bad); animation: rec-blink 1.6s ease-in-out infinite; }
+.pill.rec:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* --- Configuration ------------------------------------------------------------------------------ */
 
