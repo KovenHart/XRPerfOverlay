@@ -14,7 +14,7 @@ namespace xrpo {
 
 // Noms utilisés dans le .ini, dans l'ordre des énumérations Layout et ThemeId.
 constexpr const char* kLayoutNames[] = {"classic", "graph", "compact"};
-constexpr const char* kThemeNames[] = {"dark", "light", "contrast", "green", "amber", "violet", "custom"};
+constexpr const char* kThemeNames[] = {"dark", "light", "contrast", "green", "amber", "violet", "custom", "classic", "evo"};
 // Dans l'ordre des énumérations Anchor, HandPlacement et WatchStyle.
 constexpr const char* kAnchorNames[] = {"view", "left_hand", "right_hand"};
 constexpr const char* kPlacementNames[] = {"wrist_back", "wrist_inside", "above"};

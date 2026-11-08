@@ -87,6 +87,8 @@ window.App = (function () {
 
   const ICONS = {
     dashboard: '<path d="M4 13h6V4H4zM14 20h6V11h-6zM4 20h6v-3H4zM14 7h6V4h-6z"/>',
+    up: '<path d="m6 15 6-6 6 6"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
     panel: '<rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M7 9.5h4M7 13h7M15 9.5h2"/>',
     appearance: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-.8 1.6-1.6 0-1.3-1-1.5-1-2.6 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7.2" r="1.2"/><circle cx="15" cy="7.6" r="1.2"/>',
     watch: '<circle cx="12" cy="12" r="6"/><path d="M12 9.5V12l1.6 1.2M9 6.5 9.6 3h4.8l.6 3.5M9 17.5l.6 3.5h4.8l.6-3.5"/>',
@@ -221,6 +223,13 @@ window.App = (function () {
       case "toast":
         toast(msg.text);
         break;
+      case "xrUndo":
+        // Envoyé juste avant le relevé ("config") ; seul, il redessine la page si le bouton apparaît ou disparaît.
+        if (state.xrUndo !== !!msg.available) {
+          state.xrUndo = !!msg.available;
+          if (state.page === "config" && state.config !== undefined && !state.configLoading) renderPage();
+        }
+        break;
       case "layer":
         // Layer activée ou désactivée (ici, depuis le menu de l'icône ou par l'installateur).
         if (!msg.layer || JSON.stringify(msg.layer) === JSON.stringify(state.layer)) break;
@@ -231,6 +240,7 @@ window.App = (function () {
       case "config":
         state.config = msg.config || null;
         state.configLoading = false;
+        state.xrBusy = false;
         if (state.page === "config") renderPage();
         break;
       case "go":
@@ -262,8 +272,32 @@ window.App = (function () {
     ["#050e08", "#aaffbe", "#54a068", "#3ce66e", "#205430", "#3ce66e", "#ffc83c", "#ff6050"],
     ["#140d05", "#ffdeaa", "#b0824a", "#ffb000", "#60421a", "#96dc6e", "#ff9628", "#ff5a46"],
     ["#110c1c", "#f2eefc", "#9a90b4", "#c48cff", "#4a3c66", "#5aebbe", "#ffc45a", "#ff6082"],
+    ["#0e1116", "#f0f3f8", "#8e98aa", "#96bef0", "#464e5e", "#6ee18c", "#ffbe46", "#ff645a"],  // 6 : personnalisé (voir customPalette)
+    ["#1e1e1e", "#f3f3f3", "#9c9c9c", "#ff8c1f", "#3b3b3b", "#35c135", "#ffd23f", "#ff5a4f"],  // 7 : Classic
+    ["#18181e", "#ececf2", "#8f8f9d", "#6d7cff", "#3b3b48", "#2fbf63", "#ffb547", "#ff5d63"],  // 8 : EVO
   ];
-  const UI_THEMES = ["panel", "dark", "light", "contrast", "green", "amber", "violet", "custom"];
+  // Panneau en Classic ou EVO : avec « comme le panneau », la fenêtre prend aussi l'allure de ce thème.
+  const PANEL_STYLES = { 7: "classic", 8: "evo" };
+  const PANEL_THEME_ORDER = [0, 1, 2, 3, 4, 5, 7, 8, 6];
+  const UI_THEMES = ["panel", "dark", "light", "contrast", "green", "amber", "violet", "classic", "evo", "custom"];
+
+  // Thèmes de la fenêtre seulement, avec leur propre allure (formes, typographie) en plus des couleurs :
+  // « Classic » (gris, accent vert, titres arrondis) et « EVO » (bleu nuit, accent indigo, capitales,
+  // angles vifs). Couleurs relevées sur les captures de référence.
+  const STYLED_THEMES = {
+    classic: {
+      palette: ["#121212", "#f3f3f3", "#9c9c9c", "#35c135", "#2a2a2a", "#35c135", "#ffb02e", "#ff5a4f"],
+      vars: { "--canvas": "#121212", "--rail": "#1a1a1a", "--surface": "#1e1e1e", "--raised": "#262626", "--hover": "#2b2b2b",
+        "--line": "#2c2c2c", "--line-strong": "#3b3b3b", "--text": "#f3f3f3", "--text-2": "#c9c9c9", "--muted": "#9c9c9c",
+        "--accent": "#35c135", "--accent-ink": "#ffffff", "--title": "#ff8c1f" },
+    },
+    evo: {
+      palette: ["#111115", "#ececf2", "#8f8f9d", "#6d7cff", "#2a2a34", "#2fbf63", "#ffb547", "#ff5d63"],
+      vars: { "--canvas": "#111115", "--rail": "#141419", "--surface": "#18181e", "--raised": "#1e1e26", "--hover": "#22222c",
+        "--line": "#2a2a34", "--line-strong": "#3b3b48", "--text": "#ececf2", "--text-2": "#c4c4ce", "--muted": "#8f8f9d",
+        "--accent": "#6d7cff", "--accent-ink": "#ffffff", "--accent-strong": "#4b5ae0", "--title": "#ececf2" },
+    },
+  };
 
   function rgb(hex) {
     const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
@@ -286,11 +320,20 @@ window.App = (function () {
     if (theme === "panel") {
       const id = o.Theme != null ? o.Theme : 0;
       if (id === 6) return customPalette(o.CustomBackground || "#0e1116", o.CustomText || "#f0f3f8", o.CustomAccent || "#96bef0");
+      if (PANEL_STYLES[id]) return STYLED_THEMES[PANEL_STYLES[id]].palette;
       return PANEL_THEMES[id] || PANEL_THEMES[0];
     }
     if (theme === "custom") return customPalette(d.UiBackground || "#0e1116", d.UiText || "#f0f3f8", d.UiAccent || "#96bef0");
+    if (STYLED_THEMES[theme]) return STYLED_THEMES[theme].palette;
     const index = UI_THEMES.indexOf(theme) - 1;
     return PANEL_THEMES[index] || PANEL_THEMES[0];
+  }
+
+  // Allure de la fenêtre : Classic ou EVO, choisi pour la fenêtre ou repris du panneau.
+  function styleName() {
+    const u = state.desktop.UiTheme || "panel";
+    if (STYLED_THEMES[u]) return u;
+    return u === "panel" ? PANEL_STYLES[state.overlay.Theme] || null : null;
   }
 
   function applyTheme() {
@@ -321,6 +364,17 @@ window.App = (function () {
     set("--s-cpu", light ? "#eb6834" : "#d95926");
     set("--s-gpu", light ? "#1baf7a" : "#199e70");
     set("--s-vram", light ? "#2a78d6" : "#3987e5");
+    // Classic et EVO : surfaces exactes et allure propre (attribut data-style, voir app.css).
+    const style = styleName();
+    const styled = style ? STYLED_THEMES[style] : null;
+    for (const k of ["--rail", "--title", "--accent-strong"]) root.removeProperty(k);
+    if (styled) {
+      for (const [k, v] of Object.entries(styled.vars)) set(k, v);
+      set("--accent-wash", wash(styled.vars["--accent"], 0.14));
+      document.documentElement.dataset.style = style;
+    } else {
+      delete document.documentElement.dataset.style;
+    }
     document.documentElement.style.colorScheme = light ? "light" : "dark";
     const scale = Math.max(80, Math.min(140, state.desktop.UiScale || 100)) / 100;
     set("--ui-scale", String(scale));
@@ -826,7 +880,7 @@ window.App = (function () {
     const form = [
       group(t("app.layout"), null, [layoutRow]),
       group(t("app.colors"), t("app.colors.help"), [
-        row("", null, themeChips("overlay", "Theme", [0, 1, 2, 3, 4, 5, 6], v => t("theme." + v),
+        row("", null, themeChips("overlay", "Theme", PANEL_THEME_ORDER, v => t("theme." + v),
           v => v === 6 ? customPalette(o.CustomBackground || "#0e1116", o.CustomText || "#f0f3f8", o.CustomAccent || "#96bef0") : PANEL_THEMES[v]), { stack: true }),
         customRow,
       ]),
@@ -995,8 +1049,10 @@ window.App = (function () {
     const custom = h("div", { class: "colors" }, colorPick("desktop", "UiBackground", t("color.bg")), colorPick("desktop", "UiText", t("color.text")), colorPick("desktop", "UiAccent", t("color.accent")));
     const o = state.overlay;
     const panelPal = () => (o.Theme === 6 ? customPalette(o.CustomBackground || "#0e1116", o.CustomText || "#f0f3f8", o.CustomAccent || "#96bef0") : PANEL_THEMES[o.Theme || 0]);
-    const chips = themeChips("desktop", "UiTheme", UI_THEMES, v => (v === "panel" ? t("theme.panel") : v === "custom" ? t("theme.6") : t("theme." + (UI_THEMES.indexOf(v) - 1))),
-      v => (v === "panel" ? panelPal() : v === "custom" ? customPalette(d.UiBackground || "#0e1116", d.UiText || "#f0f3f8", d.UiAccent || "#96bef0") : PANEL_THEMES[UI_THEMES.indexOf(v) - 1]));
+    const chips = themeChips("desktop", "UiTheme", UI_THEMES,
+      v => (v === "panel" ? t("theme.panel") : v === "custom" ? t("theme.6") : STYLED_THEMES[v] ? t("theme." + v) : t("theme." + (UI_THEMES.indexOf(v) - 1))),
+      v => (v === "panel" ? panelPal() : v === "custom" ? customPalette(d.UiBackground || "#0e1116", d.UiText || "#f0f3f8", d.UiAccent || "#96bef0")
+        : STYLED_THEMES[v] ? STYLED_THEMES[v].palette : PANEL_THEMES[UI_THEMES.indexOf(v) - 1]));
     const fsBtn = h("button", { class: "btn", type: "button", onclick: toggleFullscreen }, icon(state.fullscreen ? "compress" : "expand"), t(state.fullscreen ? "ui.fullscreen.off" : "ui.fullscreen.on"));
     const form = [
       group(t("ui.language"), null, [row(t("ui.language.label"), t("ui.language.help"), langSeg)]),
@@ -1033,6 +1089,20 @@ window.App = (function () {
       onclick: () => send("setXrLayer", { id: action.id, manifest: action.manifest, on: action.on, label: action.label }) }, text);
   }
 
+  // Ordre des layers : un changement à la fois, puis le relevé est refait (message "config").
+  function xrChange(type, payload) {
+    if (state.xrBusy) return;
+    state.xrBusy = true;
+    document.querySelectorAll(".cfg-move button, .cfg-order button").forEach(b => { b.disabled = true; });
+    send(type, payload);
+  }
+
+  function moveButtons(move, label) {
+    const b = (delta, name, allowed) => h("button", { class: "btn icon small", type: "button", title: t(name), "aria-label": t(name) + " : " + label,
+      disabled: !allowed || !!state.xrBusy, onclick: () => xrChange("moveXrLayer", { id: move.id, manifest: move.manifest, delta }) }, icon(delta < 0 ? "up" : "down"));
+    return h("span", { class: "cfg-move" }, b(-1, "cfg.layer.up", move.up), b(1, "cfg.layer.down", move.down));
+  }
+
   function renderConfigPage(page) {
     refreshers = [];
     const cfg = state.config;
@@ -1064,11 +1134,13 @@ window.App = (function () {
         const rows = s.rows.map(r => {
           const control = r.status
             ? h("div", { class: "cfg-tags" }, (r.tags || []).map(tag => h("span", { class: "cfg-tag", text: tag })), h("span", { class: LAYER_PILL[r.status] || "pill" }, h("i", { class: "dot" }), r.value),
-                r.toggle ? layerButton(r.toggle, false) : null)
+                r.toggle ? layerButton(r.toggle, false) : null, r.move ? moveButtons(r.move, r.label) : null)
             : h("div", { class: "cfg-value", text: r.value || "--" });
           return row(r.label, r.sub || null, control);
         });
         if (s.id === "layers" && !rows.length) rows.push(h("p", { class: "note", text: t("cfg.layers.none") }));
+        if (s.id === "layers" && rows.length) rows.push(h("div", { class: "note cfg-order" }, h("span", { text: t("cfg.layers.order") }),
+          state.xrUndo ? h("button", { class: "btn small", type: "button", disabled: !!state.xrBusy, onclick: () => xrChange("undoXrLayers", {}) }, t("cfg.layers.undo")) : null));
         form.push(group(s.title, s.help || null, rows));
       }
     }

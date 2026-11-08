@@ -25,8 +25,9 @@ struct Theme {
     Rgb gpu;         // courbe GPU de la présentation graphique
 };
 
-// Couleurs prédéfinies. L'ordre est celui de la liste de XRPerfSensors et des noms du .ini.
-enum class ThemeId { Dark = 0, Light, Contrast, Green, Amber, Violet, Custom, Count };
+// Couleurs prédéfinies. L'ordre est celui de la liste de XRPerfSensors et des noms du .ini (Classic et
+// EVO, ajoutés après Custom, gardent les numéros des autres inchangés).
+enum class ThemeId { Dark = 0, Light, Contrast, Green, Amber, Violet, Custom, Classic, Evo, Count };
 
 // Thème prédéfini (identifiant hors bornes ou Custom : le thème sombre).
 Theme PresetTheme(ThemeId id);

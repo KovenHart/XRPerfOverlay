@@ -86,6 +86,11 @@ namespace XRPerfSensors
         /// </summary>
         private static bool Write(bool enabled)
         {
+            // Point de retour de la page Layers OpenXR (« Annuler le dernier changement »).
+            if (Read(null) == (enabled ? State.Disabled : State.Enabled))
+            {
+                try { OpenXrLayers.BackupNow(); } catch (Exception) { }
+            }
             using (RegistryKey hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
             using (RegistryKey key = hklm.OpenSubKey(KeyPath, true))
             {
@@ -190,6 +195,11 @@ namespace XRPerfSensors
                 if (key == null || !key.GetValueNames().Contains(valueName, StringComparer.Ordinal)) return false;
                 // Une inscription OpenXR est un DWORD : une valeur d'un autre type n'est pas touchée.
                 if (key.GetValueKind(valueName) != RegistryValueKind.DWord) return false;
+                // Point de retour de « Annuler le dernier changement » (page Configuration).
+                if (key.GetValue(valueName) is int current && (current == 0) != enabled)
+                {
+                    try { OpenXrLayers.BackupNow(); } catch (Exception) { }
+                }
                 key.SetValue(valueName, enabled ? 0 : 1, RegistryValueKind.DWord);
                 return true;
             }

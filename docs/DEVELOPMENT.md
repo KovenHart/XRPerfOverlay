@@ -112,6 +112,7 @@ sensors/ReportJson.cs         reports formatted for the interface (analyses in t
 sensors/ConfigProbe.cs        configuration survey (registry, OpenXR .json files) for the Configuration page, no analysis
 sensors/SessionReport.cs      reading (French or English) and analysis of reports, "simple" reading in sentences
 sensors/LayerRegistry.cs      turning the layer on or off in the OpenXR registry (elevated relaunch "--layer on|off")
+sensors/OpenXrLayers.cs       OpenXR layer order (Configuration page), lossless, with undo
 sensors/Loc.cs                program text language (Windows', French or English)
 sensors/PanelWindow.cs        desktop mirror of the panel (OBS, off-game preview) and PC-specific settings
 sensors/WindowCapture.cs      window choice, shared memory, capture control

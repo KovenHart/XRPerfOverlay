@@ -50,14 +50,14 @@ Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit �
 
 - **Tableau de bord** : le panneau tel qu'il apparaît dans le casque (l'image du jeu en cours, sinon un aperçu avec des FPS d'exemple), des interrupteurs rapides (layer OpenXR, panneau, montre, fenêtre du bureau, jeux SteamVR, miroir pour OBS), le processeur, la carte graphique et la mémoire vidéo en direct avec leur courbe des deux dernières minutes, la dernière session et les raccourcis clavier. Une pastille en haut indique si un jeu VR tourne.
 - **Panneau** : afficher ou masquer le panneau, accroche (devant les yeux, main gauche ou droite) ; devant les yeux : emplacement (choisi sur un schéma du champ de vision), distance, écarts horizontal et vertical, orientation vers les yeux ; sur la main : emplacement sur la main, affichage seulement quand on regarde sa main, ajustements de position ; taille, opacité de l'ensemble et du fond ; dans les jeux : la layer OpenXR (voir « Désactiver la layer ») et les jeux SteamVR (OpenVR). L'aperçu reste affiché à côté.
-- **Apparence** (casque, montre et miroir) : présentation, couleurs (vignettes des sept jeux), heure, ligne casque / résolution, ligne session / batterie.
+- **Apparence** (casque, montre et miroir) : présentation, couleurs (vignettes des neuf jeux), heure, ligne casque / résolution, ligne session / batterie.
 - **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
 - **Fenêtre** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
 - **Miroir du bureau** : la fenêtre miroir pour OBS, son emplacement, sa taille, son opacité, premier plan.
 - **Mesures** : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
 - **Rapports** : voir « Rapports de session ».
 - **Configuration** : diagnostic du PC pour la VR (voir « Diagnostic de configuration »).
-- **Interface** : langue (celle de Windows, français ou anglais), couleurs de la fenêtre (« comme le panneau » du casque, l'un des six thèmes, ou trois couleurs à soi), taille du texte, animations, plein écran et ouverture en plein écran.
+- **Interface** : langue (celle de Windows, français ou anglais), couleurs de la fenêtre (« comme le panneau » du casque, l'un des huit thèmes, ou trois couleurs à soi), taille du texte, animations, plein écran et ouverture en plein écran.
 
 Le rapport d'une session, avec l'analyse en phrases à gauche et les courbes minute par minute à droite :
 
@@ -85,7 +85,7 @@ Trois présentations :
 
 Dans la présentation graphique, la courbe colorée est le temps entre deux images du jeu (plus bas = plus rapide), le trait fin clair le temps CPU et le trait fin de couleur le temps GPU. Les pointillés marquent le budget d'une image, c'est-à-dire la durée à ne pas dépasser pour tenir la cible (13,9 ms à 72 Hz, 27,8 ms quand une génération d'images bride le jeu à 36) ; la courbe passe au rouge quand elle le dépasse. La légende indique « GPU (est.) » quand le trait GPU est l'estimation : il avance alors par paliers, une valeur par rafraîchissement du panneau. Avec la mesure réelle, il suit chaque image.
 
-Six jeux de couleurs sont proposés (sombre, clair, contraste élevé, vert, ambre, violet), plus un jeu personnalisé dont on choisit le fond, le texte et l'accent. La fenêtre de XRPerfSensors peut reprendre les mêmes.
+Huit jeux de couleurs sont proposés (sombre, clair, contraste élevé, vert, ambre, violet, Classic, EVO), plus un jeu personnalisé dont on choisit le fond, le texte et l'accent. La fenêtre de XRPerfSensors peut reprendre les mêmes ; avec Classic ou EVO, elle en prend aussi l'allure (formes, typographie).
 
 ![Présentations et couleurs](presentations.png)
 
@@ -115,7 +115,13 @@ La page **Configuration** fait le tour de ce qui, sur le PC, compte pour la VR :
 
 En tête de page, les constats : ce qui empêche la VR de démarrer (aucun runtime, fichier du runtime disparu), puis ce qui mérite un coup d'œil (layer inscrite dont le fichier n'existe plus, layer active sans sa DLL, XR Perf Overlay inscrit depuis deux dossiers, OpenXR Toolkit encore actif, deux layers de génération d'images actives en même temps, mode Économie d'énergie, peu de mémoire), et enfin des informations (runtime changé depuis la dernière session, jeux OpenXR passés par SteamVR alors que Pimax Play est installé, portable à deux cartes graphiques). Ce sont des pistes : la page ne connaît pas vos intentions, et un choix voulu (SteamVR comme runtime pour un mod, par exemple) n'est pas une erreur.
 
-**Désactiver une layer.** Chaque layer de la liste a un bouton **Désactiver** (ou **Réactiver**), et les constats qui portent sur une layer précise (OpenXR Toolkit encore actif, layer sans sa DLL) en ont un aussi. Après confirmation, son inscription OpenXR passe à « désactivée », comme pour l'interrupteur de XR Perf Overlay : la layer reste installée, le chargeur OpenXR l'ignore à partir du prochain lancement d'un jeu, et un clic sur **Réactiver** la remet. Seules les inscriptions existantes sont modifiées : rien n'est créé ni supprimé dans le registre. Une mise à jour ou une réinstallation du mod concerné peut la réactiver d'elle-même. C'est la seule chose que la page modifie.
+**Désactiver une layer.** Chaque layer de la liste a un bouton **Désactiver** (ou **Réactiver**), et les constats qui portent sur une layer précise (OpenXR Toolkit encore actif, layer sans sa DLL) en ont un aussi. Après confirmation, son inscription OpenXR passe à « désactivée », comme pour l'interrupteur de XR Perf Overlay : la layer reste installée, le chargeur OpenXR l'ignore à partir du prochain lancement d'un jeu, et un clic sur **Réactiver** la remet. Seules les inscriptions existantes sont modifiées : rien n'est créé ni supprimé dans le registre. Une mise à jour ou une réinstallation du mod concerné peut la réactiver d'elle-même.
+
+**Changer l'ordre des layers.** Le jeu appelle d'abord la layer du haut de la liste ; celle du bas est la plus proche du runtime du casque. Les flèches **Monter** et **Descendre** de chaque layer la déplacent d'un cran. Le chargeur OpenXR lit toujours les layers inscrites pour tous les utilisateurs avant celles de votre compte seul (qu'un jeu lancé en administrateur ignore) : l'ordre se change donc à l'intérieur de chacun de ces deux groupes. Le nouvel ordre vaut au prochain lancement d'un jeu. L'ordre compte surtout pour la génération d'images : placée au-dessus d'XR Perf Overlay, elle lui ferait compter aussi les images générées dans le gros chiffre du panneau, et la page le signale.
+
+Le registre ne garde pas d'ordre à part : pour en changer, XRPerfSensors réécrit les inscriptions de ce groupe dans le nouvel ordre, avec exactement les mêmes valeurs. Avant chaque changement (ordre, activation ou désactivation), l'état précédent des deux groupes est gardé dans `%LOCALAPPDATA%\XRPerfOverlay` : **Annuler le dernier changement** le remet. Une réécriture interrompue (coupure de courant) est terminée au lancement suivant de XRPerfSensors, sans perte.
+
+Activer, désactiver et réordonner sont les seules choses que la page modifie.
 
 **Copier le diagnostic** met le tout dans le presse-papiers, en texte simple, pour le coller dans un message quand vous demandez de l'aide. Les chemins de votre dossier utilisateur y sont écrits `%USERPROFILE%`, sans le nom de votre compte Windows ; le matériel y figure.
 

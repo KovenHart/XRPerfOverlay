@@ -4,6 +4,13 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.8.0
+
+- **Classic and EVO themes** for the XRPerfSensors window (Interface page). They also change the look: Classic, grey with rounded cards, a green accent and orange titles; EVO, midnight blue with sharp corners, uppercase titles and an indigo accent.
+- Their colors for the panel, watch and mirror too (Appearance page, or `theme=classic` / `theme=evo` in the `.ini`). With "same as the panel", the window follows, look included.
+- **OpenXR layer order** on the Configuration page: Move up / Move down arrows on each layer. Registrations are rewritten in the new order without losing anything (a rewrite cut short is finished at the next start). "Undo last change" puts back the state from before the last change of order, or of turning on or off.
+- New finding: a frame generation tool placed above XR Perf Overlay (the panel's big number would also count generated frames).
+
 ## 1.7.2 (2026-10-21)
 
 - Capped frame rate: also recognized when the cap does not divide the headset refresh rate (a game locked at 60 on a 72 Hz headset). The rate of each second varies there (50 to 58 at the lowest), which 1.7.1 missed; the cap is then recognized by the game waiting inside each frame (CPU time close to a frame's duration, graphics card under 90 %) over at least two minutes.

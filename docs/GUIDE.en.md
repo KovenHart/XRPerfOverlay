@@ -50,14 +50,14 @@ Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open 
 
 - **Dashboard**: the panel as it appears in the headset (the running game's image, otherwise a preview with sample FPS), quick switches (OpenXR layer, panel, watch, desktop window, SteamVR games, mirror for OBS), the processor, graphics card and video memory live with their graph of the last two minutes, the last session and the keyboard shortcuts. A badge at the top shows whether a VR game is running.
 - **Panel**: show or hide the panel, attachment (in front of the eyes, left or right hand); in front of the eyes: position (chosen on a diagram of the field of view), distance, horizontal and vertical offsets, turning towards the eyes; on the hand: position on the hand, show only when looking at the hand, position adjustments; size, overall and background opacity; in games: the OpenXR layer (see "Turning the layer off") and SteamVR (OpenVR) games. The preview stays alongside.
-- **Appearance** (headset, watch and mirror): layout, colors (thumbnails of the seven sets), clock, headset / resolution line, session / battery line.
+- **Appearance** (headset, watch and mirror): layout, colors (thumbnails of the nine sets), clock, headset / resolution line, session / battery line.
 - **Watch**: show the watch, attachment, position on the hand, style, elements, show on gaze, size, opacity, position adjustments, with its preview (see "Watch and attaching to the controllers").
 - **Window**: the desktop window shown in the headset (see "Desktop window in the headset").
 - **Desktop mirror**: the mirror window for OBS, its position, size, opacity, keep on top.
 - **Measurements**: real GPU time measurement (otherwise an estimate), writing reports (every session, on the `Ctrl+Alt+S` hotkey or never: applies immediately, even in game), processor and graphics card models in the reports, reports folder. GPU measurement and models apply the next time a game starts.
 - **Reports**: see "Session reports".
 - **Configuration**: diagnosis of the PC for VR (see "Configuration diagnosis").
-- **Interface**: language (Windows', French or English), window colors ("same as the panel" in the headset, one of the six themes, or three colors of your own), text size, animations, full screen and opening in full screen.
+- **Interface**: language (Windows', French or English), window colors ("same as the panel" in the headset, one of the eight themes, or three colors of your own), text size, animations, full screen and opening in full screen.
 
 A session report, with the analysis in sentences on the left and the minute-by-minute curves on the right:
 
@@ -85,7 +85,7 @@ Three layouts:
 
 In the graph layout, the colored curve is the time between two game frames (lower = faster), the thin light line the CPU time and the thin colored line the GPU time. The dotted line marks the frame budget, the time not to exceed to hold the target (13.9 ms at 72 Hz, 27.8 ms when frame generation caps the game at 36); the curve turns red when it goes over. The legend says "GPU (est.)" when the GPU line is the estimate: it then moves in steps, one value per panel refresh. With real measurement, it follows each frame.
 
-Six color sets are offered (dark, light, high contrast, green, amber, violet), plus a custom set where you choose the background, text and accent. The XRPerfSensors window can use the same ones.
+Eight color sets are offered (dark, light, high contrast, green, amber, violet, Classic, EVO), plus a custom set where you choose the background, text and accent. The XRPerfSensors window can use the same ones; with Classic or EVO, it also takes their look (shapes, typography).
 
 ![Layouts and colors](presentations.png)
 
@@ -115,7 +115,13 @@ The **Configuration** page goes over what matters for VR on the PC:
 
 At the top of the page, the findings: what prevents VR from starting (no runtime, runtime file gone), then what deserves a look (registered layer whose file no longer exists, active layer without its DLL, XR Perf Overlay registered from two folders, OpenXR Toolkit still active, two frame generation layers active at once, Power saver mode, little memory), and finally information (runtime changed since the last session, OpenXR games going through SteamVR while Pimax Play is installed, laptop with two graphics cards). These are leads: the page does not know your intentions, and a deliberate choice (SteamVR as the runtime for a mod, for example) is not a mistake.
 
-**Turning a layer off.** Each layer in the list has a **Turn off** (or **Turn on**) button, and so do the findings about a specific layer (OpenXR Toolkit still active, layer without its DLL). After confirmation, its OpenXR registration is set to "disabled", as with the XR Perf Overlay switch: the layer stays installed, the OpenXR loader ignores it from the next game launch, and a click on **Turn on** brings it back. Only existing registrations are changed: nothing is created or deleted in the registry. An update or reinstall of the mod concerned may turn it back on by itself. This is the only thing the page changes.
+**Turning a layer off.** Each layer in the list has a **Turn off** (or **Turn on**) button, and so do the findings about a specific layer (OpenXR Toolkit still active, layer without its DLL). After confirmation, its OpenXR registration is set to "disabled", as with the XR Perf Overlay switch: the layer stays installed, the OpenXR loader ignores it from the next game launch, and a click on **Turn on** brings it back. Only existing registrations are changed: nothing is created or deleted in the registry. An update or reinstall of the mod concerned may turn it back on by itself.
+
+**Changing the order of layers.** The game calls the layer at the top of the list first; the bottom one is closest to the headset runtime. Each layer's **Move up** and **Move down** arrows move it one step. The OpenXR loader always reads the layers registered for all users before those of your account alone (which a game run as administrator ignores): the order is therefore changed within each of these two groups. The new order applies the next time a game starts. Order matters most for frame generation: placed above XR Perf Overlay, it would make it count generated frames too in the panel's big number, and the page points it out.
+
+The registry keeps no separate order: to change it, XRPerfSensors rewrites the registrations of that group in the new order, with exactly the same values. Before each change (order, turning on or off), the previous state of both groups is kept in `%LOCALAPPDATA%\XRPerfOverlay`: **Undo last change** puts it back. A rewrite cut short (power failure) is finished the next time XRPerfSensors starts, without loss.
+
+Turning layers on or off and reordering them are the only things the page changes.
 
 **Copy diagnosis** puts it all on the clipboard, as plain text, to paste in a message when you ask for help. Paths inside your user folder are written `%USERPROFILE%`, without your Windows account name; the hardware is included.
 

@@ -108,6 +108,10 @@ check("OpenXR Toolkit actif", base({ layers: [OURS, layer("XR_APILAYER_MBUCCHIA_
 check("OpenXR Toolkit désactivé", base({ layers: [OURS, layer("XR_APILAYER_MBUCCHIA_toolkit", "t.json", { enabled: false })] }), ["allGood"], ["toolkit"]);
 check("Quad Views sous Pimax", base({ layers: [OURS, layer("XR_APILAYER_MBUCCHIA_quad_views_foveated", "q.json")] }), ["quadviewsPimax"]);
 check("Quad Views sous SteamVR", base({ activeRuntime: STEAM, software: [], layers: [OURS, layer("XR_APILAYER_MBUCCHIA_quad_views_foveated", "q.json")] }), [], ["quadviewsPimax"]);
+const OFXR = layer("XR_APILAYER_NOVENDOR_ofxr_bridge", "o.json");
+check("framegen au-dessus", base({ layers: [OFXR, OURS] }), ["framegenAbove"]);
+check("framegen en dessous", base({ layers: [OURS, OFXR] }), [], ["framegenAbove"]);
+check("framegen au-dessus, layer coupée", base({ layers: [OFXR, Object.assign({}, OURS, { enabled: false })] }), ["oursOff"], ["framegenAbove"]);
 check("deux framegen", base({ layers: [OURS, layer("XR_APILAYER_NOVENDOR_ofxr_bridge", "o.json"), layer("XR_APILAYER_NOVENDOR_ofxr_test", "p.json")] }), ["framegenTwice"]);
 check("layers de ce compte", base({ layers: [OURS, layer("XR_APILAYER_X_u", "u.json", { scope: "user" })] }), ["userLayers"]);
 check("XR_ENABLE_API_LAYERS", base({ envLayers: "XR_APILAYER_LUNARG_core_validation" }), ["envLayers"]);
@@ -155,5 +159,19 @@ assert.strictEqual(rows[2].toggle.on, true, "layer désactivée : bouton « Réa
 // Variable d'environnement : le registre dit « active », le bouton propose donc de désactiver l'inscription.
 const envOff = Object.assign(layer("XR_APILAYER_X_e", "e.json", { disableEnvironment: "D", disabledByEnvironment: true }), { id: 6 });
 assert.strictEqual(C.sections(base({ layers: [OURS, envOff] }), fr).find(s => s.id === "layers").rows[1].toggle.on, false);
+
+// Monter / Descendre : seulement entre voisins du même emplacement, avec un numéro.
+{
+  const m1 = Object.assign(layer("XR_APILAYER_A_a", "a.json"), { id: 0 });
+  const m2 = Object.assign(layer("XR_APILAYER_B_b", "b.json"), { id: 1 });
+  const u1 = Object.assign(layer("XR_APILAYER_C_c", "c.json", { scope: "user" }), { id: 2 });
+  const list = [m1, m2, u1];
+  assert.deepStrictEqual(C.moveFor(list, m1), { id: 0, manifest: "a.json", up: false, down: true });
+  assert.deepStrictEqual(C.moveFor(list, m2), { id: 1, manifest: "b.json", up: true, down: false });
+  assert.strictEqual(C.moveFor(list, u1), null, "seule de son emplacement : rien à déplacer");
+  assert.strictEqual(C.moveFor([layer("XR_APILAYER_A_a", "a.json"), m2], m2), null, "voisin sans numéro : pas de bouton");
+  const moveRows = C.sections(base({ layers: list }), fr).find(s => s.id === "layers").rows;
+  assert.deepStrictEqual(moveRows.map(r => !!r.move), [true, true, false]);
+}
 
 console.log(count + " cas de configuration et la reconnaissance : OK");
