@@ -233,7 +233,8 @@ void Overlay::readSystemInfo(XrSystemId systemId) {
     Log("Casque annonce par le runtime : \"%s\" ; runtime : %s.", m_systemText.c_str(), m_runtimeText.empty() ? "?" : m_runtimeText.c_str());
 }
 
-void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains) {
+void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains, PFN_xrEnumerateSwapchainImages enumerate) {
+    if (!enumerate) enumerate = m_next.EnumerateSwapchainImages;
     m_videoEndFrameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
     // Jamais d'attente à xrEndFrame : une copie en cours sur un autre fil fait sauter cette image.
     std::unique_lock<std::mutex> lock(m_videoMutex, std::try_to_lock);
@@ -271,14 +272,14 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
     if (!info.imagesRead) {
         std::vector<void*> images;
         uint32_t count = 0;
-        if (XR_SUCCEEDED(m_next.EnumerateSwapchainImages(swapchain, 0, &count, nullptr)) && count > 0 && count <= 64) {
+        if (XR_SUCCEEDED(enumerate(swapchain, 0, &count, nullptr)) && count > 0 && count <= 64) {
             if (m_videoD3D12) {
                 std::vector<XrSwapchainImageD3D12KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR, nullptr, nullptr});
-                if (XR_SUCCEEDED(m_next.EnumerateSwapchainImages(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
+                if (XR_SUCCEEDED(enumerate(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
                     for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
             } else {
                 std::vector<XrSwapchainImageD3D11KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR, nullptr, nullptr});
-                if (XR_SUCCEEDED(m_next.EnumerateSwapchainImages(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
+                if (XR_SUCCEEDED(enumerate(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
                     for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
             }
         }
@@ -334,26 +335,31 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
 void Overlay::videoPanelPlacement(const XrCompositionLayerProjection& projection, const XrCompositionLayerProjectionView& view, XrTime displayTime,
                                   VideoFrameInfo& frame) {
     const uint32_t mode = m_video ? m_video->overlayMode() : kVideoOverlayOff;
-    if (mode == kVideoOverlayOff || !m_videoQuad.shown) return;
+    VideoQuad quad;
+    {
+        std::lock_guard<std::mutex> quadLock(m_videoQuadMutex);
+        quad = m_videoQuad;
+    }
+    if (mode == kVideoOverlayOff || !quad.shown) return;
     frame.panelFlags |= kVideoPanelShown;
-    if (mode != kVideoOverlayPlace || !m_videoQuad.placed) return;
+    if (mode != kVideoOverlayPlace || !quad.placed) return;
     const auto toPose = [](const XrPosef& p) {
         Pose r;
         r.position = {p.position.x, p.position.y, p.position.z};
         r.orientation = {p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w};
         return r;
     };
-    Pose quadInScene = toPose(m_videoQuad.pose);
-    if (m_videoQuad.space != projection.space) {
-        if (!m_next.LocateSpace || m_videoQuad.space == XR_NULL_HANDLE) return;
+    Pose quadInScene = toPose(quad.pose);
+    if (quad.space != projection.space) {
+        if (!m_next.LocateSpace || quad.space == XR_NULL_HANDLE) return;
         XrSpaceLocation location = {XR_TYPE_SPACE_LOCATION};
         const XrSpaceLocationFlags needed = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-        if (XR_FAILED(m_next.LocateSpace(m_videoQuad.space, projection.space, displayTime, &location)) || (location.locationFlags & needed) != needed)
+        if (XR_FAILED(m_next.LocateSpace(quad.space, projection.space, displayTime, &location)) || (location.locationFlags & needed) != needed)
             return;
         quadInScene = Compose(toPose(location.pose), quadInScene);
     }
     const Pose quadInEye = Compose(Inverse(toPose(view.pose)), quadInScene);
-    QuadCorners(quadInEye, m_videoQuad.size.width, m_videoQuad.size.height, frame.panelCorners);
+    QuadCorners(quadInEye, quad.size.width, quad.size.height, frame.panelCorners);
     frame.panelFlags |= kVideoPanelPlaced;
 }
 
@@ -957,7 +963,10 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
-    m_videoQuad = VideoQuad();
+    {
+        std::lock_guard<std::mutex> quadLock(m_videoQuadMutex);
+        m_videoQuad = VideoQuad();
+    }
     if (m_session == XR_NULL_HANDLE) return 0;
 
     // Mesures : toujours actives, même panneau masqué ou sans affichage possible (Vulkan...).
@@ -1027,7 +1036,10 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
 
     // Panneau de performances : devant les yeux, ou accroché à une main.
     if (wantPanel) {
-        m_videoQuad.shown = true;
+        {
+            std::lock_guard<std::mutex> quadLock(m_videoQuadMutex);
+            m_videoQuad.shown = true;
+        }
         XrSpace space = m_viewSpace;
         XrPosef pose = quadPose();
         const HandResult hand =
@@ -1042,6 +1054,7 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
             const int height = Panel::contentHeight(m_shownLayout, m_shownInfo, m_shownStatus);
             quad.subImage.imageRect.extent = {Panel::kWidth, height};
             quad.size = {m_config.width, m_config.width * static_cast<float>(height) / static_cast<float>(Panel::kWidth)};
+            std::lock_guard<std::mutex> quadLock(m_videoQuadMutex);
             m_videoQuad.placed = true;
             m_videoQuad.space = quad.space;
             m_videoQuad.pose = quad.pose;

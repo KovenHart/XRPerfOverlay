@@ -63,6 +63,7 @@ namespace XRPerfSensors
             w.WriteBoolean("ReportHardware", o.ReportHardware);
             w.WriteBoolean("OpenVR", o.OpenVR);
             w.WriteBoolean("VideoCapture", o.VideoCapture);
+            w.WriteString("VideoSource", o.VideoFinal ? "final" : "game");
             w.WriteEndObject();
         }
 
@@ -211,6 +212,11 @@ namespace XRPerfSensors
                 case "ReportHardware": if (!Bool(v, out b)) return false; o.ReportHardware = b; return true;
                 case "OpenVR": if (!Bool(v, out b)) return false; o.OpenVR = b; return true;
                 case "VideoCapture": if (!Bool(v, out b)) return false; o.VideoCapture = b; return true;
+                case "VideoSource":
+                    string source = v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                    if (source != "final" && source != "game") return false;
+                    o.VideoFinal = source == "final";
+                    return true;
             }
             return false;
         }

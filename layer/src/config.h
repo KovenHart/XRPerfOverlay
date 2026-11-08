@@ -115,6 +115,9 @@ struct Config {
     // Enregistrement vidéo possible dans ce jeu ([video] capture) : la layer suit alors les images des
     // swapchains du jeu pour pouvoir les copier quand XRPerfSensors enregistre. 0 : rien de tout ça.
     bool videoCapture = true;
+    // Image enregistrée quand d'autres layers sont sous la nôtre : true = celle envoyée au casque, après
+    // leur traitement (Pimax NR, OpenXR Toolkit...) ; false = celle du jeu.
+    bool videoFinal = true;
     std::wstring summaryFolder;         // dossier des résumés (par défaut : "sessions" à côté de la DLL)
     std::wstring iniPath;
 };

@@ -1224,6 +1224,8 @@ window.App = (function () {
       group(t("vid.title"), null, [
         switchCtl("overlay", "VideoCapture", t("vid.enable"), t("vid.enable.help")),
         h("div", { class: "video-card", id: "video-card", "aria-live": "polite" }),
+        segRow("overlay", "VideoSource", t("vid.source"), t("vid.source.help"), [{ value: "final", label: t("vid.source.final") }, { value: "game", label: t("vid.source.game") }],
+          { enabled: videoEnabled }),
       ]),
       group(t("vid.image"), t("vid.image.help"), [
         selectRow("desktop", "VideoCodec", t("vid.codec"), t("vid.codec.help"), codecOptions),

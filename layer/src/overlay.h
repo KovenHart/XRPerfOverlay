@@ -68,7 +68,9 @@ class Overlay {
     // Enregistrement vidéo (XRPerfSensors) : au début de xrEndFrame, publie l'image d'un œil copiée quand
     // le jeu l'a rendue, et note quelle swapchain copier à l'image suivante ; juste avant chaque
     // xrReleaseSwapchainImage du jeu, copie l'image si c'est celle de l'œil enregistré.
-    void captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains);
+    // `enumerate` : xrEnumerateSwapchainImages à utiliser pour ces swapchains (nul : celui de la suite de la
+    // chaîne ; en bas de la chaîne, celui du runtime).
+    void captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains, PFN_xrEnumerateSwapchainImages enumerate);
     void videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains);
 
     // Le runtime a refusé une image contenant notre calque.
@@ -262,7 +264,8 @@ class Overlay {
         XrSpace space = XR_NULL_HANDLE;
         XrPosef pose = {};
         XrExtent2Df size = {};
-    } m_videoQuad;  // écrit par onEndFrame, lu juste après par captureVideo (même fil)
+    } m_videoQuad;  // écrit par onEndFrame, lu par captureVideo (en bas de la chaîne, parfois sur un autre fil)
+    std::mutex m_videoQuadMutex;
     // Signal pour XRPerfVR (jeux SteamVR) : la layer mesure et affiche dans ce processus.
     LayerPresence m_presence;
 

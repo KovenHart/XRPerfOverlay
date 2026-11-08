@@ -95,6 +95,7 @@ namespace XRPerfSensors
         public string SummaryFolder = "";  // [summary] folder : dossier des rapports (vide = "sessions" à côté de la DLL)
         public bool OpenVR = true;         // [openvr] enabled : XRPerfVR (panneau, montre, rapports dans les jeux SteamVR / OpenVR)
         public bool VideoCapture = true;   // [video] capture : enregistrement vidéo du casque possible (layer et XRPerfVR)
+        public bool VideoFinal = true;     // [video] source : image envoyée au casque (après les autres layers) ou celle du jeu
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetPrivateProfileStringW(string section, string key, string defaultValue, StringBuilder result, uint size, string path);
@@ -194,6 +195,7 @@ namespace XRPerfSensors
             s.SummaryFolder = ReadText(path, "summary", "folder");
             s.OpenVR = ReadBool(path, "openvr", "enabled", s.OpenVR);
             s.VideoCapture = ReadBool(path, "video", "capture", s.VideoCapture);
+            s.VideoFinal = ReadText(path, "video", "source").Trim().ToLowerInvariant() != "game";
 
             s.Anchor = ReadName(path, "anchor", AnchorNames, s.Anchor);
             s.HandPlacement = ReadName(path, "hand_position", PlacementNames, s.HandPlacement);
@@ -290,6 +292,7 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW("summary", "hardware", ReportHardware ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("openvr", "enabled", OpenVR ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("video", "capture", VideoCapture ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW("video", "source", VideoFinal ? "final" : "game", path);
             ok &= WritePrivateProfileStringW(Section, "anchor", AnchorNames[Anchor], path);
             ok &= WritePrivateProfileStringW(Section, "hand_position", PlacementNames[HandPlacement], path);
             ok &= WritePrivateProfileStringW(Section, "gaze_only", GazeOnly ? "1" : "0", path);
