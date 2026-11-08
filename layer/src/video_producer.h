@@ -3,8 +3,8 @@
 // (shared_block.h, section 5). Utilisé par la layer (Direct3D 11 ou 12, le périphérique du jeu) et par
 // XRPerfVR (image miroir de SteamVR, son propre périphérique Direct3D 11).
 //
-// Deux temps : copy() copie une texture du jeu entière (une tranche) dans une texture partagée libre,
-// publish() la rend visible à l'enregistreur avec la partie qui contient l'œil et son champ de vue. Dans
+// Deux temps : copy() copie l'image de l'œil (une zone d'une tranche de la texture du jeu) dans une texture
+// partagée libre, publish() la rend visible à l'enregistreur avec ce qu'elle montre (champ de vue...). Dans
 // la layer, la copie se fait quand le jeu rend l'image au runtime (xrReleaseSwapchainImage, image encore
 // à lui et dans un état connu), la publication à xrEndFrame, qui dit quelle partie montre quel œil.
 //
@@ -27,11 +27,12 @@
 
 namespace xrpo {
 
-// Texture du jeu à copier (entière : la partie utile est donnée à la publication).
+// Zone de la texture du jeu à copier : l'image de l'œil enregistré (sa place exacte est confirmée à la
+// publication). Copiée en haut à gauche de la texture partagée.
 struct VideoSource {
     void* texture = nullptr;  // ID3D11Texture2D* (Direct3D 11) ou ID3D12Resource* (Direct3D 12)
     uint32_t subresource = 0;
-    uint32_t x = 0, y = 0;    // coin de la zone copiée (0, 0 pour toute la tranche)
+    uint32_t x = 0, y = 0;    // coin de la zone copiée dans la texture du jeu
     uint32_t width = 0, height = 0;  // taille de la zone copiée
 };
 

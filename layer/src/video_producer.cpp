@@ -199,7 +199,15 @@ bool VideoProducer::copy(const VideoSource& source) {
     if (m_failed || !m_producing || !m_block || !source.texture || source.width == 0 || source.height == 0) return false;
     volatile VideoShareHeader* b = m_block;
     const uint32_t format = sourceFormat(source);
-    if (!m_hasResources || source.width != m_width || source.height != m_height || format != m_format) {
+    // Textures à la taille de la zone copiée (l'œil enregistré, pas toute l'image du jeu) ; elles ne font
+    // que grandir pendant une session : une résolution dynamique qui baisse ne les recrée pas.
+    const bool sameFormat = m_hasResources && format == m_format;
+    if (!sameFormat || source.width > m_width || source.height > m_height) {
+        VideoSource sized = source;
+        if (sameFormat) {
+            sized.width = source.width > m_width ? source.width : m_width;
+            sized.height = source.height > m_height ? source.height : m_height;
+        }
         if (m_hasResources) {
             if (!idle()) return false;  // copies encore en cours : on recrée à une image suivante, sans attendre
             b->latest = 0;
@@ -210,24 +218,24 @@ bool VideoProducer::copy(const VideoSource& source) {
         }
         const uint32_t generation = NextGeneration();
         uint32_t created = 0;
-        if (!createResources(source, generation, created)) {
+        if (!createResources(sized, generation, created)) {
             m_hasResources = true;  // libérées plus tard, sans attendre (active)
             fail();
             return false;
         }
         m_hasResources = true;
         m_generation = generation;
-        m_width = source.width;
-        m_height = source.height;
+        m_width = sized.width;
+        m_height = sized.height;
         m_format = format;
-        b->width = source.width;
-        b->height = source.height;
+        b->width = sized.width;
+        b->height = sized.height;
         b->format = created;
         b->adapterLuid = adapterLuid();
         Barrier();
         b->generation = generation;
         Barrier();
-        Log("Video : textures partagees %ux%u (format DXGI %u).", source.width, source.height, created);
+        Log("Video : textures partagees %ux%u (format DXGI %u).", sized.width, sized.height, created);
     }
 
     // Texture libre : ni la dernière publiée (l'enregistreur peut la prendre), ni une qu'il lit encore.
