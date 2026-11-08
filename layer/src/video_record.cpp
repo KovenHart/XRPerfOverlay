@@ -1179,6 +1179,14 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = dxgi->GetSubresourceIndex(&subresource);
         if (FAILED(hr)) return fail(kNoConversion, hr);
         if (!convert(texture.get(), subresource)) return fail(kNoConversion, E_FAIL);
+        // Une image Direct3D a une longueur nulle tant qu'on ne la donne pas : l'encodeur la refuserait
+        // (E_INVALIDARG). Longueur d'une image NV12 complète.
+        Ptr<IMF2DBuffer> buffer2d;
+        DWORD length = 0;
+        if (SUCCEEDED(buffer->QueryInterface(__uuidof(IMF2DBuffer), buffer2d.putVoid())) && SUCCEEDED(buffer2d->GetContiguousLength(&length)) && length > 0)
+            buffer->SetCurrentLength(length);
+        else
+            buffer->SetCurrentLength(static_cast<DWORD>(m_width) * static_cast<DWORD>(m_height) * 3 / 2);
         sample->SetSampleTime(time);
         sample->SetSampleDuration(duration);
         hr = m_writer->WriteSample(m_videoStream, sample.get());
