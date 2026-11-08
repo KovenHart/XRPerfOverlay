@@ -111,8 +111,28 @@ void VideoProducer::release(bool keepBlock) {
 
 void VideoProducer::shutdown() { release(false); }
 
+// Abandon pour la session : le rôle est rendu tout de suite, les textures plus tard (sans attendre).
+void VideoProducer::fail() {
+    m_failed = true;
+    if (m_block && m_producing) {
+        m_block->latest = 0;
+        Barrier();
+        const LONG pid = static_cast<LONG>(GetCurrentProcessId());
+        InterlockedCompareExchange(reinterpret_cast<volatile LONG*>(&m_block->producerPid), 0, pid);
+    }
+    m_producing = false;
+    m_latest = m_pending = -1;
+}
+
 bool VideoProducer::active(int& eye) {
-    if (m_failed) return false;
+    if (m_failed) {
+        // Échec : textures libérées dès que la carte graphique n'y copie plus (jamais d'attente ici).
+        if (m_hasResources && idle()) {
+            releaseResources();
+            m_hasResources = false;
+        }
+        return false;
+    }
     if (!m_block && !openBlock()) return false;
     volatile VideoShareHeader* b = m_block;
     const unsigned long long tick = GetTickCount64();
@@ -153,6 +173,7 @@ bool VideoProducer::active(int& eye) {
             b->width = m_width;
             b->height = m_height;
             b->format = m_format;
+            b->adapterLuid = adapterLuid();
             b->generation = m_generation;
         }
         writeGame();
@@ -189,9 +210,8 @@ bool VideoProducer::copy(const VideoSource& source) {
         const uint32_t generation = NextGeneration();
         uint32_t created = 0;
         if (!createResources(source, generation, created)) {
-            releaseResources();
-            m_failed = true;
-            release(true);
+            m_hasResources = true;  // libérées plus tard, sans attendre (active)
+            fail();
             return false;
         }
         m_hasResources = true;
@@ -226,8 +246,7 @@ bool VideoProducer::copy(const VideoSource& source) {
     if (!copyTo(slot, source, value)) {
         if (++m_errors >= 3) {
             Log("Video : copies en echec, enregistrement abandonne pour cette session.");
-            m_failed = true;
-            release(true);
+            fail();
         }
         return false;
     }

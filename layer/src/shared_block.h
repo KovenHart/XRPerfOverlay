@@ -146,7 +146,7 @@ constexpr size_t kWindowShareBytes = sizeof(WindowShareHeader) + static_cast<siz
 //    encodage par l'enregistreur.
 constexpr wchar_t kVideoShareName[] = L"Local\\XRPerfOverlay.Video";
 constexpr uint32_t kVideoShareMagic = 0x56505258;  // "XRPV"
-constexpr uint32_t kVideoShareVersion = 1;
+constexpr uint32_t kVideoShareVersion = 2;  // 2 : textures de la taille de la swapchain, infos par texture
 constexpr int kVideoSlots = 3;  // textures partagées : la plus récente, une en lecture, une en écriture
 
 // Qui fournit les images (producerKind).

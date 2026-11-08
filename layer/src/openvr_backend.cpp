@@ -221,7 +221,7 @@ class OpenVrBackend final : public VrBackend {
             m_video = VideoProducer::CreateD3D11(m_device, kVideoSteamVr);
         }
         int eye = 0;
-        if (m_video->failed() || !m_video->active(eye)) {
+        if (!m_video->active(eye)) {
             m_videoBusy = false;
             return;
         }

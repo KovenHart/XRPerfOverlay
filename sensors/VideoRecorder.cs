@@ -17,7 +17,7 @@ namespace XRPerfSensors
         // Mémoire partagée : même disposition que VideoShareHeader (layer/src/shared_block.h).
         private const string ShareName = @"Local\XRPerfOverlay.Video";
         private const uint Magic = 0x56505258; // "XRPV"
-        private const uint Version = 1;
+        private const uint Version = 2;
         private const int ShareSize = 4096;
         // Lecture et écriture pour les jeux (non administrateurs, en conteneur d'application ou à faible
         // niveau d'intégrité : l'étiquette « LW » leur permet d'y écrire).

@@ -405,7 +405,10 @@ class AudioSource {
                     // Instant du paquet inconnu ou douteux : collé à la suite du précédent.
                     const bool timed = qpcPosition > 0 && !(flags & AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR);
                     const double seconds = (static_cast<double>(static_cast<int64_t>(qpcPosition) - m_origin)) / 1e7;
-                    const int64_t position = timed && std::fabs(seconds) < 1e7 ? static_cast<int64_t>(std::llround(seconds * kAudioRate)) : m_timeline.end();
+                    // Un paquet daté dans le futur (horloge folle) est collé à la suite, sans décaler la ligne de temps.
+                    const double nowSeconds = static_cast<double>(Now100ns() - m_origin) / 1e7;
+                    const bool plausible = timed && seconds > -60.0 && seconds < nowSeconds + 0.5;
+                    const int64_t position = plausible ? static_cast<int64_t>(std::llround(seconds * kAudioRate)) : m_timeline.end();
                     m_timeline.write(position, out, outFrames);
                 }
                 m_captureClient->ReleaseBuffer(frames);
@@ -704,7 +707,11 @@ class Recorder {
         m_gameSound.reset();
         m_micSound.reset();
         m_writer.reset();
-        if (unfinished && !m_path.empty()) DeleteFileW(m_path.c_str());
+        if (unfinished && !m_path.empty() && DeleteFileW(m_path.c_str())) {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_status.file[0] = 0;
+            m_status.bytes = 0;
+        }
         m_allocator.reset();
         m_manager.reset();
         closeTextures();
@@ -727,6 +734,7 @@ class Recorder {
         m_openPid = 0;
         m_openGeneration = 0;
         m_luid = 0;
+        m_stuckSlot = -1;
         m_hasFrame = false;
         m_privateWidth = m_privateHeight = 0;
         m_privateFormat = DXGI_FORMAT_UNKNOWN;
@@ -760,8 +768,9 @@ class Recorder {
         hr = m_device5->CreateFence(0, D3D11_FENCE_FLAG_NONE, __uuidof(ID3D11Fence), m_copyFence.putVoid());
         if (FAILED(hr)) return fail(kNoDevice, hr);
         m_copyValue = 0;
-        if (!m_event) m_event = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-        if (!m_event) return fail(kNoDevice, HRESULT_FROM_WIN32(GetLastError()));
+        if (!m_fenceEvent) m_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (!m_copyEvent) m_copyEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (!m_fenceEvent || !m_copyEvent) return fail(kNoDevice, HRESULT_FROM_WIN32(GetLastError()));
         m_luid = luidValue;
         // Direct3D 12, seulement pour ouvrir les objets partagés par leur nom (textures et fence).
         hr = D3D12CreateDevice(adapter.get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), m_d3d12.putVoid());
@@ -834,6 +843,11 @@ class Recorder {
     int fetch(bool& fresh) {
         fresh = false;
         volatile VideoShareHeader* b = m_block;
+        if (m_stuckSlot >= 0) {
+            if (m_copyFence && m_copyFence->GetCompletedValue() < m_stuckValue) return kOk;
+            InterlockedExchange(reinterpret_cast<volatile LONG*>(&b->slotBusy[m_stuckSlot]), 0);
+            m_stuckSlot = -1;
+        }
         for (int attempt = 0; attempt < 3; ++attempt) {
             const uint64_t latest = b->latest;  // numéro et texture lus ensemble
             const uint64_t frame = VideoLatestFrame(latest);
@@ -856,12 +870,25 @@ class Recorder {
             const uint32_t rx = info.rectX, ry = info.rectY, rw = info.rectWidth, rh = info.rectHeight, linear = info.linear;
             const float tl = info.tanLeft, tr = info.tanRight, tu = info.tanUp, td = info.tanDown, cx = info.centerX, cy = info.centerY;
             bool ok = true;
+            if (b->producerPid != pid) {  // relève entre deux fournisseurs : on réessaie
+                InterlockedExchange(reinterpret_cast<volatile LONG*>(&b->slotBusy[slot]), 0);
+                continue;
+            }
             if (pid != m_openPid || generation != m_openGeneration) ok = openTextures(pid, generation);
             if (ok && m_fence && m_shared[slot]) {
                 // Copie faite côté jeu (fence) : quelques millisecondes au plus, sinon l'image est laissée.
-                if (m_fence->GetCompletedValue() < frame && SUCCEEDED(m_fence->SetEventOnCompletion(frame, m_event))) WaitForSingleObject(m_event, 30);
-                ok = m_fence->GetCompletedValue() >= frame;
-                if (ok) ok = copyToPrivate(m_shared[slot].get());
+                ok = WaitFence(m_fence.get(), frame, m_fenceEvent, 30);
+                if (ok) {
+                    const int copied = copyToPrivate(m_shared[slot].get());
+                    if (copied < 0) {
+                        // Copie pas finie (carte graphique très en retard) : la texture reste réservée jusqu'à
+                        // la fin de la copie, pour que le jeu ne la réécrive pas pendant.
+                        m_stuckSlot = slot;
+                        m_stuckValue = m_copyValue;
+                        return kOk;
+                    }
+                    ok = copied > 0;
+                }
             } else {
                 ok = false;
             }
@@ -886,7 +913,19 @@ class Recorder {
         return kOk;
     }
 
-    bool copyToPrivate(ID3D11Texture2D* shared) {
+    // Attend que `fence` atteigne `value` (au plus `ms` millisecondes) ; true si c'est fait.
+    static bool WaitFence(ID3D11Fence* fence, uint64_t value, HANDLE event, DWORD ms) {
+        const ULONGLONG deadline = GetTickCount64() + ms;
+        while (fence->GetCompletedValue() < value) {
+            const ULONGLONG now = GetTickCount64();
+            if (now >= deadline || FAILED(fence->SetEventOnCompletion(value, event))) return fence->GetCompletedValue() >= value;
+            WaitForSingleObject(event, static_cast<DWORD>(deadline - now));
+        }
+        return true;
+    }
+
+    // 1 : copiée ; 0 : pas copiée ; -1 : copie lancée mais pas finie (la texture partagée ne doit pas être rendue).
+    int copyToPrivate(ID3D11Texture2D* shared) {
         DeviceLock lock(m_multithread.get());
         D3D11_TEXTURE2D_DESC desc;
         shared->GetDesc(&desc);
@@ -902,14 +941,15 @@ class Recorder {
             own.BindFlags = D3D11_BIND_SHADER_RESOURCE;
             own.CPUAccessFlags = 0;
             own.MiscFlags = 0;
-            if (FAILED(m_device->CreateTexture2D(&own, nullptr, m_private.put()))) return false;
+            m_hasFrame = false;  // l'ancienne image n'existe plus : rien à répéter tant que la copie n'est pas faite
+            if (FAILED(m_device->CreateTexture2D(&own, nullptr, m_private.put()))) return 0;
             D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
             view.Format = ViewOf(desc.Format);
             view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
             view.Texture2D.MipLevels = 1;
             if (FAILED(m_device->CreateShaderResourceView(m_private.get(), &view, m_privateView.put()))) {
                 m_private.reset();
-                return false;
+                return 0;
             }
             m_privateWidth = desc.Width;
             m_privateHeight = desc.Height;
@@ -918,11 +958,10 @@ class Recorder {
         m_context->CopyResource(m_private.get(), shared);
         // La texture partagée est rendue au jeu seulement une fois la copie faite par la carte graphique.
         const uint64_t value = ++m_copyValue;
-        if (FAILED(m_context4->Signal(m_copyFence.get(), value))) return false;
+        if (FAILED(m_context4->Signal(m_copyFence.get(), value))) return -1;
         m_context->Flush();
         lock.unlock();
-        if (m_copyFence->GetCompletedValue() < value && SUCCEEDED(m_copyFence->SetEventOnCompletion(value, m_event))) WaitForSingleObject(m_event, 200);
-        return m_copyFence->GetCompletedValue() >= value;
+        return WaitFence(m_copyFence.get(), value, m_copyEvent, 2000) ? 1 : -1;
     }
 
     // --- Encodage ---------------------------------------------------------------------------------------
@@ -1208,9 +1247,12 @@ class Recorder {
     Ptr<ID3D11Multithread> m_multithread;
     Ptr<ID3D11Fence> m_copyFence;  // fin de la copie vers notre texture
     uint64_t m_copyValue = 0;
-    HANDLE m_event = nullptr;
+    HANDLE m_fenceEvent = nullptr;  // un événement par fence : une attente expirée ne réveille pas la suivante
+    HANDLE m_copyEvent = nullptr;
     uint32_t m_rect[4] = {0, 0, 0, 0};  // partie de la texture qui contient l'œil
     uint64_t m_videoSamples = 0;
+    int m_stuckSlot = -1;  // texture partagée encore réservée (copie pas finie)
+    uint64_t m_stuckValue = 0;
     Ptr<ID3D12Device> m_d3d12;
     Ptr<ID3D11VertexShader> m_vs;
     Ptr<ID3D11PixelShader> m_psY, m_psUV;

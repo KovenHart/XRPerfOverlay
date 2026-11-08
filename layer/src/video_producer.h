@@ -98,6 +98,7 @@ class VideoProducer {
   private:
     bool openBlock();
     void release(bool keepBlock);
+    void fail();
     void writeGame();
 
     std::wstring m_game;

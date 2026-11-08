@@ -249,6 +249,9 @@ class Overlay {
     } m_videoTarget;
     XrSwapchain m_videoCopiedSwapchain = XR_NULL_HANDLE;  // copie en attente de publication : swapchain et image
     uint32_t m_videoCopiedIndex = 0;
+    // Fil de xrEndFrame : en Direct3D 11, le contexte du jeu n'est utilisé que depuis ce fil.
+    std::atomic<DWORD> m_videoEndFrameThread{0};
+    double m_videoSeconds = -1.0;  // dernière durée lue (témoin du panneau)
     // Signal pour XRPerfVR (jeux SteamVR) : la layer mesure et affiche dans ce processus.
     LayerPresence m_presence;
 

@@ -234,8 +234,10 @@ void Overlay::readSystemInfo(XrSystemId systemId) {
 }
 
 void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains) {
-    std::lock_guard<std::mutex> lock(m_videoMutex);
-    if (!m_video || m_video->failed()) return;
+    m_videoEndFrameThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    // Jamais d'attente à xrEndFrame : une copie en cours sur un autre fil fait sauter cette image.
+    std::unique_lock<std::mutex> lock(m_videoMutex, std::try_to_lock);
+    if (!lock.owns_lock() || !m_video) return;
     int eye = 0;
     const bool active = m_video->active(eye);
     const VideoTarget previous = m_videoTarget;
@@ -323,6 +325,9 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
 }
 
 void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains) {
+    // Direct3D 11 : le contexte immédiat du jeu n'est pas fait pour deux fils à la fois ; on ne copie que sur
+    // le fil qui soumet les images (le cas de presque tous les moteurs). La file Direct3D 12 n'a pas ce souci.
+    if (!m_videoD3D12 && GetCurrentThreadId() != m_videoEndFrameThread.load(std::memory_order_relaxed)) return;
     std::lock_guard<std::mutex> lock(m_videoMutex);
     if (!m_video || m_video->failed() || m_videoTarget.swapchain == XR_NULL_HANDLE || swapchain != m_videoTarget.swapchain) return;
     uint32_t index = 0;
@@ -745,8 +750,9 @@ void Overlay::sample(double now) {
     m_presence.setRecord(data.recordState, static_cast<float>(data.recordSeconds));
     // Témoin d'enregistrement vidéo (XRPerfSensors).
     {
-        std::lock_guard<std::mutex> videoLock(m_videoMutex);
-        data.videoSeconds = m_video ? m_video->recordingSeconds() : -1.0;
+        std::unique_lock<std::mutex> videoLock(m_videoMutex, std::try_to_lock);
+        if (videoLock.owns_lock()) m_videoSeconds = m_video ? m_video->recordingSeconds() : -1.0;
+        data.videoSeconds = m_videoSeconds;
     }
     if ((data.statusElements & kWatchBattery) && m_hands) {
         for (int hand = 0; hand < 2; ++hand) {
