@@ -544,17 +544,27 @@ namespace XRPerfSensors
         public static readonly int[] VideoHeights = { 720, 1080, 1440, 2160 };
         public static readonly int[] VideoRates = { 30, 60, 72, 90 };
         public static readonly string[] VideoAspects = { "16:9", "4:3", "1:1" };
+        // Qualité : débit calculé selon le codec, la résolution et la cadence (VideoRecorder.PresetBitrate), ou choisi à la main.
+        public static readonly string[] VideoQualities = { "light", "balanced", "high", "max", "custom" };
+        // Panneau de performances dans la vidéo d'un jeu OpenXR : non, à sa place dans le casque, ou dans un coin.
+        public static readonly string[] VideoOverlays = { "off", "place", "corner" };
+        public static readonly string[] VideoCorners = { "topleft", "topright", "bottomleft", "bottomright" };
+        public const int MinVideoOverlaySize = 15, MaxVideoOverlaySize = 50; // largeur du panneau, en % de la largeur de la vidéo
         // Touches proposées pour Ctrl+Alt+... : lettres et F1 à F12 (codes de touches virtuelles), sauf celles
         // des raccourcis du casque (O, P, R, F, G, S, voir [hotkeys] dans XRPerfOverlay.ini).
         public static readonly int[] VideoKeys = BuildVideoKeys();
-        public const int MinVideoBitrate = 5, MaxVideoBitrate = 150, MinVideoField = 40; // Mbit/s ; % de l'image de l'œil
+        public const int MinVideoBitrate = 2, MaxVideoBitrate = 150, MinVideoField = 40; // Mbit/s ; % de l'image de l'œil
         public string VideoCodec = "h264";
         public int VideoHeight = 1440;
         public int VideoFps = 60;
-        public int VideoBitrate = 30;
+        public string VideoQuality = "high";
+        public int VideoBitrate = 30;           // débit choisi à la main (qualité « custom »)
         public int VideoEye;                   // 0 = gauche, 1 = droit
         public string VideoAspect = "16:9";
         public int VideoField = 75;            // part de l'image de l'œil gardée, en %
+        public string VideoOverlay = "off";
+        public string VideoOverlayCorner = "topleft";
+        public int VideoOverlaySize = 30;
         public bool VideoGameAudio = true;
         public bool VideoMic;
         public string VideoRenderDevice = "";  // identifiant Windows de la sortie audio enregistrée ("" : celle par défaut)
@@ -612,6 +622,9 @@ namespace XRPerfSensors
                     if (key == "ui_accent") { if (IsColor(text)) settings.UiAccent = text; continue; }
                     if (key == "video_codec") { if (Array.IndexOf(VideoCodecs, text) >= 0) settings.VideoCodec = text; continue; }
                     if (key == "video_aspect") { if (Array.IndexOf(VideoAspects, text) >= 0) settings.VideoAspect = text; continue; }
+                    if (key == "video_quality") { if (Array.IndexOf(VideoQualities, text) >= 0) settings.VideoQuality = text; continue; }
+                    if (key == "video_overlay") { if (Array.IndexOf(VideoOverlays, text) >= 0) settings.VideoOverlay = text; continue; }
+                    if (key == "video_overlay_corner") { if (Array.IndexOf(VideoCorners, text) >= 0) settings.VideoOverlayCorner = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
                     {
@@ -642,6 +655,7 @@ namespace XRPerfSensors
                         case "video_bitrate": if (value >= MinVideoBitrate && value <= MaxVideoBitrate) settings.VideoBitrate = value; break;
                         case "video_eye": if (value == 0 || value == 1) settings.VideoEye = value; break;
                         case "video_field": if (value >= MinVideoField && value <= 100) settings.VideoField = value; break;
+                        case "video_overlay_size": if (value >= MinVideoOverlaySize && value <= MaxVideoOverlaySize) settings.VideoOverlaySize = value; break;
                         case "video_game_audio": settings.VideoGameAudio = value != 0; break;
                         case "video_mic": settings.VideoMic = value != 0; break;
                         case "video_key": if (value == 0 || Array.IndexOf(VideoKeys, value) >= 0) settings.VideoKey = value; break;
@@ -707,10 +721,14 @@ namespace XRPerfSensors
                     "video_codec=" + VideoCodec,
                     "video_height=" + VideoHeight.ToString(CultureInfo.InvariantCulture),
                     "video_fps=" + VideoFps.ToString(CultureInfo.InvariantCulture),
+                    "video_quality=" + VideoQuality,
                     "video_bitrate=" + VideoBitrate.ToString(CultureInfo.InvariantCulture),
                     "video_eye=" + VideoEye.ToString(CultureInfo.InvariantCulture),
                     "video_aspect=" + VideoAspect,
                     "video_field=" + VideoField.ToString(CultureInfo.InvariantCulture),
+                    "video_overlay=" + VideoOverlay,
+                    "video_overlay_corner=" + VideoOverlayCorner,
+                    "video_overlay_size=" + VideoOverlaySize.ToString(CultureInfo.InvariantCulture),
                     "video_game_audio=" + (VideoGameAudio ? 1 : 0),
                     "video_mic=" + (VideoMic ? 1 : 0),
                     "video_render_device=" + OneLine(VideoRenderDevice),

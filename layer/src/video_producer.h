@@ -41,6 +41,8 @@ struct VideoFrameInfo {
     bool linear = false;  // valeurs linéaires (format non sRGB ou flottant)
     float tanLeft = -1.f, tanRight = 1.f, tanUp = 1.f, tanDown = -1.f;  // champ de cette partie, en tangentes d'angle
     float centerX = 0.f, centerY = 0.f;  // direction de la tête, mêmes unités
+    uint32_t panelFlags = 0;   // kVideoPanelShown, kVideoPanelPlaced (shared_block.h)
+    float panelCorners[12] = {};  // coins du panneau dans le repère de l'œil, si kVideoPanelPlaced
 };
 
 class VideoProducer {
@@ -66,6 +68,11 @@ class VideoProducer {
     void publish(const VideoFrameInfo& info);
     // Oublie la dernière copie (le jeu n'a pas soumis cette image).
     void dropPending() { m_pending = -1; }
+    // Panneau dans la vidéo demandé par l'enregistreur (VideoOverlayMode) ; kVideoOverlayOff hors enregistrement.
+    uint32_t overlayMode() const;
+    // Image du panneau pour la vidéo : `width` x `height` pixels RGBA (alpha prémultiplié), lignes de
+    // `stride` pixels.
+    void publishPanel(const uint8_t* pixels, int width, int height, int stride);
     // Durée de l'enregistrement en cours, pour le témoin du panneau ; négative s'il n'y en a pas.
     double recordingSeconds();
     // Fin de session : rend la main (plus personne ne fournit d'images) et libère les textures.

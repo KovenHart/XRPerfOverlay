@@ -1050,6 +1050,36 @@ window.App = (function () {
 
   function videoEnabled() { return !!get("overlay", "VideoCapture") && !state.unavailable; }
 
+  // Débit d'une qualité (Mbit/s), même calcul que VideoRecorder.PresetBitrate (XRPerfSensors) : référence
+  // H.264 1080p à 60 images/s, H.265 et AV1 à 70 % et 60 %, selon les pixels (exposant 0,8) et la cadence (0,75).
+  const VIDEO_QUALITIES = ["light", "balanced", "high", "max", "custom"];
+  function presetBitrate(quality, codec, height, aspectText, fps) {
+    const reference = { light: 10, balanced: 16, max: 40 }[quality] || 24;
+    const codecFactor = codec === "hevc" ? 0.7 : codec === "av1" ? 0.6 : 1;
+    const aspect = aspectText === "4:3" ? 4 / 3 : aspectText === "1:1" ? 1 : 16 / 9;
+    const pixels = (height * Math.round(height * aspect)) / (1920 * 1080);
+    return Math.max(2, Math.min(150, Math.round(reference * codecFactor * Math.pow(pixels, 0.8) * Math.pow(fps / 60, 0.75))));
+  }
+  function videoBitrate() {
+    const q = get("desktop", "VideoQuality");
+    if (q === "custom") return get("desktop", "VideoBitrate");
+    return presetBitrate(q, get("desktop", "VideoCodec"), get("desktop", "VideoHeight"), get("desktop", "VideoAspect"), get("desktop", "VideoFps"));
+  }
+  // Taille d'une minute de vidéo (1 Mbit/s : 7,5 Mo par minute).
+  function perMinute(mbps) {
+    const mb = mbps * 7.5;
+    return mb >= 1000 ? num(mb / 1000, 1) + " " + t("unit.gb") : num(mb, 0) + " " + t("unit.mb");
+  }
+
+  // Ligne dont l'explication dépend des réglages (mise à jour à chaque changement).
+  function liveHelp(r, text) {
+    const help = r.querySelector(".row-help");
+    const f = () => { help.textContent = text(); };
+    refreshers.push(f);
+    f();
+    return r;
+  }
+
   // Liste des sorties (son du jeu) ou des entrées (micro) : « par défaut » puis celles de Windows.
   function deviceRow(key, label, kind, enabled) {
     const sel = h("select", { class: "select", "aria-label": label, "data-devices": kind, "data-key": key });
@@ -1091,10 +1121,21 @@ window.App = (function () {
         selectRow("desktop", "VideoCodec", t("vid.codec"), t("vid.codec.help"), codecOptions),
         selectRow("desktop", "VideoHeight", t("vid.resolution"), null, [720, 1080, 1440, 2160].map(x => ({ value: x, label: x === 2160 ? "2160p (4K)" : x + "p" }))),
         segRow("desktop", "VideoFps", t("vid.fps"), t("vid.fps.help"), [30, 60, 72, 90].map(x => ({ value: x, label: String(x) }))),
-        sliderRow("desktop", "VideoBitrate", t("vid.bitrate"), t("vid.bitrate.help"), 5, 150, x => num(x) + " " + t("unit.mbps")),
+        liveHelp(selectRow("desktop", "VideoQuality", t("vid.quality"), " ", VIDEO_QUALITIES.map(q => ({ value: q, label: t("vid.quality." + q) }))),
+          () => t(get("desktop", "VideoQuality") === "custom" ? "vid.quality.helpCustom" : "vid.quality.help", { mbps: num(videoBitrate()), size: perMinute(videoBitrate()) })),
+        sliderRow("desktop", "VideoBitrate", t("vid.bitrate"), t("vid.bitrate.help"), 2, 150, x => num(x) + " " + t("unit.mbps"),
+          { enabled: () => get("desktop", "VideoQuality") === "custom" }),
         segRow("desktop", "VideoEye", t("vid.eye"), null, [{ value: 0, label: t("vid.eye.left") }, { value: 1, label: t("vid.eye.right") }]),
         segRow("desktop", "VideoAspect", t("vid.aspect"), null, ["16:9", "4:3", "1:1"].map(a => ({ value: a, label: a }))),
         sliderRow("desktop", "VideoField", t("vid.field"), t("vid.field.help"), 40, 100, pct),
+      ], videoEnabled),
+      group(t("vid.panel"), t("vid.panel.help"), [
+        liveHelp(segRow("desktop", "VideoOverlay", t("vid.overlay"), " ", ["off", "place", "corner"].map(o => ({ value: o, label: t("vid.overlay." + o) }))),
+          () => t("vid.overlay.help." + (get("desktop", "VideoOverlay") || "off"))),
+        selectRow("desktop", "VideoOverlayCorner", t("vid.corner"), null, ["topleft", "topright", "bottomleft", "bottomright"].map(c => ({ value: c, label: t("vid.corner." + c) })),
+          { enabled: () => get("desktop", "VideoOverlay") === "corner" }),
+        sliderRow("desktop", "VideoOverlaySize", t("vid.overlaySize"), t("vid.overlaySize.help"), 15, 50, pct,
+          { enabled: () => get("desktop", "VideoOverlay") === "corner" }),
       ], videoEnabled),
       group(t("vid.sound"), t("vid.sound.help"), [
         switchCtl("desktop", "VideoGameAudio", t("vid.game"), t("vid.game.help")),

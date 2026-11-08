@@ -4,6 +4,7 @@
 #include <dxgi1_2.h>
 
 #include <atomic>
+#include <cstring>
 #include <string>
 
 #include "config.h"
@@ -274,12 +275,38 @@ void VideoProducer::publish(const VideoFrameInfo& info) {
     s.centerX = info.centerX;
     s.centerY = info.centerY;
     s.linear = info.linear ? 1u : 0u;
+    s.panelFlags = info.panelFlags;
+    for (int i = 0; i < 12; ++i) s.panelCorners[i] = info.panelCorners[i];
     LARGE_INTEGER qpc;
     QueryPerformanceCounter(&qpc);
     b->latestQpc = static_cast<uint64_t>(qpc.QuadPart);
     Barrier();
     b->latest = VideoLatest(m_pendingFrame, slot);  // une seule écriture : numéro et texture ensemble
     m_latest = slot;
+}
+
+uint32_t VideoProducer::overlayMode() const {
+    if (!m_producing || !m_block || m_kind == kVideoSteamVr) return kVideoOverlayOff;  // miroir SteamVR : panneau déjà dans l'image
+    const uint32_t mode = m_block->overlay;
+    return mode == kVideoOverlayPlace || mode == kVideoOverlayCorner ? mode : kVideoOverlayOff;
+}
+
+void VideoProducer::publishPanel(const uint8_t* pixels, int width, int height, int stride) {
+    if (!m_producing || !m_block || !pixels || width <= 0 || height <= 0 || stride < width) return;
+    if (width > kVideoPanelMaxWidth) width = kVideoPanelMaxWidth;
+    if (height > kVideoPanelMaxHeight) height = kVideoPanelMaxHeight;
+    volatile VideoShareHeader* b = m_block;
+    // Lecture sans verrou de l'autre côté : numéro impair pendant l'écriture, l'enregistreur relit s'il a changé.
+    const uint32_t sequence = b->panelSequence;
+    b->panelSequence = sequence | 1u;
+    Barrier();
+    uint8_t* out = reinterpret_cast<uint8_t*>(const_cast<VideoShareHeader*>(b)) + kVideoPanelOffset;
+    for (int row = 0; row < height; ++row)
+        std::memcpy(out + static_cast<size_t>(row) * kVideoPanelMaxWidth * 4, pixels + static_cast<size_t>(row) * stride * 4, static_cast<size_t>(width) * 4);
+    b->panelWidth = static_cast<uint32_t>(width);
+    b->panelHeight = static_cast<uint32_t>(height);
+    Barrier();
+    b->panelSequence = (sequence | 1u) + 1u;
 }
 
 double VideoProducer::recordingSeconds() {

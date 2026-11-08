@@ -22,7 +22,7 @@
     CaptureFps: 5, CaptureOpacity: 100, CropLeft: 0, CropTop: 0, CropRight: 0, CropBottom: 0,
     UiTheme: params.get("theme") || "panel", UiBackground: "#12161c", UiText: "#eef2f7", UiAccent: "#f2a65a", UiScale: 100, UiAnimations: true, UiStartFullscreen: false,
     Language: params.get("lang") || "auto",
-    VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75,
+    VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30,
     VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoKey: 86,
   };
   // Enregistrement vidéo simulé : ?video=rec (en cours), wait (en attente d'un jeu), error (dernière fin sur erreur), off.
@@ -35,7 +35,7 @@
   function tickVideo() {
     if (video.state === 1 && Math.random() < 0.3) Object.assign(video, { state: 2, game: "GothicRemake-Win64-Shipping", encoder: "NVIDIA HEVC Encoder MFT",
       audio: (desktop.VideoGameAudio ? 1 : 0) | (desktop.VideoMic ? 2 : 0) });
-    if (video.state === 2) { video.seconds += 1; video.bytes += desktop.VideoBitrate * 125000 + 24000; video.frames += desktop.VideoFps; }
+    if (video.state === 2) { video.seconds += 1; video.bytes += (desktop.VideoQuality === "custom" ? desktop.VideoBitrate : 24) * 125000 + 24000; video.frames += desktop.VideoFps; }
     if (video.state === 3) { video.state = 0; video.reason = ""; }
     reply(Object.assign({ type: "video" }, video));
   }

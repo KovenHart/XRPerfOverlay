@@ -1007,6 +1007,62 @@ static void testVideo() {
         HeadForwardInEye(same, same, same, x, y);
         assert(std::fabs(x) < 1e-6f && std::fabs(y) < 1e-6f);
     }
+    // Panneau à sa place : calque de 0,4 x 0,2 m à 1 m droit devant, œil symétrique à ±45°, vidéo de toute l'image.
+    {
+        Pose quad;
+        quad.position = {0.f, 0.f, -1.f};
+        float corners[12];
+        QuadCorners(quad, 0.4f, 0.2f, corners);
+        assert(std::fabs(corners[0] + 0.2f) < 1e-6f && std::fabs(corners[1] - 0.1f) < 1e-6f && std::fabs(corners[2] + 1.f) < 1e-6f);  // haut gauche
+        assert(std::fabs(corners[9] - 0.2f) < 1e-6f && std::fabs(corners[10] + 0.1f) < 1e-6f);  // bas droit
+        CropBox full;
+        float clip[16];
+        assert(PanelClipCorners(corners, -1.f, 1.f, 1.f, -1.f, full, clip));
+        // Tangentes ±0,2 et ±0,1 -> écran ±0,2 et ±0,1 (après division par w = 1).
+        assert(std::fabs(clip[0] / clip[3] + 0.2f) < 1e-5f && std::fabs(clip[1] / clip[3] - 0.1f) < 1e-5f && std::fabs(clip[3] - 1.f) < 1e-6f);
+        assert(clip[2] > 0.f);
+        // Cadre : moitié droite de l'image ; le centre de l'œil (tangente 0) tombe au bord gauche de la vidéo.
+        CropBox right = {0.5f, 0.f, 0.5f, 1.f};
+        Pose center;
+        center.position = {0.f, 0.f, -2.f};
+        QuadCorners(center, 0.f, 0.f, corners);
+        assert(PanelClipCorners(corners, -1.f, 1.f, 1.f, -1.f, right, clip));
+        assert(std::fabs(clip[0] / clip[3] + 1.f) < 1e-5f && std::fabs(clip[1] / clip[3]) < 1e-5f);
+        // Œil asymétrique (gauche -1,5, droite 0,5 ; haut 1, bas -0,5) : un point à la tangente (-0,5, 0,25) tombe au milieu.
+        Pose mid;
+        mid.position = {-0.5f, 0.25f, -1.f};
+        QuadCorners(mid, 0.f, 0.f, corners);
+        assert(PanelClipCorners(corners, -1.5f, 0.5f, 1.f, -0.5f, full, clip));
+        assert(std::fabs(clip[0] / clip[3]) < 1e-5f && std::fabs(clip[1] / clip[3]) < 1e-5f);
+        // Calque derrière la tête : rien.
+        Pose behind;
+        behind.position = {0.f, 0.f, 1.f};
+        QuadCorners(behind, 0.4f, 0.2f, corners);
+        assert(!PanelClipCorners(corners, -1.f, 1.f, 1.f, -1.f, full, clip));
+        // Tourné de 90° autour de y (vu par la tranche) : coins à des profondeurs différentes, mais devant.
+        Pose turned;
+        turned.position = {0.f, 0.f, -1.f};
+        turned.orientation = {0.f, std::sin(0.785398f), 0.f, std::cos(0.785398f)};
+        QuadCorners(turned, 0.4f, 0.2f, corners);
+        assert(std::fabs(corners[2] - corners[5]) > 0.39f);
+        assert(PanelClipCorners(corners, -1.f, 1.f, 1.f, -1.f, full, clip));
+        // Valeurs absurdes.
+        corners[0] = NAN;
+        assert(!PanelClipCorners(corners, -1.f, 1.f, 1.f, -1.f, full, clip));
+        assert(!PanelClipCorners(corners, 1.f, 1.f, 1.f, -1.f, full, clip));
+    }
+    // Panneau dans un coin : 30 % de la largeur d'une vidéo 16:9, panneau deux fois plus large que haut.
+    {
+        float r[16];
+        PanelCornerRect(0, 0.3f, 0.5f, 16.f / 9.f, r);
+        assert(std::fabs((r[4] - r[0]) - 0.6f) < 1e-5f);                     // largeur : 0,6 sur 2
+        assert(std::fabs((r[1] - r[9]) - 0.6f * 0.5f * 16.f / 9.f) < 1e-5f);  // hauteur en proportion
+        assert(r[0] < -0.9f && r[1] > 0.9f && r[3] == 1.f);                   // en haut à gauche
+        PanelCornerRect(3, 0.3f, 0.5f, 16.f / 9.f, r);
+        assert(r[12] > 0.9f && r[13] < -0.9f && r[12] <= 1.f && r[13] >= -1.f);  // bas droit, dans l'image
+        PanelCornerRect(1, 2.f, 5.f, 1.f, r);  // trop grand : borné, reste dans l'image
+        assert(r[0] >= -1.f && r[4] <= 1.f && r[9] >= -1.f);
+    }
     // Taille de la vidéo.
     {
         int w = 0, h = 0;

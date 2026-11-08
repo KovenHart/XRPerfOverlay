@@ -146,8 +146,19 @@ constexpr size_t kWindowShareBytes = sizeof(WindowShareHeader) + static_cast<siz
 //    encodage par l'enregistreur.
 constexpr wchar_t kVideoShareName[] = L"Local\\XRPerfOverlay.Video";
 constexpr uint32_t kVideoShareMagic = 0x56505258;  // "XRPV"
-constexpr uint32_t kVideoShareVersion = 2;  // 2 : textures de la taille de la swapchain, infos par texture
+constexpr uint32_t kVideoShareVersion = 3;  // 2 : textures de la taille de la swapchain, infos par texture ; 3 : panneau dans la vidéo
 constexpr int kVideoSlots = 3;  // textures partagées : la plus récente, une en lecture, une en écriture
+
+// Panneau de performances dans la vidéo (overlay, demandé par l'enregistreur) : un jeu OpenXR ne met pas le
+// panneau dans l'image de l'œil (le runtime l'ajoute après), la layer fournit donc son image (après
+// l'en-tête, à kVideoPanelOffset) et, avec chaque image du jeu, où il se trouve. L'image miroir de SteamVR
+// le contient déjà : XRPerfVR ne fournit rien.
+enum VideoOverlayMode : uint32_t { kVideoOverlayOff = 0, kVideoOverlayPlace = 1, kVideoOverlayCorner = 2 };
+constexpr int kVideoPanelMaxWidth = 640;
+constexpr int kVideoPanelMaxHeight = 320;
+constexpr size_t kVideoPanelOffset = 4096;
+// panelFlags (par image) : le panneau est affiché dans le casque ; ses coins sont connus (mode « à sa place »).
+constexpr uint32_t kVideoPanelShown = 1, kVideoPanelPlaced = 2;
 
 // Qui fournit les images (producerKind).
 enum VideoProducerKind : uint32_t { kVideoNone = 0, kVideoOpenXrD3D11 = 1, kVideoOpenXrD3D12 = 2, kVideoSteamVr = 3 };
@@ -161,10 +172,13 @@ struct VideoSlotInfo {
     float tanUp, tanDown;        // 24 : (bas négatif)
     float centerX, centerY;      // 32 : direction « droit devant » de la tête, mêmes unités (0, 0 sans écran incliné)
     uint32_t linear;             // 40 : 1 si les valeurs sont linéaires (à convertir en sRGB pour la vidéo)
-    uint32_t reserved;           // 44
-};                               // 48 octets
+    uint32_t panelFlags;         // 44 : kVideoPanelShown, kVideoPanelPlaced
+    // 48 : coins du panneau (haut gauche, haut droit, bas gauche, bas droit), en mètres dans le repère de
+    // l'œil de cette image (x à droite, y en haut, -z devant), quand kVideoPanelPlaced.
+    float panelCorners[12];
+};                               // 96 octets
 
-static_assert(sizeof(VideoSlotInfo) == 48, "disposition fixe");
+static_assert(sizeof(VideoSlotInfo) == 96, "disposition fixe");
 
 struct VideoShareHeader {
     uint32_t magic;              // offset 0
@@ -192,16 +206,25 @@ struct VideoShareHeader {
     uint32_t slotBusy[kVideoSlots];  // 96 : 1 pendant que l'enregistreur lit cette texture (le fournisseur n'y écrit pas)
     uint32_t reserved;           // 108
     VideoSlotInfo slots[kVideoSlots];  // 112
-    uint16_t game[64];           // 256 : nom de l'exécutable du jeu, sans « .exe » (UTF-16)
-};                               // 384 octets
+    uint16_t game[64];           // 400 : nom de l'exécutable du jeu, sans « .exe » (UTF-16)
+    // --- Panneau dans la vidéo -------------------------------------------------------------------
+    uint32_t overlay;            // 528 : VideoOverlayMode, écrit par l'enregistreur
+    uint32_t panelSequence;      // 532 : impair pendant que la layer écrit l'image du panneau
+    uint32_t panelWidth;         // 536 : taille de l'image du panneau (0 : pas d'image)
+    uint32_t panelHeight;        // 540
+    uint32_t reserved2[4];       // 544
+};                               // 560 octets, puis (à kVideoPanelOffset) l'image du panneau : panelWidth x
+                                 // panelHeight pixels RGBA 8 bits (sRGB, alpha prémultiplié, opacité du casque),
+                                 // lignes de kVideoPanelMaxWidth pixels
 
-static_assert(sizeof(VideoShareHeader) == 384, "la disposition doit rester identique a celle de VideoRecorder.cs");
+static_assert(sizeof(VideoShareHeader) == 560, "la disposition doit rester identique a celle de VideoRecorder.cs");
+static_assert(sizeof(VideoShareHeader) <= kVideoPanelOffset, "l'image du panneau suit l'en-tete");
 inline uint64_t VideoLatest(uint64_t frame, int slot) { return (frame << 2) | static_cast<uint64_t>(slot & 3); }
 inline uint64_t VideoLatestFrame(uint64_t latest) { return latest >> 2; }
 inline int VideoLatestSlot(uint64_t latest) { return static_cast<int>(latest & 3); }
 // Durée écoulée depuis `stamp` (GetTickCount64 d'un autre processus, peut-être un peu plus récent que `now`).
 inline int64_t VideoAge(uint64_t now, uint64_t stamp) { return static_cast<int64_t>(now - stamp); }
-constexpr size_t kVideoShareBytes = 4096;
+constexpr size_t kVideoShareBytes = kVideoPanelOffset + static_cast<size_t>(kVideoPanelMaxWidth) * kVideoPanelMaxHeight * 4;
 
 // Nom des objets Direct3D partagés : textures (slot 0 à kVideoSlots - 1) et fence (slot -1).
 inline void VideoTextureName(wchar_t* out, size_t capacity, uint32_t pid, uint32_t generation, int slot) {

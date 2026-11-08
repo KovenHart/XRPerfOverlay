@@ -109,6 +109,8 @@ class Overlay {
     // Calque accroché à une main : espace et pose, ou false s'il ne doit pas être affiché maintenant
     // (main non suivie, ou pas regardée en mode « seulement quand je la regarde »).
     enum class HandResult { NotOnHand, Show, Hide };
+    void videoPanelPlacement(const XrCompositionLayerProjection& projection, const XrCompositionLayerProjectionView& view, XrTime displayTime,
+                             VideoFrameInfo& frame);
     HandResult handQuad(Anchor anchor, HandPlacement placement, float along, float lift, bool gazeOnly, XrTime displayTime, bool& looked,
                         XrSpace& space, XrPosef& pose);
     // Même chose avec la pose dans le repère de la poignée déjà calculée (`hand` : 0 gauche, 1 droite).
@@ -252,6 +254,15 @@ class Overlay {
     // Fil de xrEndFrame : en Direct3D 11, le contexte du jeu n'est utilisé que depuis ce fil.
     std::atomic<DWORD> m_videoEndFrameThread{0};
     double m_videoSeconds = -1.0;  // dernière durée lue (témoin du panneau)
+    // Panneau dans la vidéo (jeu OpenXR : le runtime l'ajoute après l'image du jeu, l'enregistreur le dessine).
+    std::unique_ptr<Panel> m_videoPanel;  // même dessin que dans le casque, préparé au relevé
+    struct VideoQuad {
+        bool shown = false;   // panneau affiché dans le casque (réglage)
+        bool placed = false;  // ... et dessiné à cette image, à cet endroit
+        XrSpace space = XR_NULL_HANDLE;
+        XrPosef pose = {};
+        XrExtent2Df size = {};
+    } m_videoQuad;  // écrit par onEndFrame, lu juste après par captureVideo (même fil)
     // Signal pour XRPerfVR (jeux SteamVR) : la layer mesure et affiche dans ce processus.
     LayerPresence m_presence;
 

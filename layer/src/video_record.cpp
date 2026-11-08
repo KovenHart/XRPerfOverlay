@@ -28,6 +28,7 @@
 #include <mmdeviceapi.h>
 #include <propvarutil.h>
 #include <shlobj.h>
+#include <strmif.h>
 #include <timeapi.h>
 
 #include <algorithm>
@@ -63,6 +64,10 @@ struct XrprOptions {
     float field;            // part de l'image de l'œil gardée (0.4 à 1)
     uint32_t gameAudio;     // 1 : son du PC
     uint32_t micAudio;      // 1 : micro
+    uint32_t qualityVsSpeed;  // 1 à 100 (plus haut : meilleure image, encodage plus lent) ; 0 : réglage de l'encodeur
+    uint32_t overlay;       // panneau dans la vidéo (jeu OpenXR) : VideoOverlayMode
+    uint32_t overlayCorner; // 0 haut gauche, 1 haut droite, 2 bas gauche, 3 bas droite
+    float overlaySize;      // largeur du panneau dans un coin, part de la largeur de la vidéo
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
     wchar_t captureDevice[256];  // micro ("" : celui par défaut)
@@ -136,12 +141,14 @@ constexpr GUID MakeGuid(unsigned long a, unsigned short b, unsigned short c, uns
 const GUID kRateControl = MakeGuid(STATIC_CODECAPI_AVEncCommonRateControlMode);
 const GUID kMeanBitRate = MakeGuid(STATIC_CODECAPI_AVEncCommonMeanBitRate);
 const GUID kGopSize = MakeGuid(STATIC_CODECAPI_AVEncMPVGOPSize);
+const GUID kQualityVsSpeed = MakeGuid(STATIC_CODECAPI_AVEncCommonQualityVsSpeed);
 const GUID kSubtypeFloat = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};  // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
 const GUID kSubtypePcm = {0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};    // KSDATAFORMAT_SUBTYPE_PCM
 const PROPERTYKEY kFriendlyName = {{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
 const CLSID kMMDeviceEnumerator = {0xBCDE0395, 0xE52F, 0x467C, {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
 const IID kIMMDeviceEnumerator = {0xA95664D2, 0x9614, 0x4F35, {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
 const IID kIAudioClient = {0x1CB9AD4C, 0xDBFA, 0x4c32, {0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2}};
+const IID kICodecAPI = {0x901db4c7, 0x31ce, 0x41a2, {0x85, 0xdc, 0x8f, 0xa0, 0xbf, 0x41, 0xb8, 0xda}};
 const IID kIAudioCaptureClient = {0xC8ADBD64, 0xE71E, 0x48a0, {0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17}};
 
 const GUID& CodecSubtype(uint32_t codec) { return codec == 1 ? MFVideoFormat_HEVC : codec == 2 ? kVideoAv1 : MFVideoFormat_H264; }
@@ -238,14 +245,20 @@ DXGI_FORMAT ViewOf(DXGI_FORMAT f) {
     }
 }
 
-// --- Shaders : cadrage, réduction, conversion RVB -> YUV 4:2:0 (BT.709, plage limitée) --------------------
+// --- Shaders : cadrage, réduction, panneau, conversion RVB -> YUV 4:2:0 (BT.709, plage limitée) ------------
+//
+// L'image de l'œil est d'abord cadrée et réduite dans une image RVBA 8 bits sRGB de la taille de la vidéo,
+// où le panneau est ensuite mélangé (en valeurs linéaires, comme le fait le runtime) ; la conversion en NV12
+// part de cette image.
 
 const char kShaders[] = R"(
 cbuffer Params : register(b0) {
-    float4 crop;    // origine et taille du cadre dans l'image de l'œil (coordonnées 0 à 1)
-    float4 taps;    // xy : écart des quatre échantillons (coordonnées de l'image) ; z : 1 si valeurs linéaires
+    float4 crop;       // origine et taille du cadre dans l'image de l'œil (coordonnées 0 à 1)
+    float4 taps;       // xy : écart des quatre échantillons (coordonnées de l'image) ; z : 1 si valeurs linéaires
+    float4 corner[4];  // panneau : coins à l'écran (haut gauche, haut droit, bas gauche, bas droit)
+    float4 panelUv;    // panneau : partie de sa texture (u, v en bas à droite)
 };
-Texture2D eyeImage : register(t0);
+Texture2D image : register(t0);
 SamplerState linearClamp : register(s0);
 
 struct VsOut { float4 position : SV_Position; float2 uv : TEXCOORD0; };
@@ -258,29 +271,44 @@ VsOut VsMain(uint id : SV_VertexID) {
     return o;
 }
 
-float3 fetch(float2 uv) {
-    float2 p = crop.xy + uv * crop.zw;
-    float3 c = 0.25 * (eyeImage.SampleLevel(linearClamp, p + float2(taps.x, taps.y), 0).rgb +
-                       eyeImage.SampleLevel(linearClamp, p + float2(-taps.x, taps.y), 0).rgb +
-                       eyeImage.SampleLevel(linearClamp, p + float2(taps.x, -taps.y), 0).rgb +
-                       eyeImage.SampleLevel(linearClamp, p + float2(-taps.x, -taps.y), 0).rgb);
+// 1. Image de l'œil cadrée et réduite, en valeurs linéaires (la cible sRGB les encode).
+float4 PsEye(VsOut i) : SV_Target {
+    float2 p = crop.xy + i.uv * crop.zw;
+    float3 c = 0.25 * (image.SampleLevel(linearClamp, p + float2(taps.x, taps.y), 0).rgb +
+                       image.SampleLevel(linearClamp, p + float2(-taps.x, taps.y), 0).rgb +
+                       image.SampleLevel(linearClamp, p + float2(taps.x, -taps.y), 0).rgb +
+                       image.SampleLevel(linearClamp, p + float2(-taps.x, -taps.y), 0).rgb);
     c = saturate(c);
-    if (taps.z > 0.5) {
-        float3 low = c * 12.92;
-        float3 high = 1.055 * pow(max(c, 1e-6), 1.0 / 2.4) - 0.055;
-        c = lerp(high, low, step(c, 0.0031308));
+    if (taps.z < 0.5) {
+        float3 low = c / 12.92;
+        float3 high = pow((c + 0.055) / 1.055, 2.4);
+        c = lerp(high, low, step(c, 0.04045));
     }
-    return c;
+    return float4(c, 1.0);
 }
 
+// 2. Panneau : un quadrilatère, en perspective (w) quand il est à sa place dans la scène.
+VsOut VsPanel(uint id : SV_VertexID) {
+    VsOut o;
+    o.position = corner[id & 3];
+    o.uv = float2((id & 1) ? panelUv.x : 0.0, (id & 2) ? panelUv.y : 0.0);
+    return o;
+}
+
+float4 PsPanel(VsOut i) : SV_Target {
+    return image.SampleLevel(linearClamp, i.uv, 0);  // alpha prémultiplié, comme le runtime l'affiche
+}
+
+// 3. Conversion RVB -> YUV 4:2:0 (BT.709, plage limitée), à partir de l'image encodée en sRGB.
 float luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
 float PsLuma(VsOut i) : SV_Target {
-    return (16.0 + 219.0 * luma(fetch(i.uv))) / 255.0;
+    float3 c = image.Load(int3(int2(i.position.xy), 0)).rgb;
+    return (16.0 + 219.0 * luma(c)) / 255.0;
 }
 
 float2 PsChroma(VsOut i) : SV_Target {
-    float3 c = fetch(i.uv);
+    float3 c = image.SampleLevel(linearClamp, i.uv, 0).rgb;  // moyenne des quatre pixels de ce bloc 2 x 2
     float y = luma(c);
     float cb = (c.b - y) / 1.8556;
     float cr = (c.r - y) / 1.5748;
@@ -291,6 +319,8 @@ float2 PsChroma(VsOut i) : SV_Target {
 struct ShaderParams {
     float crop[4];
     float taps[4];
+    float corner[16];
+    float panelUv[4];
 };
 
 typedef HRESULT(WINAPI* PFN_Compile)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob**,
@@ -527,9 +557,10 @@ class Recorder {
             if (m_state.load() != kStopped) return kBusy;
             m_thread.join();
         }
-        if (!share || bytes < sizeof(VideoShareHeader)) return kBadOptions;
+        if (!share || bytes < kVideoShareBytes) return kBadOptions;
         if (options.size != sizeof(XrprOptions) || options.codec > 2 || options.fps < 10 || options.fps > 240 || options.height < 240 ||
-            options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f))
+            options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f) ||
+            options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f))
             return kBadOptions;
         m_options = options;
         m_options.folder[259] = m_options.renderDevice[255] = m_options.captureDevice[255] = 0;
@@ -545,6 +576,7 @@ class Recorder {
         b->eye = options.eye == 1 ? 1 : 0;
         b->fps = static_cast<float>(options.fps);
         b->recordStartTickMs = 0;
+        b->overlay = options.overlay;
         b->recorderTickMs = GetTickCount64();
         b->session = b->session + 1;
         for (int i = 0; i < kVideoSlots; ++i) b->slotBusy[i] = 0;
@@ -595,6 +627,7 @@ class Recorder {
         volatile VideoShareHeader* b = m_block;
         b->wanted = 0;
         b->recordStartTickMs = 0;
+        b->overlay = kVideoOverlayOff;
         for (int i = 0; i < kVideoSlots; ++i) b->slotBusy[i] = 0;
         {
             std::lock_guard<std::mutex> lock(m_statusMutex);
@@ -763,8 +796,20 @@ class Recorder {
         m_private.reset();
         m_privateView.reset();
         m_vs.reset();
+        m_vsPanel.reset();
+        m_psEye.reset();
+        m_psPanel.reset();
         m_psY.reset();
         m_psUV.reset();
+        m_frame.reset();
+        m_frameTarget.reset();
+        m_frameView.reset();
+        m_panel.reset();
+        m_panelView.reset();
+        m_blend.reset();
+        m_raster.reset();
+        m_panelPixels.clear();
+        m_panelFlags = 0;
         m_params.reset();
         m_sampler.reset();
         m_copyFence.reset();
@@ -828,14 +873,24 @@ class Recorder {
         HMODULE compiler = LoadLibraryW(L"d3dcompiler_47.dll");
         PFN_Compile compile = compiler ? reinterpret_cast<PFN_Compile>(reinterpret_cast<void*>(GetProcAddress(compiler, "D3DCompile"))) : nullptr;
         if (!compile) return fail(kNoConversion, E_NOINTERFACE);
-        Ptr<ID3DBlob> vs, psY, psUV, errors;
-        hr = compile(kShaders, sizeof(kShaders) - 1, "video", nullptr, nullptr, "VsMain", "vs_4_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, vs.put(), errors.put());
-        if (SUCCEEDED(hr)) hr = compile(kShaders, sizeof(kShaders) - 1, "video", nullptr, nullptr, "PsLuma", "ps_4_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, psY.put(), errors.put());
-        if (SUCCEEDED(hr)) hr = compile(kShaders, sizeof(kShaders) - 1, "video", nullptr, nullptr, "PsChroma", "ps_4_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, psUV.put(), errors.put());
+        Ptr<ID3DBlob> vs, vsPanel, psEye, psPanel, psY, psUV, errors;
+        const auto build = [&](const char* entry, const char* target, Ptr<ID3DBlob>& out) {
+            return compile(kShaders, sizeof(kShaders) - 1, "video", nullptr, nullptr, entry, target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, out.put(), errors.put());
+        };
+        hr = build("VsMain", "vs_4_0", vs);
+        if (SUCCEEDED(hr)) hr = build("VsPanel", "vs_4_0", vsPanel);
+        if (SUCCEEDED(hr)) hr = build("PsEye", "ps_4_0", psEye);
+        if (SUCCEEDED(hr)) hr = build("PsPanel", "ps_4_0", psPanel);
+        if (SUCCEEDED(hr)) hr = build("PsLuma", "ps_4_0", psY);
+        if (SUCCEEDED(hr)) hr = build("PsChroma", "ps_4_0", psUV);
+        if (FAILED(hr) && errors) RecordLog("Shaders : %.*s", static_cast<int>(errors->GetBufferSize()), static_cast<const char*>(errors->GetBufferPointer()));
         if (SUCCEEDED(hr)) hr = m_device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, m_vs.put());
+        if (SUCCEEDED(hr)) hr = m_device->CreateVertexShader(vsPanel->GetBufferPointer(), vsPanel->GetBufferSize(), nullptr, m_vsPanel.put());
+        if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psEye->GetBufferPointer(), psEye->GetBufferSize(), nullptr, m_psEye.put());
+        if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psPanel->GetBufferPointer(), psPanel->GetBufferSize(), nullptr, m_psPanel.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psY->GetBufferPointer(), psY->GetBufferSize(), nullptr, m_psY.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psUV->GetBufferPointer(), psUV->GetBufferSize(), nullptr, m_psUV.put());
-        if (FAILED(hr)) return fail(kNoConversion, hr);
+        if (FAILED(hr)) return fail(kNoConversion, hr, "shaders");
         D3D11_BUFFER_DESC cb = {};
         cb.ByteWidth = sizeof(ShaderParams);
         cb.Usage = D3D11_USAGE_DYNAMIC;
@@ -848,6 +903,56 @@ class Recorder {
         sd.MaxLOD = D3D11_FLOAT32_MAX;
         if (FAILED(hr = m_device->CreateSamplerState(&sd, m_sampler.put()))) return fail(kNoConversion, hr);
         VideoSize(static_cast<int>(m_options.height), m_options.aspect, m_width, m_height);
+
+        // Image intermédiaire (taille de la vidéo) : écrite en sRGB, lue telle quelle pour la conversion.
+        D3D11_TEXTURE2D_DESC td = {};
+        td.Width = static_cast<UINT>(m_width);
+        td.Height = static_cast<UINT>(m_height);
+        td.MipLevels = 1;
+        td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_R8G8B8A8_TYPELESS;
+        td.SampleDesc.Count = 1;
+        td.Usage = D3D11_USAGE_DEFAULT;
+        td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        if (FAILED(hr = m_device->CreateTexture2D(&td, nullptr, m_frame.put()))) return fail(kNoConversion, hr, "image intermediaire");
+        D3D11_RENDER_TARGET_VIEW_DESC frameTarget = {};
+        frameTarget.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+        frameTarget.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        D3D11_SHADER_RESOURCE_VIEW_DESC frameView = {};
+        frameView.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        frameView.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        frameView.Texture2D.MipLevels = 1;
+        if (FAILED(hr = m_device->CreateRenderTargetView(m_frame.get(), &frameTarget, m_frameTarget.put())) ||
+            FAILED(hr = m_device->CreateShaderResourceView(m_frame.get(), &frameView, m_frameView.put())))
+            return fail(kNoConversion, hr, "image intermediaire");
+        // Panneau (jeu OpenXR) : sa texture, mélange en alpha prémultiplié, quadrilatère vu des deux côtés.
+        if (m_options.overlay != kVideoOverlayOff) {
+            td.Width = kVideoPanelMaxWidth;
+            td.Height = kVideoPanelMaxHeight;
+            td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            D3D11_SHADER_RESOURCE_VIEW_DESC panelView = frameView;
+            panelView.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            D3D11_BLEND_DESC bd = {};
+            bd.RenderTarget[0].BlendEnable = TRUE;
+            bd.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+            bd.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+            bd.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+            bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+            bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+            bd.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+            bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+            D3D11_RASTERIZER_DESC rd = {};
+            rd.FillMode = D3D11_FILL_SOLID;
+            rd.CullMode = D3D11_CULL_NONE;
+            rd.DepthClipEnable = TRUE;  // coupe ce qui passe derrière l'œil
+            if (FAILED(hr = m_device->CreateTexture2D(&td, nullptr, m_panel.put())) ||
+                FAILED(hr = m_device->CreateShaderResourceView(m_panel.get(), &panelView, m_panelView.put())) ||
+                FAILED(hr = m_device->CreateBlendState(&bd, m_blend.put())) || FAILED(hr = m_device->CreateRasterizerState(&rd, m_raster.put())))
+                return fail(kNoConversion, hr, "panneau");
+            m_panelPixels.assign(static_cast<size_t>(kVideoPanelMaxWidth) * kVideoPanelMaxHeight * 4, 0);
+            m_panelSequence = 0;
+            m_panelWidth = m_panelHeight = 0;
+        }
         return kOk;
     }
 
@@ -919,6 +1024,9 @@ class Recorder {
             const volatile VideoSlotInfo& info = b->slots[slot];
             const uint32_t rx = info.rectX, ry = info.rectY, rw = info.rectWidth, rh = info.rectHeight, linear = info.linear;
             const float tl = info.tanLeft, tr = info.tanRight, tu = info.tanUp, td = info.tanDown, cx = info.centerX, cy = info.centerY;
+            const uint32_t panelFlags = info.panelFlags;
+            float panelCorners[12];
+            for (int i = 0; i < 12; ++i) panelCorners[i] = info.panelCorners[i];
             bool ok = true;
             if (b->producerPid != pid) {  // relève entre deux fournisseurs : on réessaie
                 InterlockedExchange(reinterpret_cast<volatile LONG*>(&b->slotBusy[slot]), 0);
@@ -956,6 +1064,8 @@ class Recorder {
             m_fov[3] = td;
             m_center[0] = cx;
             m_center[1] = cy;
+            m_panelFlags = panelFlags;
+            std::memcpy(m_panelCorners, panelCorners, sizeof(m_panelCorners));
             m_hasFrame = true;
             fresh = true;
             return kOk;
@@ -1091,6 +1201,18 @@ class Recorder {
             hr = m_writer->SetInputMediaType(m_videoStream, in.get(), encoding.get());
         }
         if (FAILED(hr)) return fail(kNoEncoder, hr, "type video d'entree (encodeur)");
+        // Compromis vitesse / qualité selon la qualité choisie : réglage de l'encodeur, ignoré s'il ne le prend pas.
+        m_qualityApplied = false;
+        if (m_options.qualityVsSpeed > 0) {
+            Ptr<ICodecAPI> codec;
+            if (SUCCEEDED(m_writer->GetServiceForStream(m_videoStream, GUID_NULL, kICodecAPI, codec.putVoid())) && codec &&
+                codec->IsSupported(&kQualityVsSpeed) == S_OK) {
+                VARIANT value = {};  // sans oleaut32 : un VARIANT nul vaut VariantInit
+                value.vt = VT_UI4;
+                value.ulVal = m_options.qualityVsSpeed;
+                m_qualityApplied = SUCCEEDED(codec->SetValue(&kQualityVsSpeed, &value));
+            }
+        }
 
         // Son (toujours une piste, silencieuse si rien n'est enregistré : lecteurs et montage plus simples).
         Ptr<IMFMediaType> aacType, pcmType;
@@ -1128,8 +1250,11 @@ class Recorder {
         m_writing = true;
         m_audioWritten = 0;
         m_videoSamples = 0;
-        RecordLog("Enregistrement : %s %dx%d %u i/s %u kbit/s, oeil %u, encodeur \"%s\", image du jeu %ux%u (format DXGI %u), fichier \"%s\".",
-                  kCodecNames[m_options.codec], m_width, m_height, m_options.fps, m_options.bitrateKbps, m_options.eye,
+        static const char* kOverlayNames[] = {"non", "a sa place", "dans un coin"};
+        RecordLog("Enregistrement : %s %dx%d %u i/s %u kbit/s, vitesse/qualite %u (%s), panneau %s, oeil %u, encodeur \"%s\", image du jeu %ux%u "
+                  "(format DXGI %u), fichier \"%s\".",
+                  kCodecNames[m_options.codec], m_width, m_height, m_options.fps, m_options.bitrateKbps, m_options.qualityVsSpeed,
+                  m_options.qualityVsSpeed == 0 ? "encodeur" : m_qualityApplied ? "accepte" : "refuse", kOverlayNames[m_options.overlay], m_options.eye,
                   Utf8(EncoderName(m_options.codec)).c_str(), m_privateWidth, m_privateHeight, static_cast<unsigned>(m_privateFormat), Utf8(m_path).c_str());
         return kOk;
     }
@@ -1198,7 +1323,31 @@ class Recorder {
         return kOk;
     }
 
+    // Image du panneau fournie par la layer : recopiée dans notre texture quand elle a changé (numéro pair
+    // et identique avant et après la lecture : la layer n'écrivait pas pendant).
+    void updatePanel() {
+        if (!m_panel || m_pid == 0) return;
+        volatile VideoShareHeader* b = m_block;
+        const uint32_t sequence = b->panelSequence;
+        if ((sequence & 1u) || sequence == m_panelSequence) return;
+        MemoryBarrier();
+        const uint32_t width = b->panelWidth, height = b->panelHeight;
+        if (width == 0 || height == 0 || width > static_cast<uint32_t>(kVideoPanelMaxWidth) || height > static_cast<uint32_t>(kVideoPanelMaxHeight)) return;
+        const uint8_t* source = reinterpret_cast<const uint8_t*>(const_cast<const VideoShareHeader*>(b)) + kVideoPanelOffset;
+        const size_t bytes = static_cast<size_t>(kVideoPanelMaxWidth) * height * 4;
+        std::memcpy(m_panelPixels.data(), source, bytes);
+        MemoryBarrier();
+        if (b->panelSequence != sequence) return;  // réécrite pendant la lecture : au prochain instant
+        DeviceLock lock(m_multithread.get());
+        D3D11_BOX box = {0, 0, 0, static_cast<UINT>(kVideoPanelMaxWidth), height, 1};
+        m_context->UpdateSubresource(m_panel.get(), 0, &box, m_panelPixels.data(), kVideoPanelMaxWidth * 4, 0);
+        m_panelSequence = sequence;
+        m_panelWidth = width;
+        m_panelHeight = height;
+    }
+
     bool convert(ID3D11Texture2D* target, UINT subresource) {
+        updatePanel();
         DeviceLock lock(m_multithread.get());
         D3D11_TEXTURE2D_DESC desc;
         target->GetDesc(&desc);
@@ -1218,44 +1367,77 @@ class Recorder {
 
         // Cadre dans la partie qui contient l'œil, puis ramené aux coordonnées de toute la texture.
         const uint32_t rw = m_rect[2] ? m_rect[2] : m_privateWidth, rh = m_rect[3] ? m_rect[3] : m_privateHeight;
-        CropBox box = ComputeCrop(static_cast<int>(rw), static_cast<int>(rh), m_fov[0], m_fov[1], m_fov[2], m_fov[3], m_center[0], m_center[1],
-                                  static_cast<float>(m_width) / static_cast<float>(m_height), m_options.field);
+        const float videoAspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+        const CropBox eyeBox = ComputeCrop(static_cast<int>(rw), static_cast<int>(rh), m_fov[0], m_fov[1], m_fov[2], m_fov[3], m_center[0], m_center[1],
+                                           videoAspect, m_options.field);
+        CropBox box = eyeBox;
         const float tw = static_cast<float>(m_privateWidth), th = static_cast<float>(m_privateHeight);
         box.x = (static_cast<float>(m_rect[0]) + box.x * static_cast<float>(rw)) / tw;
         box.y = (static_cast<float>(m_rect[1]) + box.y * static_cast<float>(rh)) / th;
         box.w = box.w * static_cast<float>(rw) / tw;
         box.h = box.h * static_cast<float>(rh) / th;
+
+        // Quatre échantillons par pixel de sortie, à un quart de pixel du centre : moyenne d'une zone
+        // d'environ deux pixels, assez pour réduire une image d'œil de 3 ou 4 K sans scintillement.
+        ShaderParams p = {};
+        const float crop[4] = {box.x, box.y, box.w, box.h};
+        const float taps[4] = {box.w / static_cast<float>(m_width) * 0.25f, box.h / static_cast<float>(m_height) * 0.25f, m_linear ? 1.f : 0.f, 0.f};
+        std::memcpy(p.crop, crop, sizeof(crop));
+        std::memcpy(p.taps, taps, sizeof(taps));
+        // Panneau : à sa place (coins vus par l'œil enregistré) ou dans un coin, s'il est affiché dans le casque.
+        bool panel = false;
+        if (m_panelView && m_panelWidth > 0 && m_panelHeight > 0 && (m_panelFlags & kVideoPanelShown)) {
+            if (m_options.overlay == kVideoOverlayPlace && (m_panelFlags & kVideoPanelPlaced))
+                panel = PanelClipCorners(m_panelCorners, m_fov[0], m_fov[1], m_fov[2], m_fov[3], eyeBox, p.corner);
+            else if (m_options.overlay == kVideoOverlayCorner) {
+                PanelCornerRect(static_cast<int>(m_options.overlayCorner), m_options.overlaySize,
+                                static_cast<float>(m_panelHeight) / static_cast<float>(m_panelWidth), videoAspect, p.corner);
+                panel = true;
+            }
+            p.panelUv[0] = static_cast<float>(m_panelWidth) / static_cast<float>(kVideoPanelMaxWidth);
+            p.panelUv[1] = static_cast<float>(m_panelHeight) / static_cast<float>(kVideoPanelMaxHeight);
+        }
+        D3D11_MAPPED_SUBRESOURCE mapped;
         ID3D11DeviceContext* c = m_context.get();
-        c->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        if (FAILED(c->Map(m_params.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
+        std::memcpy(mapped.pData, &p, sizeof(p));
+        c->Unmap(m_params.get(), 0);
+
         c->IASetInputLayout(nullptr);
-        c->VSSetShader(m_vs.get(), nullptr, 0);
-        ID3D11ShaderResourceView* views[] = {m_privateView.get()};
         ID3D11SamplerState* samplers[] = {m_sampler.get()};
         ID3D11Buffer* buffers[] = {m_params.get()};
-        c->PSSetShaderResources(0, 1, views);
-        c->PSSetSamplers(0, 1, samplers);
+        c->VSSetConstantBuffers(0, 1, buffers);
         c->PSSetConstantBuffers(0, 1, buffers);
-        c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
-        c->RSSetState(nullptr);
-        for (int pass = 0; pass < 2; ++pass) {
-            const int w = pass == 0 ? m_width : m_width / 2, h = pass == 0 ? m_height : m_height / 2;
-            // Quatre échantillons par pixel de sortie, à un quart de pixel du centre : moyenne d'une zone
-            // d'environ deux pixels, assez pour réduire une image d'œil de 3 ou 4 K sans scintillement.
-            ShaderParams p = {{box.x, box.y, box.w, box.h}, {box.w / static_cast<float>(w) * 0.25f, box.h / static_cast<float>(h) * 0.25f, m_linear ? 1.f : 0.f, 0.f}};
-            D3D11_MAPPED_SUBRESOURCE mapped;
-            if (FAILED(c->Map(m_params.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) return false;
-            std::memcpy(mapped.pData, &p, sizeof(p));
-            c->Unmap(m_params.get(), 0);
-            ID3D11RenderTargetView* target2[] = {pass == 0 ? luma.get() : chroma.get()};
-            c->OMSetRenderTargets(1, target2, nullptr);
+        c->PSSetSamplers(0, 1, samplers);
+        ID3D11ShaderResourceView* noView[] = {nullptr};
+        const auto pass = [&](ID3D11RenderTargetView* targetView, int w, int h, ID3D11VertexShader* vs, ID3D11PixelShader* ps, ID3D11ShaderResourceView* view,
+                              D3D11_PRIMITIVE_TOPOLOGY topology, UINT vertices) {
+            c->PSSetShaderResources(0, 1, noView);  // une image ne peut pas être lue et écrite à la fois
+            ID3D11RenderTargetView* targets[] = {targetView};
+            c->OMSetRenderTargets(1, targets, nullptr);
+            ID3D11ShaderResourceView* views[] = {view};
+            c->PSSetShaderResources(0, 1, views);
             D3D11_VIEWPORT viewport = {0.f, 0.f, static_cast<float>(w), static_cast<float>(h), 0.f, 1.f};
             c->RSSetViewports(1, &viewport);
-            c->PSSetShader(pass == 0 ? m_psY.get() : m_psUV.get(), nullptr, 0);
-            c->Draw(3, 0);
+            c->IASetPrimitiveTopology(topology);
+            c->VSSetShader(vs, nullptr, 0);
+            c->PSSetShader(ps, nullptr, 0);
+            c->Draw(vertices, 0);
+        };
+        c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+        c->RSSetState(nullptr);
+        pass(m_frameTarget.get(), m_width, m_height, m_vs.get(), m_psEye.get(), m_privateView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        if (panel) {
+            c->OMSetBlendState(m_blend.get(), nullptr, 0xFFFFFFFF);
+            c->RSSetState(m_raster.get());
+            pass(m_frameTarget.get(), m_width, m_height, m_vsPanel.get(), m_psPanel.get(), m_panelView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, 4);
+            c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+            c->RSSetState(nullptr);
         }
+        pass(luma.get(), m_width, m_height, m_vs.get(), m_psY.get(), m_frameView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        pass(chroma.get(), m_width / 2, m_height / 2, m_vs.get(), m_psUV.get(), m_frameView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
         ID3D11RenderTargetView* none[] = {nullptr};
         c->OMSetRenderTargets(1, none, nullptr);
-        ID3D11ShaderResourceView* noView[] = {nullptr};
         c->PSSetShaderResources(0, 1, noView);
         c->Flush();
         return true;
@@ -1317,8 +1499,20 @@ class Recorder {
     int m_stuckSlot = -1;  // texture partagée encore réservée (copie pas finie)
     uint64_t m_stuckValue = 0;
     Ptr<ID3D12Device> m_d3d12;
-    Ptr<ID3D11VertexShader> m_vs;
-    Ptr<ID3D11PixelShader> m_psY, m_psUV;
+    Ptr<ID3D11VertexShader> m_vs, m_vsPanel;
+    Ptr<ID3D11PixelShader> m_psEye, m_psPanel, m_psY, m_psUV;
+    Ptr<ID3D11Texture2D> m_frame;  // image intermédiaire de la taille de la vidéo (œil cadré, puis panneau)
+    Ptr<ID3D11RenderTargetView> m_frameTarget;
+    Ptr<ID3D11ShaderResourceView> m_frameView;
+    // Panneau dans la vidéo : image fournie par la layer, recopiée quand elle change.
+    Ptr<ID3D11Texture2D> m_panel;
+    Ptr<ID3D11ShaderResourceView> m_panelView;
+    Ptr<ID3D11BlendState> m_blend;
+    Ptr<ID3D11RasterizerState> m_raster;
+    std::vector<uint8_t> m_panelPixels;
+    uint32_t m_panelSequence = 0, m_panelWidth = 0, m_panelHeight = 0;
+    uint32_t m_panelFlags = 0;     // de la dernière image du jeu (shared_block.h)
+    float m_panelCorners[12] = {};
     Ptr<ID3D11Buffer> m_params;
     Ptr<ID3D11SamplerState> m_sampler;
     int m_width = 0, m_height = 0;
@@ -1343,6 +1537,7 @@ class Recorder {
     Ptr<IMFVideoSampleAllocatorEx> m_allocator;
     DWORD m_videoStream = 0, m_audioStream = 0;
     bool m_writing = false;
+    bool m_qualityApplied = false;  // compromis vitesse / qualité accepté par l'encodeur
     int64_t m_origin = 0;
     int64_t m_videoEnd = 0;
     int64_t m_audioWritten = 0;

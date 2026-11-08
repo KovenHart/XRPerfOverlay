@@ -104,8 +104,8 @@ layer/src/vr_host.cpp         XRPerfVR: OpenVR games (waiting for SteamVR, sessi
 layer/src/window_capture.cpp  XRPerfCapture.dll: window capture (Windows capture API) to shared memory
 layer/src/swapchain_registry.h  video: the game's swapchains (format, last rendered image), followed only if [video] capture=1
 layer/src/video_producer.cpp  video: copies one eye's image to shared textures (Direct3D 11 / 12), never waits
-layer/src/video_math.h        video: which frames to copy, framing centered on the head, sound timeline (tested in preview.cpp)
-layer/src/video_record.cpp    XRPerfRecord.dll: shared textures -> NV12 (shaders) -> hardware encoder, PC sound and microphone, MP4
+layer/src/video_math.h        video: which frames to copy, framing centered on the head, panel position in the video, sound timeline (tested in preview.cpp)
+layer/src/video_record.cpp    XRPerfRecord.dll: shared textures -> framed image + panel -> NV12 (shaders) -> hardware encoder, PC sound and microphone, MP4
 sensors/VideoRecorder.cs      video: shared memory, XRPerfRecord.dll control, global hotkey (RegisterHotKey)
 layer/src/settings_apply.h    bounded application of the settings sent by XRPerfSensors (including the language)
 layer/src/shared_block.h      shared memory format (must stay aligned with sensors/*.cs)

@@ -311,6 +311,7 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
                     HeadForwardInEye(quat(view.pose.orientation), quat(projection->views[0].pose.orientation),
                                      quat(projection->views[1].pose.orientation), frame.centerX, frame.centerY);
                 }
+                videoPanelPlacement(*projection, view, frameEndInfo.displayTime, frame);
                 m_video->publish(frame);
             }
         }
@@ -322,6 +323,34 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
     m_videoTarget.mipCount = info.mipCount;
     m_videoTarget.width = info.width;
     m_videoTarget.height = info.height;
+}
+
+// Où le panneau se trouve dans l'image de l'œil enregistré : coins du calque dessiné à cette image, ramenés
+// dans le repère de cet œil (le calque peut être dans un autre repère que la scène : main, tête).
+void Overlay::videoPanelPlacement(const XrCompositionLayerProjection& projection, const XrCompositionLayerProjectionView& view, XrTime displayTime,
+                                  VideoFrameInfo& frame) {
+    const uint32_t mode = m_video ? m_video->overlayMode() : kVideoOverlayOff;
+    if (mode == kVideoOverlayOff || !m_videoQuad.shown) return;
+    frame.panelFlags |= kVideoPanelShown;
+    if (mode != kVideoOverlayPlace || !m_videoQuad.placed) return;
+    const auto toPose = [](const XrPosef& p) {
+        Pose r;
+        r.position = {p.position.x, p.position.y, p.position.z};
+        r.orientation = {p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w};
+        return r;
+    };
+    Pose quadInScene = toPose(m_videoQuad.pose);
+    if (m_videoQuad.space != projection.space) {
+        if (!m_next.LocateSpace || m_videoQuad.space == XR_NULL_HANDLE) return;
+        XrSpaceLocation location = {XR_TYPE_SPACE_LOCATION};
+        const XrSpaceLocationFlags needed = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+        if (XR_FAILED(m_next.LocateSpace(m_videoQuad.space, projection.space, displayTime, &location)) || (location.locationFlags & needed) != needed)
+            return;
+        quadInScene = Compose(toPose(location.pose), quadInScene);
+    }
+    const Pose quadInEye = Compose(Inverse(toPose(view.pose)), quadInScene);
+    QuadCorners(quadInEye, m_videoQuad.size.width, m_videoQuad.size.height, frame.panelCorners);
+    frame.panelFlags |= kVideoPanelPlaced;
 }
 
 void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains) {
@@ -784,6 +813,20 @@ void Overlay::sample(double now) {
         m_desktopPanel->render(data, 1.f, 1.f);
         m_panelShare.publish(m_desktopPanel->pixels(), Panel::contentHeight(data));
     }
+    // Panneau dans la vidéo : même dessin et même opacité que dans le casque, seulement si l'enregistrement le demande.
+    bool videoPanel = false;
+    {
+        std::unique_lock<std::mutex> videoLock(m_videoMutex, std::try_to_lock);
+        videoPanel = videoLock.owns_lock() && m_video && m_video->overlayMode() != kVideoOverlayOff;
+    }
+    if (videoPanel) {
+        static_assert(Panel::kWidth <= kVideoPanelMaxWidth && Panel::kHeight <= kVideoPanelMaxHeight, "place du panneau dans le bloc video");
+        if (!m_videoPanel) m_videoPanel.reset(new Panel());
+        m_videoPanel->render(data, m_config.opacity, m_config.globalOpacity);  // hors verrou : la copie du jeu n'attend pas
+        std::unique_lock<std::mutex> videoLock(m_videoMutex, std::try_to_lock);
+        if (videoLock.owns_lock() && m_video)
+            m_video->publishPanel(m_videoPanel->pixels(), Panel::kWidth, Panel::contentHeight(data), Panel::kWidth);
+    }
     m_lastData = data;
     m_lastSample = now;
     m_panelDirty = true;
@@ -907,6 +950,7 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
+    m_videoQuad = VideoQuad();
     if (m_session == XR_NULL_HANDLE) return 0;
 
     // Mesures : toujours actives, même panneau masqué ou sans affichage possible (Vulkan...).
@@ -976,6 +1020,7 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
 
     // Panneau de performances : devant les yeux, ou accroché à une main.
     if (wantPanel) {
+        m_videoQuad.shown = true;
         XrSpace space = m_viewSpace;
         XrPosef pose = quadPose();
         const HandResult hand =
@@ -990,6 +1035,10 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
             const int height = Panel::contentHeight(m_shownLayout, m_shownInfo, m_shownStatus);
             quad.subImage.imageRect.extent = {Panel::kWidth, height};
             quad.size = {m_config.width, m_config.width * static_cast<float>(height) / static_cast<float>(Panel::kWidth)};
+            m_videoQuad.placed = true;
+            m_videoQuad.space = quad.space;
+            m_videoQuad.pose = quad.pose;
+            m_videoQuad.size = quad.size;
         }
     }
 

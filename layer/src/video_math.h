@@ -105,6 +105,67 @@ inline CropBox ComputeCrop(int width, int height, float tanLeft, float tanRight,
     return box;
 }
 
+// --- Panneau dans la vidéo --------------------------------------------------------------------------
+//
+// Un jeu OpenXR soumet l'image de l'œil sans le panneau (le runtime l'ajoute ensuite) : l'enregistreur le
+// dessine lui-même, soit à sa place (là où il est vu dans le casque), soit dans un coin de la vidéo.
+// Positions données en coordonnées de découpe de Direct3D (x, y, z, w ; x et y de -1 à 1 une fois divisés
+// par w, y vers le haut), coins dans l'ordre haut gauche, haut droit, bas gauche, bas droit.
+
+// Coins d'un calque rectangulaire `width` x `height` (mètres) de pose `quadInEye`, dans le repère de l'œil
+// (x à droite, y en haut, -z devant) : 4 fois x, y, z.
+inline void QuadCorners(const Pose& quadInEye, float width, float height, float out[12]) {
+    const float hw = width * 0.5f, hh = height * 0.5f;
+    const Vec3 local[4] = {{-hw, hh, 0.f}, {hw, hh, 0.f}, {-hw, -hh, 0.f}, {hw, -hh, 0.f}};
+    for (int i = 0; i < 4; ++i) {
+        const Vec3 p = quadInEye.position + Rotate(quadInEye.orientation, local[i]);
+        out[i * 3] = p.x;
+        out[i * 3 + 1] = p.y;
+        out[i * 3 + 2] = p.z;
+    }
+}
+
+// Panneau à sa place : coins (repère de l'œil) vers la vidéo, qui montre `crop` de l'image de l'œil, elle-même
+// bordée par les tangentes tanLeft... ; w = profondeur, pour que la carte graphique applique la perspective à
+// la texture et coupe ce qui passe à moins de 5 cm devant l'œil (ou derrière). false : rien de visible.
+inline bool PanelClipCorners(const float corners[12], float tanLeft, float tanRight, float tanUp, float tanDown, const CropBox& crop, float out[16]) {
+    constexpr float kNear = 0.05f;
+    const float dx = tanRight - tanLeft, dy = tanUp - tanDown;
+    if (!(dx > 1e-4f) || !(dy > 1e-4f) || !(crop.w > 1e-4f) || !(crop.h > 1e-4f)) return false;
+    // Écran = a * tangente + b (en x), c * tangente + d (en y) ; multiplié par la profondeur.
+    const float a = 2.f / (dx * crop.w), b = 2.f * (-tanLeft / dx - crop.x) / crop.w - 1.f;
+    const float c = 2.f / (dy * crop.h), d = 1.f - 2.f * (tanUp / dy - crop.y) / crop.h;
+    bool front = false;
+    for (int i = 0; i < 4; ++i) {
+        const float x = corners[i * 3], y = corners[i * 3 + 1], depth = -corners[i * 3 + 2];
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(depth)) return false;
+        out[i * 4] = a * x + b * depth;
+        out[i * 4 + 1] = c * y + d * depth;
+        out[i * 4 + 2] = depth - kNear;
+        out[i * 4 + 3] = depth;
+        if (depth > kNear) front = true;
+    }
+    return front;
+}
+
+// Panneau dans un coin (0 haut gauche, 1 haut droit, 2 bas gauche, 3 bas droit) : largeur `size` (part de
+// la largeur de la vidéo), hauteur selon `panelRatio` (hauteur / largeur du panneau), marge de 3 % de la
+// hauteur de la vidéo. `videoAspect` : largeur / hauteur de la vidéo.
+inline void PanelCornerRect(int corner, float size, float panelRatio, float videoAspect, float out[16]) {
+    const float my = 0.06f, mx = videoAspect > 0.f ? my / videoAspect : my;
+    const float w = 2.f * std::min(0.9f, std::max(0.05f, size));
+    const float h = std::min(2.f - 2.f * my, w * std::max(0.f, panelRatio) * videoAspect);
+    const float left = (corner & 1) ? 1.f - mx - w : -1.f + mx;
+    const float top = (corner & 2) ? -1.f + my + h : 1.f - my;
+    const float xs[4] = {left, left + w, left, left + w}, ys[4] = {top, top, top - h, top - h};
+    for (int i = 0; i < 4; ++i) {
+        out[i * 4] = xs[i];
+        out[i * 4 + 1] = ys[i];
+        out[i * 4 + 2] = 0.f;
+        out[i * 4 + 3] = 1.f;
+    }
+}
+
 // Taille de la vidéo : hauteur choisie (720, 1080, 1440, 2160...), largeur selon le format, nombres
 // pairs (exigés par l'encodage 4:2:0) et multiples de 2.
 inline void VideoSize(int height, float aspect, int& outWidth, int& outHeight) {

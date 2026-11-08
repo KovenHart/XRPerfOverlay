@@ -17,8 +17,9 @@ namespace XRPerfSensors
         // Mémoire partagée : même disposition que VideoShareHeader (layer/src/shared_block.h).
         private const string ShareName = @"Local\XRPerfOverlay.Video";
         private const uint Magic = 0x56505258; // "XRPV"
-        private const uint Version = 2;
-        private const int ShareSize = 4096;
+        private const uint Version = 3;
+        // En-tête (4096 octets), puis l'image du panneau pour la vidéo : 640 x 320 pixels RGBA (kVideoShareBytes).
+        private const int ShareSize = 4096 + 640 * 320 * 4;
         // Lecture et écriture pour les jeux (non administrateurs, en conteneur d'application ou à faible
         // niveau d'intégrité : l'étiquette « LW » leur permet d'y écrire).
         private const string Sddl = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)(A;;GRGW;;;AC)S:(ML;;NW;;;LW)";
@@ -39,6 +40,10 @@ namespace XRPerfSensors
             public float Field;
             public uint GameAudio;
             public uint MicAudio;
+            public uint QualityVsSpeed; // 1 à 100 (plus haut : meilleure image, encodage plus lent) ; 0 : réglage de l'encodeur
+            public uint Overlay;        // panneau dans la vidéo : 0 non, 1 à sa place dans le casque, 2 dans un coin
+            public uint OverlayCorner;  // 0 haut gauche, 1 haut droite, 2 bas gauche, 3 bas droite
+            public float OverlaySize;   // largeur du panneau dans un coin, part de la largeur de la vidéo
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Folder;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string RenderDevice;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string CaptureDevice;
@@ -113,6 +118,35 @@ namespace XRPerfSensors
 
         /// <summary>Encodeurs matériels : 1 = H.264, 2 = H.265, 4 = AV1 ; -1 tant que la recherche n'est pas finie.</summary>
         public int Codecs { get { return _codecs; } }
+
+        /// <summary>Débit utilisé (Mbit/s) : celui de la qualité choisie, ou celui réglé à la main.</summary>
+        public static int Bitrate(Settings s)
+        {
+            if (s.VideoQuality == "custom") return s.VideoBitrate;
+            float aspect = s.VideoAspect == "4:3" ? 4f / 3f : s.VideoAspect == "1:1" ? 1f : 16f / 9f;
+            return PresetBitrate(s.VideoQuality, s.VideoCodec, s.VideoHeight, aspect, s.VideoFps);
+        }
+
+        /// <summary>
+        /// Débit d'une qualité (Mbit/s). Référence : H.264, 1920 x 1080, 60 images/s ; H.265 et AV1 compressent
+        /// mieux (70 % et 60 % du débit pour une image comparable) ; le débit suit le nombre de pixels et la
+        /// cadence un peu moins que proportionnellement (exposants 0,8 et 0,75). Même calcul dans ui/app.js
+        /// (presetBitrate), qui affiche le résultat.
+        /// </summary>
+        public static int PresetBitrate(string quality, string codec, int height, float aspect, int fps)
+        {
+            double reference = quality == "light" ? 10 : quality == "balanced" ? 16 : quality == "max" ? 40 : 24;
+            double codecFactor = codec == "hevc" ? 0.7 : codec == "av1" ? 0.6 : 1.0;
+            double pixels = (double)height * Math.Round(height * aspect, MidpointRounding.AwayFromZero) / (1920.0 * 1080.0);
+            double mbps = reference * codecFactor * Math.Pow(pixels, 0.8) * Math.Pow(fps / 60.0, 0.75);
+            return (int)Math.Max(Settings.MinVideoBitrate, Math.Min(Settings.MaxVideoBitrate, Math.Round(mbps, MidpointRounding.AwayFromZero)));
+        }
+
+        // Compromis vitesse / qualité de l'encodeur (CODECAPI_AVEncCommonQualityVsSpeed) ; à la main : celui de l'encodeur.
+        private static int QualityVsSpeedOf(string quality)
+        {
+            return quality == "light" ? 33 : quality == "balanced" ? 50 : quality == "high" ? 70 : quality == "max" ? 100 : 0;
+        }
 
         public static int CodecBit(string codec) { return codec == "hevc" ? 2 : codec == "av1" ? 4 : 1; }
 
@@ -241,7 +275,11 @@ namespace XRPerfSensors
                 Codec = (uint)Math.Max(0, Array.IndexOf(Settings.VideoCodecs, s.VideoCodec)),
                 Height = (uint)s.VideoHeight,
                 Fps = (uint)s.VideoFps,
-                BitrateKbps = (uint)(s.VideoBitrate * 1000),
+                BitrateKbps = (uint)(Bitrate(s) * 1000),
+                QualityVsSpeed = (uint)QualityVsSpeedOf(s.VideoQuality),
+                Overlay = (uint)Math.Max(0, Array.IndexOf(Settings.VideoOverlays, s.VideoOverlay)),
+                OverlayCorner = (uint)Math.Max(0, Array.IndexOf(Settings.VideoCorners, s.VideoOverlayCorner)),
+                OverlaySize = s.VideoOverlaySize / 100f,
                 Eye = (uint)s.VideoEye,
                 Aspect = aspect,
                 Field = s.VideoField / 100f,

@@ -122,8 +122,8 @@ layer/src/window_pixels.h     recadrage, réduction et opacité de l'image captu
 layer/src/window_share.cpp    lecture de l'image capturée (layer et XRPerfVR)
 layer/src/swapchain_registry.h  vidéo : swapchains du jeu (format, dernière image rendue), suivies seulement si [video] capture=1
 layer/src/video_producer.cpp  vidéo : copie de l'image d'un œil vers des textures partagées (Direct3D 11 / 12), sans jamais attendre
-layer/src/video_math.h        vidéo : images à copier, cadrage centré sur la tête, son mis bout à bout (testé dans preview.cpp)
-layer/src/video_record.cpp    XRPerfRecord.dll : textures partagées -> NV12 (shaders) -> encodeur matériel, son du PC et micro, MP4
+layer/src/video_math.h        vidéo : images à copier, cadrage centré sur la tête, place du panneau dans la vidéo, son mis bout à bout (testé dans preview.cpp)
+layer/src/video_record.cpp    XRPerfRecord.dll : textures partagées -> image cadrée + panneau -> NV12 (shaders) -> encodeur matériel, son du PC et micro, MP4
 sensors/VideoRecorder.cs      vidéo : mémoire partagée, pilotage de XRPerfRecord.dll, raccourci global (RegisterHotKey)
 sensors/WindowCapture.cs      choix de la fenêtre, mémoire partagée, pilotage de la capture
 sensors/VrCompanion.cs        lancement, relance et arrêt de XRPerfVR
