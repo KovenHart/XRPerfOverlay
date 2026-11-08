@@ -298,6 +298,12 @@ namespace XRPerfSensors
                             Later(() => MoveXrLayer(moveId, moveManifest, delta));
                             break;
                         case "undoXrLayers": Later(UndoXrLayers); break;
+                        case "removeXrLayer":
+                            int orphanId = m.TryGetProperty("id", out JsonElement orphanIdElement) && orphanIdElement.ValueKind == JsonValueKind.Number &&
+                                           orphanIdElement.TryGetInt32(out int orphanNumber) ? orphanNumber : -1;
+                            string orphanManifest = Str(m, "manifest"), orphanLabel = Str(m, "label");
+                            Later(() => RemoveXrLayer(orphanId, orphanManifest, orphanLabel));
+                            break;
                         case "setXrLayer":
                             int xrId = m.TryGetProperty("id", out JsonElement xrIdElement) && xrIdElement.ValueKind == JsonValueKind.Number &&
                                        xrIdElement.TryGetInt32(out int xrNumber) ? xrNumber : -1;
@@ -695,6 +701,38 @@ namespace XRPerfSensors
                 : outcome == LayerRegistry.Outcome.Cancelled ? Loc.T("Autorisation refusée : la layer n'a pas été modifiée.", "Permission refused: the layer was not changed.")
                 : outcome == LayerRegistry.Outcome.Missing ? Loc.T("Cette inscription n'existe plus : la liste est mise à jour.", "This registration no longer exists: the list is being updated.")
                 : Loc.T("La layer n'a pas pu être modifiée (registre inaccessible).", "The layer could not be changed (registry not accessible)."));
+            SendConfig();
+        }
+
+        // Retirer l'inscription d'une layer désinstallée (fichier .json absent), après confirmation.
+        private async void RemoveXrLayer(int id, string manifest, string label)
+        {
+            XrLayerInfo layer = _lastConfig?.Layers.FirstOrDefault(l => l.Id == id);
+            if (layer == null || string.IsNullOrEmpty(layer.RawName) || !string.Equals(layer.Manifest, manifest, StringComparison.Ordinal) || layer.Ours)
+            {
+                PostToast(Loc.T("La liste des layers a changé : elle est mise à jour, recommencez.", "The list of layers has changed: it is being updated, try again."));
+                SendConfig();
+                return;
+            }
+            if (string.IsNullOrEmpty(label)) label = layer.Name ?? Path.GetFileNameWithoutExtension(layer.RawName);
+            string question = string.Format(Loc.T(
+                "Le fichier de « {0} » n'existe plus : son inscription dans le registre est un reste de désinstallation.\n\nRetirer cette inscription ?",
+                "The file of « {0} » no longer exists: its registry entry is a leftover from an uninstall.\n\nRemove this entry?"), label);
+            if (MessageBox.Show(this, question, Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+            LayerRegistry.Outcome outcome;
+            try
+            {
+                outcome = await LayerRegistry.RemoveOrphanAsync(layer.Machine, layer.RawName);
+            }
+            catch (Exception)
+            {
+                outcome = LayerRegistry.Outcome.Failed;
+            }
+            if (IsDisposed) return;
+            PostToast(outcome == LayerRegistry.Outcome.Done ? Loc.T("Inscription retirée.", "Entry removed.")
+                : outcome == LayerRegistry.Outcome.Cancelled ? Loc.T("Autorisation refusée : l'inscription n'a pas été retirée.", "Permission refused: the entry was not removed.")
+                : outcome == LayerRegistry.Outcome.Missing ? Loc.T("Cette inscription n'existe plus, ou son fichier est revenu : la liste est mise à jour.", "This entry no longer exists, or its file is back: the list is being updated.")
+                : Loc.T("L'inscription n'a pas pu être retirée (registre inaccessible).", "The entry could not be removed (registry not accessible)."));
             SendConfig();
         }
 

@@ -1394,6 +1394,9 @@ window.App = (function () {
 
   // Bouton « Désactiver » / « Réactiver » d'une layer : le programme demande confirmation avant de désactiver.
   function layerButton(action, named) {
+    if (action.remove)
+      return h("button", { class: "btn small", type: "button", onclick: () => send("removeXrLayer", { id: action.id, manifest: action.manifest, label: action.label }) },
+        t("cfg.layer.remove"));
     const text = action.on ? t("cfg.layer.enable") : named ? t("cfg.layer.disableNamed", { name: action.label }) : t("cfg.layer.disable");
     return h("button", { class: "btn small" + (action.on ? "" : " danger"), type: "button",
       onclick: () => send("setXrLayer", { id: action.id, manifest: action.manifest, on: action.on, label: action.label }) }, text);

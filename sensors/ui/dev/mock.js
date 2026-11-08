@@ -207,6 +207,13 @@
           setTimeout(() => sendConfig(), 300);
           break;
         }
+        case "removeXrLayer": {
+          if (!configCache || !confirm("Retirer l'inscription de « " + msg.label + " » ?")) break;
+          configCache.layers = configCache.layers.filter(x => !(x.id === msg.id && x.manifest === msg.manifest));
+          reply({ type: "toast", text: "Inscription retirée." });
+          setTimeout(() => sendConfig(), 300);
+          break;
+        }
         case "moveXrLayer": {
           const list = configCache ? configCache.layers : [];
           const l = list.find(x => x.id === msg.id && x.manifest === msg.manifest);
