@@ -25,7 +25,7 @@ namespace XRPerfSensors
         // Mode des rapports ([summary] mode), dans l'ordre de ReportMode de layer/src/config.h.
         public static readonly string[] ReportModeNames = { "auto", "manual", "off" };
         public const int ReportAuto = 0, ReportManual = 1, ReportOff = 2;
-        public static readonly string[] ThemeNames = { "dark", "light", "contrast", "green", "amber", "violet", "custom" };
+        public static readonly string[] ThemeNames = { "dark", "light", "contrast", "green", "amber", "violet", "custom", "classic", "evo" };
         public const int CustomTheme = 6;
         // Ordre des énumérations Anchor, HandPlacement et WatchStyle de la layer.
         public static readonly string[] AnchorNames = { "view", "left_hand", "right_hand" };

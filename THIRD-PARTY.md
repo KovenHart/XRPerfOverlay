@@ -92,6 +92,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow) — SIL Open Font License 1.1
 (texte complet dans `sensors/ui/fonts/OFL.txt`). Sous-ensembles latins convertis au format WOFF.
 
+## Police Inter (`sensors/ui/fonts/`)
+
+Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter) — SIL Open Font License 1.1
+(texte complet dans `sensors/ui/fonts/OFL-Inter.txt`). Instances statiques (300, 400, 500, 600), sous-ensembles
+latins convertis au format WOFF. Utilisée par les thèmes Classic et EVO de la fenêtre.
+
 ## .NET (paquet de distribution)
 
 Le paquet de distribution contient le runtime .NET et Windows Forms dans `programme\sensors\`, pour que

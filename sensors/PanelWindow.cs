@@ -529,7 +529,7 @@ namespace XRPerfSensors
         public int CropLeft, CropTop, CropRight, CropBottom;  // part retirée de chaque côté, en %
 
         // Interface (fenêtre principale, ui/app.js).
-        public static readonly string[] UiThemes = { "panel", "dark", "light", "contrast", "green", "amber", "violet", "custom" };
+        public static readonly string[] UiThemes = { "panel", "dark", "light", "contrast", "green", "amber", "violet", "classic", "evo", "custom" };
         public const int MinUiScale = 85, MaxUiScale = 130;
         public string Language = "auto";       // "auto" (langue de Windows), "fr" ou "en" (Loc.Names)
         public string UiTheme = "panel";       // couleurs de l'interface : comme le panneau, un thème, ou personnalisées

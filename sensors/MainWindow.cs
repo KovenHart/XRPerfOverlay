@@ -289,6 +289,15 @@ namespace XRPerfSensors
                         case "listWindows": SendWindows(); break;
                         case "chooseWindow": ChooseWindow(Str(m, "id")); break;
                         case "diagnose": SendConfig(); break;
+                        case "moveXrLayer":
+                            int moveId = m.TryGetProperty("id", out JsonElement moveIdElement) && moveIdElement.ValueKind == JsonValueKind.Number &&
+                                         moveIdElement.TryGetInt32(out int moveNumber) ? moveNumber : -1;
+                            int delta = m.TryGetProperty("delta", out JsonElement deltaElement) && deltaElement.ValueKind == JsonValueKind.Number &&
+                                        deltaElement.TryGetInt32(out int deltaNumber) ? Math.Sign(deltaNumber) : 0;
+                            string moveManifest = Str(m, "manifest");
+                            Later(() => MoveXrLayer(moveId, moveManifest, delta));
+                            break;
+                        case "undoXrLayers": Later(UndoXrLayers); break;
                         case "setXrLayer":
                             int xrId = m.TryGetProperty("id", out JsonElement xrIdElement) && xrIdElement.ValueKind == JsonValueKind.Number &&
                                        xrIdElement.TryGetInt32(out int xrNumber) ? xrNumber : -1;
@@ -314,10 +323,10 @@ namespace XRPerfSensors
             return e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out JsonElement v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
         }
 
-        private static List<string> Ids(JsonElement m)
+        private static List<string> Ids(JsonElement m, string property = "ids")
         {
             var ids = new List<string>();
-            if (m.TryGetProperty("ids", out JsonElement array) && array.ValueKind == JsonValueKind.Array)
+            if (m.TryGetProperty(property, out JsonElement array) && array.ValueKind == JsonValueKind.Array)
                 foreach (JsonElement id in array.EnumerateArray())
                     if (id.ValueKind == JsonValueKind.String) ids.Add(id.GetString());
             return ids;
@@ -503,9 +512,45 @@ namespace XRPerfSensors
             {
                 _configBusy = false;
                 _lastConfig = task.Status == TaskStatus.RanToCompletion ? task.Result : null;
+                // « Annuler le dernier changement » disponible : avant le relevé, pour que la page le dessine d'emblée.
+                Post(Json(w => { w.WriteString("type", "xrUndo"); w.WriteBoolean("available", OpenXrLayers.HasBackup); }));
                 Post(_lastConfig != null ? ConfigProbe.Message(_lastConfig) : "{\"type\":\"config\",\"config\":null}");
                 if (_configAgain) SendConfig();
             }));
+        }
+
+        // Ordre des layers depuis la page Configuration : la layer `id` du dernier relevé monte (delta -1) ou
+        // descend (+1) d'un cran parmi celles du même emplacement (HKLM ou HKCU). OpenXrLayers réécrit la clé
+        // sans rien perdre et garde l'état d'avant pour « Annuler ».
+        private void MoveXrLayer(int id, string manifest, int delta)
+        {
+            XrLayerInfo layer = _lastConfig?.Layers.FirstOrDefault(l => l.Id == id);
+            if (layer == null || delta == 0 || string.IsNullOrEmpty(layer.RawName) || !string.Equals(layer.Manifest, manifest, StringComparison.Ordinal))
+            {
+                PostToast(Loc.T("La liste des layers a changé : elle est mise à jour, recommencez.", "The list of layers has changed: it is being updated, try again."));
+                SendConfig();
+                return;
+            }
+            List<string> order = _lastConfig.Layers.Where(l => l.Scope == layer.Scope && !string.IsNullOrEmpty(l.RawName)).Select(l => l.RawName).ToList();
+            int from = order.IndexOf(layer.RawName), to = from + delta;
+            if (from < 0 || to < 0 || to >= order.Count)
+            {
+                SendConfig();
+                return;
+            }
+            order[from] = order[to];
+            order[to] = layer.RawName;
+            string error = OpenXrLayers.Reorder(layer.Machine ? OpenXrLayers.Machine : OpenXrLayers.User, order);
+            if (error != null) PostToast(error);
+            SendConfig();
+        }
+
+        private void UndoXrLayers()
+        {
+            string error = OpenXrLayers.Restore();
+            if (error != null) PostToast(error);
+            _app.LayerChanged();
+            SendConfig();
         }
 
         // Activer ou désactiver une layer depuis la page Configuration. Celle de XR Perf Overlay passe par son

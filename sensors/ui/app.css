@@ -8,6 +8,11 @@
 @font-face { font-family: "Barlow Semi Condensed"; font-weight: 500; src: url("fonts/BarlowSemiCondensed-Medium.woff") format("woff"); font-display: block; }
 @font-face { font-family: "Barlow Semi Condensed"; font-weight: 600; src: url("fonts/BarlowSemiCondensed-SemiBold.woff") format("woff"); font-display: block; }
 @font-face { font-family: "Barlow Semi Condensed"; font-weight: 700; src: url("fonts/BarlowSemiCondensed-Bold.woff") format("woff"); font-display: block; }
+/* Inter : thèmes Classic et EVO. */
+@font-face { font-family: "Inter"; font-weight: 300; src: url("fonts/Inter-Light.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Inter"; font-weight: 400; src: url("fonts/Inter-Regular.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Inter"; font-weight: 500; src: url("fonts/Inter-Medium.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Inter"; font-weight: 600; src: url("fonts/Inter-SemiBold.woff") format("woff"); font-display: block; }
 
 :root {
   color-scheme: dark;
@@ -35,6 +40,9 @@
   --s-cpu: #d95926;
   --s-gpu: #199e70;
   --s-vram: #3987e5;
+  --rail: var(--surface);         /* fond du menu latéral */
+  --title: var(--text);           /* titre de la carte principale du tableau de bord */
+  --accent-strong: var(--accent); /* fond des choix actifs */
 
   --ui-scale: 1;
   --font: "Barlow", "Segoe UI", system-ui, sans-serif;
@@ -88,7 +96,7 @@ p { margin: 0; }
 .rail {
   display: flex; flex-direction: column; gap: 2px;
   padding: 18px 12px 14px;
-  background: var(--surface);
+  background: var(--rail);
   border-right: 1px solid var(--line);
   overflow-y: auto;
 }
@@ -315,6 +323,7 @@ details.more p { margin-top: 8px; max-width: 70ch; }
 .dash-stage { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto 1fr; }
 .dash-stage .stage { border: 0; border-radius: 0; min-height: 300px; }
 .dash-stage .card-head { padding: 16px 20px 0; margin: 0 0 4px; }
+.dash-stage .card-head h2 { color: var(--title); }
 
 .quick { display: grid; gap: 0; }
 .quick .row:first-child { border-top: 0; }
@@ -546,3 +555,72 @@ table.grid .delta-cell { width: 26%; min-width: 120px; }
 .cfg-finding { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .cfg-finding > span { flex: 1 1 320px; }
 .btn.small { padding: 4px 10px; font-size: .86rem; min-height: 0; }
+.cfg-move { display: inline-flex; gap: 4px; }
+.cfg-move .btn.icon { width: 30px; min-height: 0; padding: 4px; }
+.cfg-move .btn.icon svg { width: 18px; height: 18px; }
+.cfg-order { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.cfg-order > span { flex: 1 1 320px; }
+
+/* --- Thèmes Classic et EVO : allure propre, en plus des couleurs (attribut data-style de <html>) ---- */
+
+:root[data-style] { --font: "Inter", "Segoe UI", system-ui, sans-serif; --font-cond: var(--font); }
+:root[data-style] h1, :root[data-style] h2, :root[data-style] h3 { letter-spacing: -.01em; }
+:root[data-style] .tile-value { font-size: 2.1rem; }
+
+/* Classic : gris, cartes sans bordure aux angles ronds, choix en pastilles, accent vert. */
+:root[data-style="classic"] { --radius-s: 8px; --radius: 12px; --radius-l: 16px; }
+[data-style="classic"] .rail { border-right: 0; }
+[data-style="classic"] :is(.card, .group, .chart, .verdict, .figure, .stat, .findings li, .theme-chip) { border-color: transparent; }
+[data-style="classic"] .nav-item { border-radius: 10px; font-weight: 500; }
+[data-style="classic"] .nav-item[aria-current="page"] { background: var(--raised); }
+[data-style="classic"] .nav-item[aria-current="page"]::before { display: none; }
+[data-style="classic"] .btn { border-radius: 999px; background: transparent; }
+[data-style="classic"] .btn:hover { background: var(--raised); }
+[data-style="classic"] .btn.primary { background: var(--accent); color: var(--accent-ink); }
+[data-style="classic"] .pill { border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+[data-style="classic"] .pill:is(.good, .live) { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 70%, transparent); }
+[data-style="classic"] .seg { border-radius: 999px; background: var(--canvas); }
+[data-style="classic"] .seg button { border-radius: 999px; }
+[data-style="classic"] .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+[data-style="classic"] .switch span { background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-strong); }
+[data-style="classic"] .switch span::after { background: var(--muted); }
+[data-style="classic"] .switch input:checked + span { background: var(--accent); box-shadow: none; }
+[data-style="classic"] .switch input:checked + span::after { background: #ffffff; }
+[data-style="classic"] .slider input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -8px; background: #ffffff; border: 0; box-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
+[data-style="classic"] .dash-stage .card-head h2 { font-size: 1.55rem; font-weight: 600; }
+[data-style="classic"] .theme-chip[aria-pressed="true"] { border-color: var(--accent); }
+
+/* EVO : bleu nuit, angles vifs, titres légers en capitales, étiquettes espacées, accent indigo. */
+:root[data-style="evo"] { --radius-s: 2px; --radius: 3px; --radius-l: 4px; }
+[data-style="evo"] :is(h1, h2) { text-transform: uppercase; font-weight: 300; letter-spacing: .02em; }
+[data-style="evo"] h1 { font-size: 1.75rem; }
+[data-style="evo"] .rhead h2 { text-transform: none; }  /* nom du jeu : tel quel */
+[data-style="evo"] .card-head h2, [data-style="evo"] .group-head h2 { font-size: 1.3rem; }
+[data-style="evo"] .dash-stage .card-head h2 { font-size: 1.6rem; }
+[data-style="evo"] h3 { font-weight: 600; }
+[data-style="evo"] :is(.row-label, .tile-label, .nav-group, .glossary summary) { text-transform: uppercase; font-size: .8rem; font-weight: 600; letter-spacing: .08em; }
+[data-style="evo"] .tile-label .name { text-transform: none; letter-spacing: 0; font-weight: 400; }
+[data-style="evo"] :is(.tile-value, .stat .v, .slider output) { font-weight: 400; }
+[data-style="evo"] .nav-item {
+  border-radius: 3px; text-transform: uppercase; font-size: .8rem; font-weight: 600; letter-spacing: .08em;
+  color: var(--muted); border: 1px solid transparent;
+}
+[data-style="evo"] .nav-item[aria-current="page"] { background: color-mix(in srgb, var(--accent) 12%, var(--rail)); border-color: var(--accent); color: var(--text); }
+[data-style="evo"] .nav-item[aria-current="page"]::before { display: none; }
+[data-style="evo"] .btn { border-radius: 2px; background: transparent; text-transform: uppercase; font-size: .78rem; font-weight: 600; letter-spacing: .08em; }
+[data-style="evo"] .btn:hover { background: var(--raised); }
+[data-style="evo"] .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #ffffff; }
+[data-style="evo"] .btn.icon { letter-spacing: 0; }
+[data-style="evo"] kbd { border-radius: 2px; }
+[data-style="evo"] .pill { border-radius: 2px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); text-transform: uppercase; font-size: .75rem; font-weight: 600; letter-spacing: .08em; }
+[data-style="evo"] .pill:is(.good, .live) { color: var(--good); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good) 45%, transparent); }
+[data-style="evo"] .seg { border-radius: 2px; padding: 0; gap: 0; }
+[data-style="evo"] .seg button { border-radius: 0; text-transform: uppercase; font-size: .78rem; font-weight: 600; letter-spacing: .08em; padding: 8px 14px; }
+[data-style="evo"] .seg button[aria-pressed="true"] { background: var(--accent-strong); color: #ffffff; box-shadow: none; }
+[data-style="evo"] .switch span { background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-strong); }
+[data-style="evo"] .switch span::after { background: var(--muted); }
+[data-style="evo"] .switch input:checked + span { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); box-shadow: inset 0 0 0 1px var(--accent); }
+[data-style="evo"] .switch input:checked + span::after { background: var(--accent); }
+[data-style="evo"] .slider input[type="range"]::-webkit-slider-thumb { background: var(--surface); border: 3px solid var(--accent); box-shadow: none; }
+[data-style="evo"] .select, [data-style="evo"] .color-pick, [data-style="evo"] .win-list, [data-style="evo"] .theme-chip { border-radius: 3px; }
+[data-style="evo"] .theme-chip .name { text-transform: uppercase; font-size: .75rem; font-weight: 600; letter-spacing: .08em; }

@@ -28,6 +28,8 @@
   let fullscreen = false;
   let timer = 0;
   const layer = { state: params.get("layer") || "enabled", busy: false, elevated: false };
+  // Ordre des layers (page Configuration) : ?xrorder=fg met OFXR Bridge au-dessus d'XR Perf Overlay.
+  let xrUndo = null;
   const reply = msg => setTimeout(() => window.App.receive(JSON.parse(JSON.stringify(msg))), 0);
 
   const sensors = { cpuName: "AMD Ryzen 7 9800X3D 8-Core Processor", gpuName: "NVIDIA GeForce RTX 4090", cpuLoad: 31, cpuTemp: 61, cpuMHz: 5040, gpuLoad: 78, gpuTemp: 66, gpuMHz: 2805, vramUsed: 21800, vramTotal: 24564 };
@@ -87,7 +89,9 @@
         layer("XR_APILAYER_MBUCCHIA_toolkit", P + "OpenXR-Toolkit\\XR_APILAYER_MBUCCHIA_toolkit.json", issues ? {} : { enabled: false }),
         issues ? layer(null, P + "OpenKneeboard\\OpenKneeboard-OpenXR.json", { exists: false, readable: false, library: null, libraryExists: null }) : null,
         issues ? layer("XR_APILAYER_NOVENDOR_other_framegen", "D:\\Mods\\SmoothFrames\\XR_APILAYER_NOVENDOR_ofxr_test.json", { libraryExists: false }) : null,
-      ].filter(Boolean).map((l, i) => Object.assign(l, { id: i })),
+        layer("XR_APILAYER_NOVENDOR_OBSMirror", "C:\\Users\\Player\\AppData\\Local\\OBSMirror\\XR_APILAYER_NOVENDOR_OBSMirror.json", { scope: "user", description: "OpenXR OBS Mirror" }),
+      ].filter(Boolean).map((l, i) => Object.assign(l, { id: i })).sort((x, y) => params.get("xrorder") === "fg" ? (y.id === 1) - (x.id === 1) : 0)
+        .map((l, i) => Object.assign(l, { id: i })),
       openVrRuntime: "C:\\Program Files (x86)\\Steam\\steamapps\\common\\SteamVR", openVrRuntimeExists: true,
       software: [{ name: "OpenXR-Toolkit", version: "1.3.2" }, { name: "Pimax Play", version: "2.0.3" }, { name: "SteamVR", version: "" }],
       cpu: "AMD Ryzen 7 9800X3D 8-Core Processor", threads: 16, ramGb: issues ? 16 : 32,
@@ -103,12 +107,18 @@
     };
   }
 
+  function keepUndo() { xrUndo = JSON.parse(JSON.stringify(configCache.layers)); }
+  function sendConfig() {
+    reply({ type: "xrUndo", available: !!xrUndo });
+    reply({ type: "config", config: configData() });
+  }
+
   window.Mock = {
     receive(msg) {
       switch (msg.type) {
         case "ready":
           Promise.all([load("dev/mock_images.js"), load("dev/mock_reports.js")]).then(() => {
-            reply({ type: "init", version: "1.7.2", layerVersion: "1.7.2", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
+            reply({ type: "init", version: "1.8.0", layerVersion: "1.8.0", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
               pawnio: params.get("pawnio") !== "0", fullscreen, layer, reportsFolder: "C:\\XRPerfOverlay\\sessions", page: params.get("page") || "dashboard" });
             reply({ type: "status", game: params.get("game") || "none", sensors: "ok" });
             reply(reportsData().list);
@@ -153,7 +163,11 @@
           // Comme l'invite UAC : un instant d'attente, puis le registre change.
           layer.busy = true;
           reply({ type: "layer", layer });
-          setTimeout(() => { layer.busy = false; layer.state = msg.on ? "enabled" : "disabled"; reply({ type: "layer", layer }); }, 900);
+          setTimeout(() => {
+            layer.busy = false; layer.state = msg.on ? "enabled" : "disabled";
+            if (configCache) configCache.layers.filter(x => x.ours && x.current).forEach(x => { x.enabled = !!msg.on; });
+            reply({ type: "layer", layer });
+          }, 900);
           break;
         case "fullscreen":
           fullscreen = msg.on;
@@ -164,17 +178,35 @@
           reply({ type: "overlay", overlay });
           break;
         case "diagnose":
-          setTimeout(() => reply({ type: "config", config: configData() }), 350);
+          setTimeout(() => sendConfig(), 350);
           break;
         case "setXrLayer": {
           const l = configCache && configCache.layers.find(x => x.id === msg.id);
           if (!l) break;
           if (!msg.on && !confirm("« " + msg.label + " » ne sera plus chargée dans aucun jeu OpenXR. Désactiver cette layer ?")) break;
+          keepUndo();
           l.enabled = !!msg.on;
           reply({ type: "toast", text: msg.on ? "Layer réactivée : elle sera chargée au prochain lancement d'un jeu." : "Layer désactivée : elle ne sera plus chargée au prochain lancement d'un jeu." });
-          setTimeout(() => reply({ type: "config", config: configData() }), 300);
+          setTimeout(() => sendConfig(), 300);
           break;
         }
+        case "moveXrLayer": {
+          const list = configCache ? configCache.layers : [];
+          const l = list.find(x => x.id === msg.id && x.manifest === msg.manifest);
+          const same = l ? list.filter(x => x.scope === l.scope) : [];
+          const j = same.indexOf(l) + msg.delta;
+          if (!l || j < 0 || j >= same.length) { reply({ type: "toast", text: "La liste a changé entre-temps." }); sendConfig(); break; }
+          keepUndo();
+          const other = same[j], a = list.indexOf(l), b = list.indexOf(other);
+          list[a] = other; list[b] = l;
+          list.forEach((x, i) => { x.id = i; });
+          setTimeout(() => sendConfig(), 250);
+          break;
+        }
+        case "undoXrLayers":
+          if (xrUndo) { configCache.layers = xrUndo; xrUndo = null; }
+          setTimeout(() => sendConfig(), 250);
+          break;
         case "copyText":
           (navigator.clipboard ? navigator.clipboard.writeText(msg.text) : Promise.reject()).then(
             () => reply({ type: "toast", text: lang === "en" ? "Diagnosis copied to the clipboard." : "Diagnostic copié dans le presse-papiers." }),

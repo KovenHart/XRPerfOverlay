@@ -4,6 +4,13 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.8.0
+
+- **Thèmes Classic et EVO** pour la fenêtre de XRPerfSensors (page Interface). Ils changent aussi l'allure : Classic, gris aux cartes arrondies, accent vert et titres orange ; EVO, bleu nuit aux angles vifs, titres en capitales et accent indigo.
+- Leurs couleurs aussi pour le panneau, la montre et le miroir (page Apparence, ou `theme=classic` / `theme=evo` dans le `.ini`). Avec « comme le panneau », la fenêtre suit, allure comprise.
+- **Ordre des layers OpenXR** dans la page Configuration : flèches Monter / Descendre sur chaque layer. Les inscriptions sont réécrites dans le nouvel ordre sans rien perdre (une réécriture interrompue se termine au lancement suivant). « Annuler le dernier changement » remet l'état d'avant le dernier changement d'ordre, d'activation ou de désactivation.
+- Nouveau constat : un outil de génération d'images placé au-dessus d'XR Perf Overlay (le gros chiffre du panneau compterait aussi les images générées).
+
 ## 1.7.2 (2026-10-21)
 
 - Cadence plafonnée : reconnue aussi quand le plafond ne divise pas la fréquence du casque (un jeu bloqué à 60 sur un casque à 72 Hz). La cadence de chaque seconde y varie (50 à 58 au plus bas), ce qui échappait à la 1.7.1 ; le plafond se reconnaît alors au jeu qui attend dans chaque image (temps CPU proche de la durée d'une image, carte graphique sous 90 %) sur au moins deux minutes.

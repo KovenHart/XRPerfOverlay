@@ -59,8 +59,10 @@ the program's window. A menu on the left leads to each page:
     The "Simple" view explains each part in illustrated sentences (grid of 100 frames, bars,
     gauges), with tips; "Detailed" gives all the numbers; "Comparison" overlays two sessions
     (Ctrl + click to choose two);
-  - Interface: language, window colors (like the panel, one of the six themes or your own three
-    colors), text size, animations, full screen.
+  - Configuration: diagnosis of the PC for VR; OpenXR layers can be turned on or off and
+    reordered there;
+  - Interface: language, window colors (like the panel, one of the six themes, Classic, EVO or
+    your own three colors), text size, animations, full screen.
 F11 switches the window to full screen, Esc leaves it. When closed, it uses nothing: the program
 stays in the notification area.
 

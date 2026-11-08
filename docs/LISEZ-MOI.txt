@@ -61,8 +61,10 @@ Overlay) pour ouvrir la fenêtre du programme. Un menu à gauche mène à chaque
     La lecture « Simple » explique chaque partie en phrases illustrées (grille de 100 images, barres,
     jauges), avec des conseils ; « Détaillé » donne tous les chiffres ; « Comparaison » superpose
     deux sessions (Ctrl + clic pour en choisir deux) ;
-  - Interface : langue, couleurs de la fenêtre (comme le panneau, un des six thèmes ou vos trois
-    couleurs), taille du texte, animations, plein écran.
+  - Configuration : diagnostic du PC pour la VR ; les layers OpenXR s'y activent, se désactivent
+    et changent d'ordre ;
+  - Interface : langue, couleurs de la fenêtre (comme le panneau, un des six thèmes, Classic, EVO
+    ou vos trois couleurs), taille du texte, animations, plein écran.
 F11 passe la fenêtre en plein écran, Échap en sort. Fermée, elle ne consomme rien : le programme
 reste dans la zone de notification.
 

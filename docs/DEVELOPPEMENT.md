@@ -130,6 +130,7 @@ sensors/ReportJson.cs         rapports mis en forme pour l'interface (analyses d
 sensors/ConfigProbe.cs        relevé de la configuration (registre, fichiers .json OpenXR) pour la page Configuration, sans analyse
 sensors/SessionReport.cs      lecture (français ou anglais) et analyse des rapports, lecture « simple » en phrases (sans interface)
 sensors/LayerRegistry.cs      activation de la layer dans le registre OpenXR (relance élevée « --layer on|off »)
+sensors/OpenXrLayers.cs       ordre des layers OpenXR (page Configuration), sans perte, avec annulation
 sensors/Loc.cs                langue des textes du programme (celle de Windows, français ou anglais)
 sensors/ui/                   interface : index.html, app.css, app.js (pages), charts.js (courbes), config.js (constats de la page Configuration), i18n.js (textes FR / EN), polices
 sensors/ui/dev/               programme simulé pour mettre l'interface au point dans un navigateur (non livré)

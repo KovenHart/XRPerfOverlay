@@ -138,6 +138,16 @@
     return !!layer && layer.id != null && layer.exists && layer.readable && !(layer.ours && layer.current);
   }
 
+  // Boutons Monter / Descendre : l'ordre se change dans un même emplacement du registre
+  // (machine ou compte), car le chargeur lit toujours celles de la machine en premier.
+  function moveFor(layers, layer) {
+    if (!layer || layer.id == null) return null;
+    const same = (layers || []).filter(l => l.scope === layer.scope && l.id != null);
+    const i = same.indexOf(layer);
+    if (i < 0 || same.length < 2) return null;
+    return { id: layer.id, manifest: layer.manifest, up: i > 0, down: i < same.length - 1 };
+  }
+
   // Action proposée avec un constat : désactiver cette layer.
   function offAction(layer) {
     return canToggle(layer) && layer.enabled ? { id: layer.id, manifest: layer.manifest, on: false, label: layerLabel(layer) } : null;
@@ -201,6 +211,12 @@
     if (byId("quadviews").length && kind === "pimax") add("Info", "cfg.f.quadviewsPimax", null, offAction(byId("quadviews")[0]));
     const framegen = active.filter(l => (identifyLayer(l) || {}).category === "framegen");
     if (framegen.length >= 2) add("Warning", "cfg.f.framegenTwice", { names: framegen.map(layerLabel).join(", ") });
+    // Le jeu appelle d'abord la layer du haut : une génération d'images placée au-dessus de cette
+    // installation lui fait voir aussi les images générées (le gros chiffre du panneau les compterait).
+    if (current && layerStatus(current) === "on") {
+      const above = framegen.filter(l => layers.indexOf(l) < layers.indexOf(current));
+      if (above.length) add("Warning", "cfg.f.framegenAbove", { name: above.map(layerLabel).join(", ") });
+    }
     const userLayers = layers.filter(l => l.scope === "user");
     if (userLayers.length) add("Info", "cfg.f.userLayers." + (userLayers.length === 1 ? "one" : "other"), { n: userLayers.length });
     if (cfg.envLayers) add("Info", "cfg.f.envLayers", { value: cfg.envLayers });
@@ -264,6 +280,7 @@
       rows: (cfg.layers || []).map(l => ({
         label: layerLabel(l), value: t("cfg.layer." + layerStatus(l)), status: layerStatus(l),
         toggle: canToggle(l) ? { id: l.id, manifest: l.manifest, on: !l.enabled, label: layerLabel(l) } : null,
+        move: moveFor(cfg.layers, l),
         tags: [l.ours && l.current ? t("cfg.tag.thisInstall") : null, l.scope === "user" ? t("cfg.tag.user") : null].filter(Boolean),
         sub: (l.description ? l.description + " · " : "") + (l.manifest || ""),
       })),
@@ -311,7 +328,7 @@
     return lines.join("\r\n") + "\r\n";
   }
 
-  const api = { analyze, sections, text, canToggle, runtimeKind, identifyLayer, layerLabel, layerStatus, driverLabel, gpuVendor, isIntegrated, mainGpu, powerPlan, KNOWN_LAYERS };
+  const api = { analyze, sections, text, canToggle, moveFor, runtimeKind, identifyLayer, layerLabel, layerStatus, driverLabel, gpuVendor, isIntegrated, mainGpu, powerPlan, KNOWN_LAYERS };
   root.ConfigCheck = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

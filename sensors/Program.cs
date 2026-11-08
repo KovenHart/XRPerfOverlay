@@ -570,7 +570,7 @@ namespace XRPerfSensors
             else _icon.ShowBalloonTip(6000, "XRPerfSensors", text, ToolTipIcon.Warning);
         }
 
-        private void LayerChanged()
+        public void LayerChanged()
         {
             LayerRegistry.State state = LayerState;
             if (_layerItem != null)
@@ -927,6 +927,7 @@ namespace XRPerfSensors
                 if (!first) return 0;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+                OpenXrLayers.RecoverPending();  // réordonnancement des layers interrompu : valeurs remises
                 Application.Run(new TrayApp());
             }
             return 0;
