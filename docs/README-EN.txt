@@ -71,10 +71,13 @@ On hotkey: Ctrl+Alt+S starts recording (red dot and "REC" at the top of the pane
 again stops it and writes the report for that stretch only. Under 5 seconds: nothing is written.
 Works in SteamVR games too.
 
-Headset video (Video page): Ctrl+Alt+V starts then stops recording one eye's image to MP4 (H.264,
-H.265 or AV1 with the graphics card's encoder), with optional game sound and microphone. Files in
-Videos\XR Perf Overlay. "VID" and the duration show at the top of the panel while recording.
-OpenXR games (Direct3D 11 and 12) and SteamVR games.
+Headset video (Video page): Ctrl+Alt+V (or the hotkey of your choice) starts then stops recording
+one eye's image to MP4 (H.264, H.265 or AV1 with the graphics card's encoder, quality of your
+choice), with optional game sound and microphone. Also optional: the panel in the video (in place
+or in a corner), stabilization and a level horizon. With other layers (Pimax NR, OpenXR Toolkit...),
+the recorded image is the one the headset receives. Files in Videos\XR Perf Overlay. "VID" and the
+duration show at the top of the panel while recording. OpenXR games (Direct3D 11 and 12) and
+SteamVR games.
 
 Language: French or English for everything (window, icon menu, panel and watch in the headset,
 reports). By default, the Windows language. Change it on the Interface page.
