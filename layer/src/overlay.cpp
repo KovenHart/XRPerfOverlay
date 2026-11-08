@@ -1,5 +1,6 @@
 #include "overlay.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -119,6 +120,29 @@ void Overlay::onSessionCreated(XrSession session, const XrSessionCreateInfo* cre
         m_failed = true;
         Log("Session creee avec une API graphique non geree (Vulkan, OpenGL...) : pas d'overlay, le jeu n'est pas modifie.");
     }
+    // Enregistrement vidéo : même périphérique que le jeu.
+    {
+        std::lock_guard<std::mutex> videoLock(m_videoMutex);
+        if (m_video) m_video->shutdown();
+        m_video.reset();
+        m_videoD3D12 = false;
+        m_videoTarget = VideoTarget();
+        m_videoCopiedSwapchain = XR_NULL_HANDLE;
+        if (m_gfx && m_config.videoCapture) {
+        for (auto* entry = static_cast<const XrBaseInStructure*>(createInfo ? createInfo->next : nullptr); entry; entry = entry->next) {
+            if (entry->type == XR_TYPE_GRAPHICS_BINDING_D3D11_KHR) {
+                m_video = VideoProducer::CreateD3D11(reinterpret_cast<const XrGraphicsBindingD3D11KHR*>(entry)->device, kVideoOpenXrD3D11);
+                break;
+            }
+            if (entry->type == XR_TYPE_GRAPHICS_BINDING_D3D12_KHR) {
+                const auto* binding = reinterpret_cast<const XrGraphicsBindingD3D12KHR*>(entry);
+                m_video = VideoProducer::CreateD3D12(binding->device, binding->queue);
+                m_videoD3D12 = true;
+                break;
+            }
+        }
+        }
+    }
     // Jeu lancé à travers SteamVR : XRPerfVR n'y ajoute ni panneau ni rapport (il affiche seulement si
     // la layer ne le peut pas, Vulkan ou OpenGL).
     m_presence.set(true, m_gfx != nullptr);
@@ -207,6 +231,113 @@ void Overlay::readSystemInfo(XrSystemId systemId) {
     // Le runtime n'annonce pas toujours le nom commercial du casque : celui du .ini passe devant.
     m_headsetText = m_config.headsetName.empty() ? m_systemText : m_config.headsetName;
     Log("Casque annonce par le runtime : \"%s\" ; runtime : %s.", m_systemText.c_str(), m_runtimeText.empty() ? "?" : m_runtimeText.c_str());
+}
+
+void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains) {
+    std::lock_guard<std::mutex> lock(m_videoMutex);
+    if (!m_video || m_video->failed()) return;
+    int eye = 0;
+    const bool active = m_video->active(eye);
+    const VideoTarget previous = m_videoTarget;
+    m_videoTarget = VideoTarget();
+    if (!active || !frameEndInfo.layers) {
+        m_video->dropPending();
+        return;
+    }
+    // Première scène 3D de l'image ; avec quatre vues (rendu fovéal), les deux premières sont l'image
+    // large de chaque œil.
+    const XrCompositionLayerProjection* projection = nullptr;
+    for (uint32_t i = 0; i < frameEndInfo.layerCount && i < 64; ++i) {
+        const XrCompositionLayerBaseHeader* layer = frameEndInfo.layers[i];
+        if (layer && layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION) {
+            projection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
+            break;
+        }
+    }
+    if (!projection || !projection->views || projection->viewCount == 0) {
+        m_video->dropPending();
+        return;
+    }
+    const uint32_t viewIndex = static_cast<uint32_t>(eye) < projection->viewCount ? static_cast<uint32_t>(eye) : 0;
+    const XrCompositionLayerProjectionView& view = projection->views[viewIndex];
+    const XrSwapchain swapchain = view.subImage.swapchain;
+    SwapchainRegistry::Info info;
+    if (!swapchains.lookup(swapchain, info) || info.sampleCount > 1) {
+        m_video->dropPending();
+        return;
+    }
+    if (!info.imagesRead) {
+        std::vector<void*> images;
+        uint32_t count = 0;
+        if (XR_SUCCEEDED(m_next.EnumerateSwapchainImages(swapchain, 0, &count, nullptr)) && count > 0 && count <= 64) {
+            if (m_videoD3D12) {
+                std::vector<XrSwapchainImageD3D12KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR, nullptr, nullptr});
+                if (XR_SUCCEEDED(m_next.EnumerateSwapchainImages(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
+                    for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
+            } else {
+                std::vector<XrSwapchainImageD3D11KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR, nullptr, nullptr});
+                if (XR_SUCCEEDED(m_next.EnumerateSwapchainImages(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
+                    for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
+            }
+        }
+        swapchains.setImages(swapchain, images);
+    }
+    const uint32_t slice = view.subImage.imageArrayIndex < info.arraySize ? view.subImage.imageArrayIndex : 0;
+
+    // Image copiée quand le jeu l'a rendue : c'est bien celle qu'il soumet (même swapchain, même image,
+    // même tranche) ? Alors elle est publiée avec ce qu'elle montre.
+    if (m_video->pending()) {
+        if (swapchain == m_videoCopiedSwapchain && info.released == static_cast<int64_t>(m_videoCopiedIndex) && slice == previous.slice) {
+            // Rectangle de l'œil dans la texture, borné à sa taille.
+            const XrRect2Di rect = view.subImage.imageRect;
+            const int64_t x0 = rect.offset.x < 0 ? 0 : rect.offset.x, y0 = rect.offset.y < 0 ? 0 : rect.offset.y;
+            const int64_t x1 = std::min<int64_t>(info.width, static_cast<int64_t>(rect.offset.x) + rect.extent.width);
+            const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(rect.offset.y) + rect.extent.height);
+            if (x1 - x0 >= 16 && y1 - y0 >= 16) {
+                VideoFrameInfo frame;
+                frame.x = static_cast<uint32_t>(x0);
+                frame.y = static_cast<uint32_t>(y0);
+                frame.width = static_cast<uint32_t>(x1 - x0);
+                frame.height = static_cast<uint32_t>(y1 - y0);
+                frame.linear = VideoFormatIsLinear(info.format);
+                frame.tanLeft = std::tan(view.fov.angleLeft);
+                frame.tanRight = std::tan(view.fov.angleRight);
+                frame.tanUp = std::tan(view.fov.angleUp);
+                frame.tanDown = std::tan(view.fov.angleDown);
+                if (projection->viewCount >= 2) {
+                    const auto quat = [](const XrQuaternionf& q) { return Quat{q.x, q.y, q.z, q.w}; };
+                    HeadForwardInEye(quat(view.pose.orientation), quat(projection->views[0].pose.orientation),
+                                     quat(projection->views[1].pose.orientation), frame.centerX, frame.centerY);
+                }
+                m_video->publish(frame);
+            }
+        }
+        m_video->dropPending();
+    }
+    // Prochaine copie : cette swapchain, cette tranche.
+    m_videoTarget.swapchain = swapchain;
+    m_videoTarget.slice = slice;
+    m_videoTarget.mipCount = info.mipCount;
+    m_videoTarget.width = info.width;
+    m_videoTarget.height = info.height;
+}
+
+void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains) {
+    std::lock_guard<std::mutex> lock(m_videoMutex);
+    if (!m_video || m_video->failed() || m_videoTarget.swapchain == XR_NULL_HANDLE || swapchain != m_videoTarget.swapchain) return;
+    uint32_t index = 0;
+    SwapchainRegistry::Info info;
+    if (!swapchains.releasing(swapchain, index) || !swapchains.lookup(swapchain, info) || index >= info.images.size() || !info.images[index]) return;
+    if (!m_video->due(nowSeconds())) return;
+    VideoSource source;
+    source.texture = info.images[index];
+    source.subresource = m_videoTarget.slice * m_videoTarget.mipCount;  // niveau 0 de la tranche (D3D11CalcSubresource, D3D12CalcSubresource)
+    source.width = m_videoTarget.width;
+    source.height = m_videoTarget.height;
+    if (m_video->copy(source)) {
+        m_videoCopiedSwapchain = swapchain;
+        m_videoCopiedIndex = index;
+    }
 }
 
 void Overlay::onFrameSubmitted(const XrFrameEndInfo& frameEndInfo) noexcept {
@@ -313,6 +444,12 @@ void Overlay::onSessionDestroying() {
     if (m_hotkeys.takePending()) SaveState(m_config);
     stopRecording(nowSeconds());
     finishSummary();
+    {
+        std::lock_guard<std::mutex> videoLock(m_videoMutex);
+        if (m_video) m_video->shutdown();
+        m_video.reset();
+        m_videoTarget = VideoTarget();
+    }
     destroyResources();
     m_gfx.reset();
     m_session = XR_NULL_HANDLE;
@@ -606,6 +743,11 @@ void Overlay::sample(double now) {
     data.recordState = m_reportControl.indicator(now, m_recording && m_recordManual, m_recordStart, data.recordSeconds);
     // Pour XRPerfVR, s'il affiche le panneau de ce jeu à la place de la layer (Vulkan, OpenGL).
     m_presence.setRecord(data.recordState, static_cast<float>(data.recordSeconds));
+    // Témoin d'enregistrement vidéo (XRPerfSensors).
+    {
+        std::lock_guard<std::mutex> videoLock(m_videoMutex);
+        data.videoSeconds = m_video ? m_video->recordingSeconds() : -1.0;
+    }
     if ((data.statusElements & kWatchBattery) && m_hands) {
         for (int hand = 0; hand < 2; ++hand) {
             float level = 0.f;

@@ -138,4 +138,96 @@ struct WindowShareHeader {
 static_assert(sizeof(WindowShareHeader) == 48, "la disposition doit rester identique a celle de WindowCapture.cs");
 constexpr size_t kWindowShareBytes = sizeof(WindowShareHeader) + static_cast<size_t>(kWindowMaxWidth) * kWindowMaxHeight * 4;
 
+// 5. Enregistrement vidéo du casque. Le bloc est créé par XRPerfSensors.exe (sensors/VideoRecorder.cs) ;
+//    l'enregistreur (XRPerfRecord.dll, video_record.cpp) y demande des images, et celui qui les fournit
+//    (la layer dans un jeu OpenXR, ou XRPerfVR dans un jeu SteamVR) y décrit des textures Direct3D
+//    partagées, nommées d'après son processus (voir VideoTextureName), où il copie l'image d'un œil.
+//    L'image ne passe jamais par le processeur : copie dans la carte graphique, puis conversion et
+//    encodage par l'enregistreur.
+constexpr wchar_t kVideoShareName[] = L"Local\\XRPerfOverlay.Video";
+constexpr uint32_t kVideoShareMagic = 0x56505258;  // "XRPV"
+constexpr uint32_t kVideoShareVersion = 1;
+constexpr int kVideoSlots = 3;  // textures partagées : la plus récente, une en lecture, une en écriture
+
+// Qui fournit les images (producerKind).
+enum VideoProducerKind : uint32_t { kVideoNone = 0, kVideoOpenXrD3D11 = 1, kVideoOpenXrD3D12 = 2, kVideoSteamVr = 3 };
+
+// Ce qui accompagne chaque image (un par texture partagée) : écrit avant la publication de l'image, sous
+// la même protection que la texture elle-même (jamais réécrit tant qu'elle est la dernière ou en lecture).
+struct VideoSlotInfo {
+    uint32_t rectX, rectY;       // 0  : partie de la texture qui contient l'image de l'œil
+    uint32_t rectWidth, rectHeight;
+    float tanLeft, tanRight;     // 16 : bords de cette partie, en tangentes d'angle (gauche négatif)
+    float tanUp, tanDown;        // 24 : (bas négatif)
+    float centerX, centerY;      // 32 : direction « droit devant » de la tête, mêmes unités (0, 0 sans écran incliné)
+    uint32_t linear;             // 40 : 1 si les valeurs sont linéaires (à convertir en sRGB pour la vidéo)
+    uint32_t reserved;           // 44
+};                               // 48 octets
+
+static_assert(sizeof(VideoSlotInfo) == 48, "disposition fixe");
+
+struct VideoShareHeader {
+    uint32_t magic;              // offset 0
+    uint32_t version;            // 4
+    // --- Écrit par l'enregistreur ---------------------------------------------------------------
+    uint32_t wanted;             // 8   : 1 tant qu'un enregistrement attend des images
+    uint32_t eye;                // 12  : 0 = œil gauche, 1 = œil droit
+    float fps;                   // 16  : cadence de la vidéo (images par seconde)
+    uint32_t session;            // 20  : augmente à chaque enregistrement démarré
+    uint64_t recorderTickMs;     // 24  : GetTickCount64() de l'enregistreur, renouvelé tant qu'il tourne
+    uint64_t recordStartTickMs;  // 32  : GetTickCount64() au début de l'écriture du fichier (0 : pas encore)
+    // --- Écrit par le fournisseur d'images ------------------------------------------------------
+    uint32_t producerPid;        // 40  : processus qui fournit les images (0 : personne) ; pris par échange atomique
+    uint32_t producerKind;       // 44  : VideoProducerKind
+    uint64_t producerTickMs;     // 48  : GetTickCount64() du fournisseur à sa dernière image
+    uint32_t generation;         // 56  : change quand les textures sont recréées (taille, format) : leurs noms changent
+    uint32_t width;              // 60  : taille des textures partagées
+    uint32_t height;             // 64
+    uint32_t format;             // 68  : DXGI_FORMAT des textures (peut être « typeless »)
+    uint64_t adapterLuid;        // 72  : carte graphique (LowPart | HighPart << 32), la même pour l'enregistreur
+    // Dernière image publiée, en une seule écriture de 64 bits : numéro << 2 | texture (0 : aucune). Le
+    // numéro est aussi la valeur que le fence partagé atteint quand la copie est faite.
+    uint64_t latest;             // 80
+    uint64_t latestQpc;          // 88  : QueryPerformanceCounter() à la publication
+    uint32_t slotBusy[kVideoSlots];  // 96 : 1 pendant que l'enregistreur lit cette texture (le fournisseur n'y écrit pas)
+    uint32_t reserved;           // 108
+    VideoSlotInfo slots[kVideoSlots];  // 112
+    uint16_t game[64];           // 256 : nom de l'exécutable du jeu, sans « .exe » (UTF-16)
+};                               // 384 octets
+
+static_assert(sizeof(VideoShareHeader) == 384, "la disposition doit rester identique a celle de VideoRecorder.cs");
+inline uint64_t VideoLatest(uint64_t frame, int slot) { return (frame << 2) | static_cast<uint64_t>(slot & 3); }
+inline uint64_t VideoLatestFrame(uint64_t latest) { return latest >> 2; }
+inline int VideoLatestSlot(uint64_t latest) { return static_cast<int>(latest & 3); }
+// Durée écoulée depuis `stamp` (GetTickCount64 d'un autre processus, peut-être un peu plus récent que `now`).
+inline int64_t VideoAge(uint64_t now, uint64_t stamp) { return static_cast<int64_t>(now - stamp); }
+constexpr size_t kVideoShareBytes = 4096;
+
+// Nom des objets Direct3D partagés : textures (slot 0 à kVideoSlots - 1) et fence (slot -1).
+inline void VideoTextureName(wchar_t* out, size_t capacity, uint32_t pid, uint32_t generation, int slot) {
+    static const wchar_t kDigits[] = L"0123456789";
+    const wchar_t prefix[] = L"XRPerfOverlay.Video.";
+    size_t n = 0;
+    for (const wchar_t* p = prefix; *p && n + 1 < capacity; ++p) out[n++] = *p;
+    auto number = [&](uint32_t v) {
+        wchar_t tmp[12];
+        int k = 0;
+        do {
+            tmp[k++] = kDigits[v % 10];
+            v /= 10;
+        } while (v && k < 12);
+        while (k > 0 && n + 1 < capacity) out[n++] = tmp[--k];
+    };
+    number(pid);
+    if (n + 1 < capacity) out[n++] = L'.';
+    number(generation);
+    if (n + 1 < capacity) out[n++] = L'.';
+    if (slot < 0) {
+        if (n + 1 < capacity) out[n++] = L'f';
+    } else {
+        number(static_cast<uint32_t>(slot));
+    }
+    out[n < capacity ? n : capacity - 1] = L'\0';
+}
+
 }  // namespace xrpo

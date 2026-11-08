@@ -291,11 +291,14 @@ void drawHeader(Canvas& cv, const PanelData& d) {
     }
     const int topLine = baseline - kFontValue.ascent - kFontLabel.cellH - 2;
     int topX = labelX;
-    if (d.targetFps > 0.f) {
+    // Rapport manuel et vidéo enregistrés en même temps : leurs deux témoins prennent la place de la cible.
+    const bool twoIndicators = d.recordState >= 1 && d.recordState <= 3 && d.videoSeconds >= 0.0;
+    if (d.targetFps > 0.f && !twoIndicators) {
         std::snprintf(buf, sizeof(buf), d.english ? "target %.0f" : "cible %.0f", static_cast<double>(d.targetFps));
         topX = cv.text(kFontLabel, labelX, topLine, buf, th.muted) + 18;
     }
     // Enregistrement d'un rapport en mode manuel : point et durée, puis l'issue quelques secondes.
+    int indicatorX = topX;
     if (d.recordState >= 1 && d.recordState <= 3) {
         const Color dot = d.recordState == 1 ? th.bad : (d.recordState == 2 ? th.good : th.warn);
         const float r = 5.f;
@@ -307,7 +310,19 @@ void drawHeader(Canvas& cv, const PanelData& d) {
             std::snprintf(buf, sizeof(buf), d.recordState == 1 ? "REC %02d:%02d" : "OK %02d:%02d", seconds / 60, seconds % 60);
         else
             std::snprintf(buf, sizeof(buf), d.recordState == 1 ? "REC %dh%02d" : "OK %dh%02d", seconds / 3600, (seconds / 60) % 60);
-        cv.text(kFontLabel, topX + static_cast<int>(2 * r) + 6, topLine, buf, d.recordState == 1 ? th.text : dot);
+        indicatorX = cv.text(kFontLabel, topX + static_cast<int>(2 * r) + 6, topLine, buf, d.recordState == 1 ? th.text : dot) + 16;
+    }
+    // Enregistrement vidéo : carré rouge (comme un bouton d'enregistrement) et durée.
+    if (d.videoSeconds >= 0.0 && indicatorX < Panel::kWidth - 120) {
+        const int side = 9;
+        const int top = topLine + (kFontLabel.cellH - side) / 2;
+        cv.fillRoundRect(indicatorX, top, side, side, 1.5f, th.bad, 255);
+        const int seconds = static_cast<int>(d.videoSeconds);
+        if (seconds < 3600)
+            std::snprintf(buf, sizeof(buf), "VID %02d:%02d", seconds / 60, seconds % 60);
+        else
+            std::snprintf(buf, sizeof(buf), "VID %dh%02d", seconds / 3600, (seconds / 60) % 60);
+        cv.text(kFontLabel, indicatorX + side + 6, topLine, buf, th.text);
     }
 
     // AVG / MIN / MAX

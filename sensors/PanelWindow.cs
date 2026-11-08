@@ -538,6 +538,45 @@ namespace XRPerfSensors
         public bool UiAnimations = true;
         public bool UiStartFullscreen;
         public int WinX = int.MinValue, WinY = int.MinValue, WinWidth = 1280, WinHeight = 820; // fenêtre principale
+
+        // Enregistrement vidéo du casque (VideoRecorder.cs).
+        public static readonly string[] VideoCodecs = { "h264", "hevc", "av1" };
+        public static readonly int[] VideoHeights = { 720, 1080, 1440, 2160 };
+        public static readonly int[] VideoRates = { 30, 60, 72, 90 };
+        public static readonly string[] VideoAspects = { "16:9", "4:3", "1:1" };
+        // Touches proposées pour Ctrl+Alt+... : lettres et F1 à F12 (codes de touches virtuelles), sauf celles
+        // des raccourcis du casque (O, P, R, F, G, S, voir [hotkeys] dans XRPerfOverlay.ini).
+        public static readonly int[] VideoKeys = BuildVideoKeys();
+        public const int MinVideoBitrate = 5, MaxVideoBitrate = 150, MinVideoField = 40; // Mbit/s ; % de l'image de l'œil
+        public string VideoCodec = "h264";
+        public int VideoHeight = 1440;
+        public int VideoFps = 60;
+        public int VideoBitrate = 30;
+        public int VideoEye;                   // 0 = gauche, 1 = droit
+        public string VideoAspect = "16:9";
+        public int VideoField = 75;            // part de l'image de l'œil gardée, en %
+        public bool VideoGameAudio = true;
+        public bool VideoMic;
+        public string VideoRenderDevice = "";  // identifiant Windows de la sortie audio enregistrée ("" : celle par défaut)
+        public string VideoCaptureDevice = ""; // identifiant du micro ("" : celui par défaut)
+        public string VideoFolder = "";        // "" : Vidéos\XR Perf Overlay
+        public int VideoKey = 'V';             // Ctrl+Alt+V ; 0 = sans raccourci
+
+        private static int[] BuildVideoKeys()
+        {
+            var keys = new System.Collections.Generic.List<int>();
+            for (int c = 'A'; c <= 'Z'; c++)
+                if ("OPRFGS".IndexOf((char)c) < 0) keys.Add(c);
+            for (int f = 0; f < 12; f++) keys.Add(0x70 + f);
+            return keys.ToArray();
+        }
+
+        public static string DefaultVideoFolder
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "XR Perf Overlay"); }
+        }
+
+        public string VideoFolderOrDefault { get { return string.IsNullOrWhiteSpace(VideoFolder) ? DefaultVideoFolder : VideoFolder; } }
         public bool WinMaximized;
 
         private static string FilePath
@@ -562,12 +601,17 @@ namespace XRPerfSensors
                     // Textes (titre de fenêtre, programme) : gardés tels quels.
                     if (key == "capture_title") { settings.CaptureTitle = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "capture_process") { settings.CaptureProcess = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "video_folder") { settings.VideoFolder = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "video_render_device") { settings.VideoRenderDevice = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "video_capture_device") { settings.VideoCaptureDevice = line.Substring(equals + 1).Trim(); continue; }
                     string text = line.Substring(equals + 1).Trim();
                     if (key == "language") { if (Array.IndexOf(Loc.Names, text) >= 0) settings.Language = text; continue; }
                     if (key == "ui_theme") { if (Array.IndexOf(UiThemes, text) >= 0) settings.UiTheme = text; continue; }
                     if (key == "ui_background") { if (IsColor(text)) settings.UiBackground = text; continue; }
                     if (key == "ui_text") { if (IsColor(text)) settings.UiText = text; continue; }
                     if (key == "ui_accent") { if (IsColor(text)) settings.UiAccent = text; continue; }
+                    if (key == "video_codec") { if (Array.IndexOf(VideoCodecs, text) >= 0) settings.VideoCodec = text; continue; }
+                    if (key == "video_aspect") { if (Array.IndexOf(VideoAspects, text) >= 0) settings.VideoAspect = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
                     {
@@ -593,6 +637,14 @@ namespace XRPerfSensors
                         case "win_width": if (value >= 600 && value <= 20000) settings.WinWidth = value; break;
                         case "win_height": if (value >= 400 && value <= 20000) settings.WinHeight = value; break;
                         case "win_maximized": settings.WinMaximized = value != 0; break;
+                        case "video_height": if (Array.IndexOf(VideoHeights, value) >= 0) settings.VideoHeight = value; break;
+                        case "video_fps": if (Array.IndexOf(VideoRates, value) >= 0) settings.VideoFps = value; break;
+                        case "video_bitrate": if (value >= MinVideoBitrate && value <= MaxVideoBitrate) settings.VideoBitrate = value; break;
+                        case "video_eye": if (value == 0 || value == 1) settings.VideoEye = value; break;
+                        case "video_field": if (value >= MinVideoField && value <= 100) settings.VideoField = value; break;
+                        case "video_game_audio": settings.VideoGameAudio = value != 0; break;
+                        case "video_mic": settings.VideoMic = value != 0; break;
+                        case "video_key": if (value == 0 || Array.IndexOf(VideoKeys, value) >= 0) settings.VideoKey = value; break;
                     }
                 }
             }
@@ -652,6 +704,19 @@ namespace XRPerfSensors
                     "win_width=" + WinWidth.ToString(CultureInfo.InvariantCulture),
                     "win_height=" + WinHeight.ToString(CultureInfo.InvariantCulture),
                     "win_maximized=" + (WinMaximized ? 1 : 0),
+                    "video_codec=" + VideoCodec,
+                    "video_height=" + VideoHeight.ToString(CultureInfo.InvariantCulture),
+                    "video_fps=" + VideoFps.ToString(CultureInfo.InvariantCulture),
+                    "video_bitrate=" + VideoBitrate.ToString(CultureInfo.InvariantCulture),
+                    "video_eye=" + VideoEye.ToString(CultureInfo.InvariantCulture),
+                    "video_aspect=" + VideoAspect,
+                    "video_field=" + VideoField.ToString(CultureInfo.InvariantCulture),
+                    "video_game_audio=" + (VideoGameAudio ? 1 : 0),
+                    "video_mic=" + (VideoMic ? 1 : 0),
+                    "video_render_device=" + OneLine(VideoRenderDevice),
+                    "video_capture_device=" + OneLine(VideoCaptureDevice),
+                    "video_folder=" + OneLine(VideoFolder),
+                    "video_key=" + VideoKey.ToString(CultureInfo.InvariantCulture),
                 });
             }
             catch (Exception)

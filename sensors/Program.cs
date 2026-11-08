@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -327,6 +328,10 @@ namespace XRPerfSensors
         private readonly VrCompanion _vr;
         // Fenêtre du bureau capturée pour le casque (null si la mémoire partagée n'a pas pu être créée).
         private readonly WindowCapture _capture;
+        // Enregistrement vidéo du casque (null si la mémoire partagée n'a pas pu être créée) et son raccourci.
+        private readonly VideoRecorder _video;
+        private readonly GlobalHotkey _videoHotkey;
+        private ToolStripMenuItem _videoItem;
         private bool _overlayDirty;
         private bool _saveErrorShown;
 
@@ -413,6 +418,22 @@ namespace XRPerfSensors
             {
                 _capture = null;
             }
+            try
+            {
+                _video = new VideoRecorder(exeFolder);
+                _video.CodecsKnown += () =>
+                {
+                    MainWindow main = _main;
+                    if (main != null && !main.IsDisposed && main.IsHandleCreated) main.BeginInvoke(new Action(() => { if (!main.IsDisposed) main.PostVideo(); }));
+                };
+                _videoHotkey = new GlobalHotkey();
+                _videoHotkey.Pressed += ToggleVideo;
+            }
+            catch (Exception)
+            {
+                _video = null;
+            }
+            UpdateVideoHotkey();
 
             _uiTimer = new System.Windows.Forms.Timer { Interval = 1000 };
             _uiTimer.Tick += (s, e) =>
@@ -420,6 +441,8 @@ namespace XRPerfSensors
                 RefreshTooltip();
                 UpdateVrCompanion(); // relance XRPerfVR s'il s'est arrêté
                 UpdateCapture();     // capture de fenêtre demandée (ou plus) par un jeu VR
+                if (_video != null && _main != null && !_main.IsDisposed) _main.PostVideo();
+                if (_videoItem != null && _video != null) _videoItem.Checked = _video.Busy;
             };
             _uiTimer.Start();
         }
@@ -431,6 +454,77 @@ namespace XRPerfSensors
         /// <summary>Non nul : les réglages du casque ne peuvent pas être enregistrés, et pourquoi.</summary>
         public string Unavailable { get { return _settingsUnavailable; } }
         public WindowCapture Capture { get { return _capture; } }
+        public VideoRecorder Video { get { return _video; } }
+        /// <summary>Le raccourci de la vidéo est enregistré auprès de Windows (false : pris par un autre programme).</summary>
+        public bool VideoHotkeyOk { get { return _videoHotkey == null || _settings.VideoKey == 0 || _videoHotkey.Registered; } }
+
+        // --- Enregistrement vidéo ------------------------------------------------------------------------
+
+        /// <summary>Fonction permise (réglage [video] capture) et bibliothèque présente.</summary>
+        public bool VideoEnabled { get { return _video != null && _settingsUnavailable == null && _overlay.VideoCapture; } }
+
+        public void ToggleVideo()
+        {
+            if (_video == null) return;
+            if (_video.Busy) StopVideo();
+            else StartVideo();
+        }
+
+        /// <summary>Démarre l'enregistrement ; retourne la raison d'un refus (null : démarré).</summary>
+        public string StartVideo()
+        {
+            if (_video == null) return Loc.T("Enregistrement vidéo indisponible.", "Video recording unavailable.");
+            if (!VideoEnabled)
+                return Loc.T("L'enregistrement vidéo est désactivé (page Vidéo).", "Video recording is turned off (Video page).");
+            string refused = _video.Start(_settings);
+            if (_main != null && !_main.IsDisposed) _main.PostVideo();
+            if (refused != null && (_main == null || _main.IsDisposed || !_main.Visible))
+                _icon.ShowBalloonTip(6000, "XRPerfSensors", refused, ToolTipIcon.Warning);
+            return refused;
+        }
+
+        public void StopVideo()
+        {
+            if (_video == null) return;
+            _video.StopAsync().ContinueWith(t =>
+            {
+                MainWindow main = _main;
+                if (main != null && !main.IsDisposed && main.IsHandleCreated) main.BeginInvoke(new Action(() => { if (!main.IsDisposed) main.PostVideo(); }));
+            });
+            if (_main != null && !_main.IsDisposed) _main.PostVideo();
+        }
+
+        /// <summary>Un réglage de la vidéo a changé : enregistré, raccourci mis à jour.</summary>
+        public void VideoChanged()
+        {
+            SaveDesktopSoon();
+            UpdateVideoHotkey();
+        }
+
+        // Raccourci présent tant que la fonction est permise.
+        private void UpdateVideoHotkey()
+        {
+            if (_videoHotkey == null) return;
+            bool ok = _videoHotkey.Set(VideoEnabled ? _settings.VideoKey : 0);
+            if (ok) _videoHotkeyWarned = 0;
+            if (!ok && _settings.VideoKey != 0 && _videoHotkeyWarned != _settings.VideoKey)
+            {
+                _videoHotkeyWarned = _settings.VideoKey;
+                _icon.ShowBalloonTip(6000, "XRPerfSensors",
+                    string.Format(Loc.T("Le raccourci Ctrl+Alt+{0} de la vidéo est déjà pris par un autre programme : choisissez-en un autre (page Vidéo).",
+                                        "The video hotkey Ctrl+Alt+{0} is already taken by another program: choose another one (Video page)."), KeyName(_settings.VideoKey)),
+                    ToolTipIcon.Warning);
+            }
+            if (_videoItem != null) _videoItem.Enabled = VideoEnabled;
+        }
+
+        private int _videoHotkeyWarned;
+
+        public static string KeyName(int key)
+        {
+            if (key >= 0x70 && key <= 0x7B) return "F" + (key - 0x6F).ToString(CultureInfo.InvariantCulture);
+            return key > 0 ? ((char)key).ToString() : "";
+        }
         public Readings Latest { get { return _latest; } }
         public string SensorError { get { return _error; } }
         public string LayerVersion { get { return _layerVersion; } }
@@ -587,6 +681,7 @@ namespace XRPerfSensors
             if (_settingsShare != null) _settingsShare.Publish(_overlay, true);
             UpdateVrCompanion();
             UpdateCapture();
+            UpdateVideoHotkey();
             _overlayDirty = true;
             _saveTimer.Stop();
             _saveTimer.Start();
@@ -714,6 +809,15 @@ namespace XRPerfSensors
             _layerItem = new ToolStripMenuItem(Loc.T("Layer OpenXR activée", "OpenXR layer enabled"));
             _layerItem.Click += (s, e) => SetLayerEnabled(!_layerItem.Checked);
             menu.Items.Add(_layerItem);
+            // Enregistrement vidéo : démarrer ou arrêter (comme le raccourci).
+            string videoKey = _settings.VideoKey != 0 ? " (Ctrl+Alt+" + KeyName(_settings.VideoKey) + ")" : "";
+            _videoItem = new ToolStripMenuItem(Loc.T("Enregistrer la vidéo du casque", "Record headset video") + videoKey)
+            {
+                Enabled = VideoEnabled,
+                Checked = _video != null && _video.Busy,
+            };
+            _videoItem.Click += (s, e) => ToggleVideo();
+            menu.Items.Add(_videoItem);
             menu.Opening += (s, e) => LayerChanged();
             if (!LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled)
             {
@@ -879,6 +983,8 @@ namespace XRPerfSensors
             _uiTimer.Stop(); // plus de relance de XRPerfVR à partir d'ici
             _vr.Dispose();   // rapport en cours terminé par XRPerfVR avant la fermeture
             if (_capture != null) _capture.Dispose();  // capture arrêtée avant la fin du programme
+            if (_videoHotkey != null) _videoHotkey.Dispose();
+            if (_video != null) _video.Dispose();      // vidéo en cours terminée (fichier lisible) avant la fin
             _stop.Set();
             _worker.Join(3000);
             FlushOverlaySave();

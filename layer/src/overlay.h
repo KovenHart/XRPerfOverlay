@@ -25,6 +25,8 @@
 #include "stats.h"
 #include "report_control.h"
 #include "summary_file.h"
+#include "swapchain_registry.h"
+#include "video_producer.h"
 #include "window_share.h"
 #include "xr.h"
 
@@ -62,6 +64,12 @@ class Overlay {
     // Après un xrEndFrame accepté par le runtime : relève la résolution de l'image soumise par le jeu.
     // Ne prend aucun verrou.
     void onFrameSubmitted(const XrFrameEndInfo& frameEndInfo) noexcept;
+
+    // Enregistrement vidéo (XRPerfSensors) : au début de xrEndFrame, publie l'image d'un œil copiée quand
+    // le jeu l'a rendue, et note quelle swapchain copier à l'image suivante ; juste avant chaque
+    // xrReleaseSwapchainImage du jeu, copie l'image si c'est celle de l'œil enregistré.
+    void captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains);
+    void videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains);
 
     // Le runtime a refusé une image contenant notre calque.
     void onLayerRejected(XrResult result);
@@ -231,6 +239,16 @@ class Overlay {
     std::string m_runtimeText;  // runtime OpenXR et sa version
     std::atomic<uint64_t> m_renderSize{0};  // largeur << 32 | hauteur de l'image d'un œil, 0 = inconnue
     Hotkeys m_hotkeys;
+    // Enregistrement vidéo (nul si non permis ou API graphique non gérée). Utilisé sur le fil de xrEndFrame.
+    std::unique_ptr<VideoProducer> m_video;
+    bool m_videoD3D12 = false;
+    std::mutex m_videoMutex;  // xrReleaseSwapchainImage et xrEndFrame peuvent venir de fils différents
+    struct VideoTarget {
+        XrSwapchain swapchain = XR_NULL_HANDLE;  // swapchain de l'œil enregistré (vue à la dernière image)
+        uint32_t slice = 0, mipCount = 1, width = 0, height = 0;
+    } m_videoTarget;
+    XrSwapchain m_videoCopiedSwapchain = XR_NULL_HANDLE;  // copie en attente de publication : swapchain et image
+    uint32_t m_videoCopiedIndex = 0;
     // Signal pour XRPerfVR (jeux SteamVR) : la layer mesure et affiche dans ce processus.
     LayerPresence m_presence;
 

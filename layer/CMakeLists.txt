@@ -44,6 +44,7 @@ add_library(XR_APILAYER_NOVENDOR_perf_overlay SHARED
     src/hand_input.cpp
     src/layer_presence.cpp
     src/window_share.cpp
+    src/video_producer.cpp
     src/version.rc
     exports.def
 )
@@ -75,10 +76,11 @@ add_executable(XRPerfVR WIN32
     src/summary_file.cpp
     src/panel_share.cpp
     src/hardware_info.cpp
+    src/video_producer.cpp
 )
 target_include_directories(XRPerfVR PRIVATE external "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_definitions(XRPerfVR PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _WIN32_WINNT=0x0A00 XRPO_VERSION="${XRPO_VERSION}")
-target_link_libraries(XRPerfVR PRIVATE shell32 d3d11 dxgi)
+target_link_libraries(XRPerfVR PRIVATE shell32 d3d11 dxgi winmm)
 if(MSVC)
     target_compile_options(XRPerfVR PRIVATE /W4 /utf-8 /EHsc)
 else()
@@ -100,6 +102,20 @@ if(MSVC)
 else()
     target_compile_options(XRPerfCapture PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
     target_link_options(XRPerfCapture PRIVATE -static)
+endif()
+
+# XRPerfRecord.dll : enregistrement vidéo du casque (conversion par la carte graphique, encodeur matériel
+# via Media Foundation, son WASAPI). Chargée par XRPerfSensors (rangée à côté de lui).
+add_library(XRPerfRecord SHARED src/video_record.cpp)
+target_include_directories(XRPerfRecord PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_compile_definitions(XRPerfRecord PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _WIN32_WINNT=0x0A00)
+target_link_libraries(XRPerfRecord PRIVATE d3d11 d3d12 dxgi mfplat mfreadwrite mfuuid ole32 shell32 winmm)
+set_target_properties(XRPerfRecord PROPERTIES PREFIX "")
+if(MSVC)
+    target_compile_options(XRPerfRecord PRIVATE /W4 /utf-8 /EHsc)
+else()
+    target_compile_options(XRPerfRecord PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
+    target_link_options(XRPerfRecord PRIVATE -static)
 endif()
 
 if(XRPO_BUILD_TESTS)

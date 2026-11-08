@@ -12,6 +12,7 @@ Compiler depuis les sources, construire et publier le paquet, organisation du co
 | `sensors/` | `XRPerfSensors.exe` (C#), lancé à part : lit les capteurs du PC et les transmet à la layer ; sa fenêtre (interface dans `sensors/ui/`) règle l'overlay et montre les rapports. |
 | `layer/src/vr_*.cpp` | `XRPerfVR.exe` (C++), lancé par XRPerfSensors : panneau, montre et rapports dans les jeux SteamVR (OpenVR). |
 | `layer/src/window_capture.cpp` | `XRPerfCapture.dll` (C++), chargée par XRPerfSensors : capture de la fenêtre affichée dans le casque. |
+| `layer/src/video_record.cpp` | `XRPerfRecord.dll` (C++), chargée par XRPerfSensors : enregistrement vidéo du casque (conversion par la carte graphique, encodeur matériel via Media Foundation, son WASAPI). |
 
 ## Deux façons de l'obtenir
 
@@ -119,6 +120,11 @@ layer/src/vr_main.cpp         XRPerfVR : programme (lancé et arrêté par XRPer
 layer/src/window_capture.cpp  XRPerfCapture.dll : capture d'une fenêtre (API de capture de Windows) vers la mémoire partagée
 layer/src/window_pixels.h     recadrage, réduction et opacité de l'image capturée
 layer/src/window_share.cpp    lecture de l'image capturée (layer et XRPerfVR)
+layer/src/swapchain_registry.h  vidéo : swapchains du jeu (format, dernière image rendue), suivies seulement si [video] capture=1
+layer/src/video_producer.cpp  vidéo : copie de l'image d'un œil vers des textures partagées (Direct3D 11 / 12), sans jamais attendre
+layer/src/video_math.h        vidéo : images à copier, cadrage centré sur la tête, son mis bout à bout (testé dans preview.cpp)
+layer/src/video_record.cpp    XRPerfRecord.dll : textures partagées -> NV12 (shaders) -> encodeur matériel, son du PC et micro, MP4
+sensors/VideoRecorder.cs      vidéo : mémoire partagée, pilotage de XRPerfRecord.dll, raccourci global (RegisterHotKey)
 sensors/WindowCapture.cs      choix de la fenêtre, mémoire partagée, pilotage de la capture
 sensors/VrCompanion.cs        lancement, relance et arrêt de XRPerfVR
 sensors/PanelWindow.cs        fenêtre miroir du panneau (OBS, aperçu hors jeu) et réglages propres au PC (XRPerfSensors.ini)

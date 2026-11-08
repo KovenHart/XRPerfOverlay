@@ -22,6 +22,7 @@
 #include "log.h"
 #include "output_tap.h"
 #include "overlay.h"
+#include "swapchain_registry.h"
 #include "version.h"
 #include "xr.h"
 
@@ -41,6 +42,15 @@ NextFunctions g_next;
 bool g_active = false;  // false : la layer se contente de transmettre les appels
 std::shared_ptr<Overlay> g_overlay;
 std::shared_ptr<HandInput> g_hands;  // manettes et batterie (nul si rien n'est demandé)
+// Enregistrement vidéo permis dans ce jeu ([video] capture) : les swapchains du jeu sont alors suivies.
+bool g_videoHooks = false;
+// Jamais détruit (comme l'overlay à la fin du processus) : un appel tardif d'un autre fil reste sans danger.
+SwapchainRegistry& g_swapchains = *new SwapchainRegistry();
+
+std::shared_ptr<Overlay> currentOverlay() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_overlay;
+}
 
 std::shared_ptr<HandInput> hands() {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -169,6 +179,7 @@ XrResult XRAPI_CALL hook_xrDestroySession(XrSession session) {
         overlay.reset();
     }
     if (auto h = hands()) h->sessionDestroying(session);
+    if (g_videoHooks) g_swapchains.clear();  // les swapchains de la session disparaissent avec elle
     return g_next.DestroySession(session);
 }
 
@@ -227,6 +238,54 @@ XrResult XRAPI_CALL hook_xrBeginFrame(XrSession session, const XrFrameBeginInfo*
     return result;
 }
 
+// Swapchains du jeu (enregistrement vidéo) : appel transmis tel quel, puis simple relevé.
+XrResult XRAPI_CALL hook_xrCreateSwapchain(XrSession session, const XrSwapchainCreateInfo* createInfo, XrSwapchain* swapchain) {
+    const XrResult result = g_next.CreateSwapchain(session, createInfo, swapchain);
+    if (XR_SUCCEEDED(result) && createInfo && swapchain) {
+        try {
+            g_swapchains.created(*swapchain, *createInfo);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL hook_xrDestroySwapchain(XrSwapchain swapchain) {
+    try {
+        g_swapchains.destroyed(swapchain);
+    } catch (...) {
+    }
+    return g_next.DestroySwapchain(swapchain);
+}
+
+XrResult XRAPI_CALL hook_xrAcquireSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageAcquireInfo* acquireInfo, uint32_t* index) {
+    const XrResult result = g_next.AcquireSwapchainImage(swapchain, acquireInfo, index);
+    if (XR_SUCCEEDED(result) && index) {
+        try {
+            g_swapchains.acquired(swapchain, *index);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
+XrResult XRAPI_CALL hook_xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageReleaseInfo* releaseInfo) {
+    // Enregistrement vidéo : l'image est copiée juste avant d'être rendue, tant qu'elle est encore au jeu
+    // (état garanti par OpenXR, aucun accès concurrent du runtime).
+    try {
+        if (auto overlay = currentOverlay()) overlay->videoRelease(swapchain, g_swapchains);
+    } catch (...) {
+    }
+    const XrResult result = g_next.ReleaseSwapchainImage(swapchain, releaseInfo);
+    if (XR_SUCCEEDED(result)) {
+        try {
+            g_swapchains.released(swapchain);
+        } catch (...) {
+        }
+    }
+    return result;
+}
+
 XrResult XRAPI_CALL hook_xrEndFrame(XrSession session, const XrFrameEndInfo* frameEndInfo) {
     if (!g_active || !frameEndInfo) return g_next.EndFrame(session, frameEndInfo);
 
@@ -242,6 +301,13 @@ XrResult XRAPI_CALL hook_xrEndFrame(XrSession session, const XrFrameEndInfo* fra
         if (overlay) added = overlay->onEndFrame(quads, frameEndInfo->displayTime, allowLayer);
     } catch (...) {
         added = 0;
+    }
+    // Enregistrement vidéo : copie de l'image d'un œil, avant de la passer au runtime.
+    if (overlay && g_videoHooks) {
+        try {
+            overlay->captureVideo(*frameEndInfo, g_swapchains);
+        } catch (...) {
+        }
     }
     if (added <= 0 || frameEndInfo->layerCount + static_cast<uint32_t>(added) > kMaxLayers) {
         const XrResult result = g_next.EndFrame(session, frameEndInfo);
@@ -416,6 +482,13 @@ XrResult XRAPI_CALL layer_xrGetInstanceProcAddr(XrInstance instance, const char*
         {"xrWaitFrame", reinterpret_cast<PFN_xrVoidFunction>(hook_xrWaitFrame), g_next.WaitFrame != nullptr},
         {"xrBeginFrame", reinterpret_cast<PFN_xrVoidFunction>(hook_xrBeginFrame), g_next.BeginFrame != nullptr},
         {"xrEndFrame", reinterpret_cast<PFN_xrVoidFunction>(hook_xrEndFrame), g_next.EndFrame != nullptr},
+        // Seulement si l'enregistrement vidéo est permis (réglage lu au lancement du jeu).
+        {"xrCreateSwapchain", reinterpret_cast<PFN_xrVoidFunction>(hook_xrCreateSwapchain), g_next.CreateSwapchain != nullptr && g_videoHooks},
+        {"xrDestroySwapchain", reinterpret_cast<PFN_xrVoidFunction>(hook_xrDestroySwapchain), g_next.DestroySwapchain != nullptr && g_videoHooks},
+        {"xrAcquireSwapchainImage", reinterpret_cast<PFN_xrVoidFunction>(hook_xrAcquireSwapchainImage),
+         g_next.AcquireSwapchainImage != nullptr && g_videoHooks},
+        {"xrReleaseSwapchainImage", reinterpret_cast<PFN_xrVoidFunction>(hook_xrReleaseSwapchainImage),
+         g_next.ReleaseSwapchainImage != nullptr && g_videoHooks},
         // Seulement si le suivi des manettes est prévu (réglages lus au lancement du jeu).
         {"xrSuggestInteractionProfileBindings", reinterpret_cast<PFN_xrVoidFunction>(hook_xrSuggestInteractionProfileBindings),
          g_next.SuggestInteractionProfileBindings != nullptr && handHooks},
@@ -604,6 +677,7 @@ XrResult XRAPI_CALL layer_xrCreateApiLayerInstance(const XrInstanceCreateInfo* i
         const bool hooksUsable = g_next.DestroyInstance && g_next.CreateSession && g_next.DestroySession && g_next.WaitFrame &&
                                  g_next.BeginFrame && g_next.EndFrame && g_next.overlayUsable();
         g_active = !excluded && hooksUsable;
+        g_videoHooks = g_active && config.videoCapture;
         const char* application = info ? info->applicationInfo.applicationName : "?";
         Log("Instance OpenXR creee pour \"%s\" (%s) : overlay %s (XR Perf Overlay %s).", application, Narrow(exe).c_str(),
             excluded ? "desactive (processus exclu dans le .ini)" : (hooksUsable ? "pret" : "desactive (fonctions OpenXR manquantes)"), XRPO_VERSION);

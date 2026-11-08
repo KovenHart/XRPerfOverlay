@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.9.0
+
+- **Vidéo du casque** : enregistrement de ce que vous voyez dans le casque, sans OBS. L'image d'un œil, cadrée et centrée sur la direction de la tête (écrans inclinés compris), est encodée par la carte graphique en **H.264, H.265 (HEVC) ou AV1** dans un fichier MP4, avec le **son du jeu** et le **micro** en option (sortie et micro au choix). Résolution de 720p à 2160p, 30 à 90 images par seconde, débit de 5 à 150 Mbit/s, œil, format et cadrage réglables. `Ctrl+Alt+V` (touche au choix), un bouton dans la nouvelle page **Vidéo**, ou le menu de l'icône démarrent et arrêtent l'enregistrement ; « VID » et la durée s'affichent en haut du panneau dans le casque. Jeux OpenXR en Direct3D 11 et 12 (par la layer) et jeux SteamVR (par XRPerfVR). Tout reste dans la carte graphique, rien ne tourne hors enregistrement, et un interrupteur désactive la fonction.
+
 ## 1.8.0
 
 - **Thèmes Classic et EVO** pour la fenêtre de XRPerfSensors (page Interface). Ils changent aussi l'allure : Classic, gris aux cartes arrondies, accent vert et titres orange ; EVO, bleu nuit aux angles vifs, titres en capitales et accent indigo.

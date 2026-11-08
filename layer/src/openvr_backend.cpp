@@ -14,6 +14,7 @@
 #include "layer_presence.h"
 #include "vr_matrix.h"
 #include "log.h"
+#include "video_producer.h"
 // En-tête de Valve : avertissements propres à MinGW / clang (déclarations dllimport) sans objet ici,
 // les fonctions de la bibliothèque étant chargées à la main.
 #if defined(__clang__)
@@ -202,6 +203,108 @@ class OpenVrBackend final : public VrBackend {
         }
         return info;
     }
+
+    // --- Enregistrement vidéo : image miroir de SteamVR ----------------------------------------------
+
+    void videoTick(double t, const std::string& game) override {
+        if (!m_compositor || !m_system) return;
+        // Une copie au plus par image du compositeur.
+        vr::Compositor_FrameTiming timing;
+        std::memset(&timing, 0, sizeof(timing));
+        timing.m_nSize = sizeof(timing);
+        if (!m_compositor->GetFrameTiming(&timing, 0) || timing.m_nFrameIndex == m_videoFrameIndex) return;
+        m_videoFrameIndex = timing.m_nFrameIndex;
+        if (!m_video) {
+            // Sans enregistrement, rien n'est créé : on regarde seulement si une vidéo est demandée.
+            if (!videoRequested()) return;
+            if (!gpuReady()) return;
+            m_video = VideoProducer::CreateD3D11(m_device, kVideoSteamVr);
+        }
+        int eye = 0;
+        if (m_video->failed() || !m_video->active(eye)) {
+            m_videoBusy = false;
+            return;
+        }
+        m_videoBusy = true;
+        if (!m_video->due(t)) return;
+        if (!game.empty()) {
+            const int n = MultiByteToWideChar(CP_UTF8, 0, game.c_str(), static_cast<int>(game.size()), nullptr, 0);
+            std::wstring wide(static_cast<size_t>(n > 0 ? n : 0), L'\0');
+            if (n > 0) MultiByteToWideChar(CP_UTF8, 0, game.c_str(), static_cast<int>(game.size()), &wide[0], n);
+            m_video->setGame(wide);
+        }
+        // Image miroir de chaque œil (gardée ouverte) : selon la version de SteamVR, une texture par œil,
+        // une tranche d'un tableau, ou les deux yeux côte à côte dans la même texture.
+        for (int e = 0; e < 2; ++e) {
+            if (m_mirror[e]) continue;
+            void* view = nullptr;
+            const vr::EVRCompositorError error = m_compositor->GetMirrorTextureD3D11(e == 1 ? vr::Eye_Right : vr::Eye_Left, m_device, &view);
+            if (error != vr::VRCompositorError_None || !view) {
+                if (!m_mirrorErrorLogged) Log("XRPerfVR : image miroir de SteamVR indisponible (%d), pas d'enregistrement video.", static_cast<int>(error));
+                m_mirrorErrorLogged = true;
+                return;
+            }
+            m_mirror[e] = static_cast<ID3D11ShaderResourceView*>(view);
+        }
+        ID3D11Resource* resources[2] = {};
+        m_mirror[0]->GetResource(&resources[0]);
+        m_mirror[1]->GetResource(&resources[1]);
+        const bool sameTexture = resources[0] && resources[0] == resources[1];
+        ID3D11Texture2D* texture = nullptr;
+        if (resources[eye]) resources[eye]->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&texture));
+        for (ID3D11Resource* r : resources)
+            if (r) r->Release();
+        if (!texture) return;
+        D3D11_TEXTURE2D_DESC desc = {};
+        texture->GetDesc(&desc);
+        D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc = {};
+        m_mirror[eye]->GetDesc(&viewDesc);
+        VideoSource source;
+        source.texture = texture;
+        source.width = desc.Width;
+        source.height = desc.Height;
+        VideoFrameInfo frame;
+        frame.width = desc.Width;
+        frame.height = desc.Height;
+        if (viewDesc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2DARRAY && desc.ArraySize > 1) {
+            source.subresource = D3D11CalcSubresource(0, viewDesc.Texture2DArray.FirstArraySlice, desc.MipLevels);
+        } else if (sameTexture && desc.ArraySize <= 1) {
+            // Les deux yeux côte à côte : la moitié de l'œil enregistré.
+            frame.x = eye == 1 ? desc.Width / 2 : 0;
+            frame.width = desc.Width / 2;
+        }
+        // Image du compositeur : encodée pour l'écran en 8 ou 10 bits, linéaire en virgule flottante.
+        frame.linear = desc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT || desc.Format == DXGI_FORMAT_R16G16B16A16_TYPELESS ||
+                       desc.Format == DXGI_FORMAT_R32G32B32A32_FLOAT || desc.Format == DXGI_FORMAT_R32G32B32A32_TYPELESS ||
+                       desc.Format == DXGI_FORMAT_R11G11B10_FLOAT;
+        float left = -1.f, right = 1.f, top = -1.f, bottom = 1.f;
+        m_system->GetProjectionRaw(eye == 1 ? vr::Eye_Right : vr::Eye_Left, &left, &right, &top, &bottom);
+        frame.tanLeft = left;
+        frame.tanRight = right;
+        // SteamVR donne le haut en négatif (axe vers le bas) ; dans l'autre convention, on garde tel quel.
+        frame.tanUp = top < bottom ? -top : top;
+        frame.tanDown = top < bottom ? -bottom : bottom;
+        // Écrans inclinés : direction « droit devant » de la tête dans le repère de l'œil.
+        const vr::HmdMatrix34_t m = m_system->GetEyeToHeadTransform(eye == 1 ? vr::Eye_Right : vr::Eye_Left);
+        const float fx = -m.m[2][0], fy = -m.m[2][1], fz = -m.m[2][2];
+        if (fz < -0.1f) {
+            frame.centerX = fx / -fz;
+            frame.centerY = fy / -fz;
+        }
+        if (m_video->copy(source)) m_video->publish(frame);
+        texture->Release();
+    }
+
+    void videoStop() override {
+        m_videoBusy = false;
+        if (m_video) m_video->shutdown();
+        m_video.reset();
+        releaseMirrors();
+    }
+
+    double videoSeconds() override { return m_video ? m_video->recordingSeconds() : -1.0; }
+
+    bool videoBusy() override { return m_videoBusy; }
 
     uint32_t sceneProcess() override { return m_applications ? m_applications->GetCurrentSceneProcessId() : 0; }
 
@@ -503,7 +606,37 @@ class OpenVrBackend final : public VrBackend {
         }
     }
 
+    // Bloc de l'enregistreur ouvert et enregistrement demandé ? (lecture seule, toutes les secondes au plus)
+    bool videoRequested() {
+        const double t = now();
+        if (t - m_videoCheckedAt < 1.0) return m_videoRequested;
+        m_videoCheckedAt = t;
+        m_videoRequested = false;
+        HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, kVideoShareName);
+        if (!mapping) return false;
+        const void* view = MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(VideoShareHeader));
+        if (view) {
+            const volatile VideoShareHeader* b = static_cast<const volatile VideoShareHeader*>(view);
+            m_videoRequested = b->magic == kVideoShareMagic && b->version == kVideoShareVersion && b->wanted == 1;
+            UnmapViewOfFile(view);
+        }
+        CloseHandle(mapping);
+        return m_videoRequested;
+    }
+
+    void releaseMirrors() {
+        for (ID3D11ShaderResourceView*& view : m_mirror) {
+            if (view && m_compositor) m_compositor->ReleaseMirrorTextureD3D11(view);
+            view = nullptr;
+        }
+    }
+
     void releaseGpu() {
+        // L'enregistrement utilise le même appareil Direct3D : arrêté et repris au besoin.
+        m_videoBusy = false;
+        if (m_video) m_video->shutdown();
+        m_video.reset();
+        releaseMirrors();
         releaseTextures();
         if (m_context) {
             m_context->ClearState();
@@ -646,6 +779,14 @@ class OpenVrBackend final : public VrBackend {
     ID3D11DeviceContext* m_context = nullptr;
     double m_gpuFailedAt = -1.0;
     bool m_gpuErrorLogged = false;
+    // Enregistrement vidéo.
+    std::unique_ptr<VideoProducer> m_video;
+    ID3D11ShaderResourceView* m_mirror[2] = {};
+    uint32_t m_videoFrameIndex = 0;
+    bool m_videoBusy = false;
+    bool m_mirrorErrorLogged = false;
+    double m_videoCheckedAt = -10.0;
+    bool m_videoRequested = false;
     vr::TrackedDevicePose_t m_poses[vr::k_unMaxTrackedDeviceCount] = {};
     double m_posesTime = -1.0;
     Grip m_grips[2];

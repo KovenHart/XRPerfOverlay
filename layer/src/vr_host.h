@@ -48,6 +48,8 @@ class VrHost {
     // il doit maintenant se terminer (XRPerfSensors le relance aussitôt, en attente du prochain SteamVR).
     bool quitAcknowledged() const { return m_quitAcknowledged; }
     bool inSession() const { return m_session.active; }
+    // Enregistrement vidéo en cours : la boucle doit tourner plus vite (cadence de la vidéo).
+    bool videoBusy() { return m_vr.videoBusy(); }
 
   private:
     enum class State { WaitRuntime, Connected, WaitRuntimeExit };

@@ -96,6 +96,8 @@ struct PanelData {
     // 0 = rien, 1 = en cours (avec sa durée), 2 = rapport écrit, 3 = trop court, pas de rapport.
     int recordState = 0;
     double recordSeconds = 0.0;
+    // Enregistrement vidéo en cours (XRPerfSensors) : durée en secondes, négative s'il n'y en a pas.
+    double videoSeconds = -1.0;
 
     // Présentation "graphique" : temps d'image des dernières secondes, de la plus ancienne colonne
     // (indice 0) à la plus récente. Valeurs en millisecondes, 0 = pas d'image dans cette tranche.

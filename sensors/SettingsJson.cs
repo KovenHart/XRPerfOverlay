@@ -61,6 +61,7 @@ namespace XRPerfSensors
             w.WriteString("ReportMode", OverlaySettings.ReportModeNames[Math.Min(2, Math.Max(0, o.ReportMode))]);
             w.WriteBoolean("ReportHardware", o.ReportHardware);
             w.WriteBoolean("OpenVR", o.OpenVR);
+            w.WriteBoolean("VideoCapture", o.VideoCapture);
             w.WriteEndObject();
         }
 
@@ -86,6 +87,19 @@ namespace XRPerfSensors
             w.WriteNumber("UiScale", d.UiScale);
             w.WriteBoolean("UiAnimations", d.UiAnimations);
             w.WriteBoolean("UiStartFullscreen", d.UiStartFullscreen);
+            w.WriteString("VideoCodec", d.VideoCodec);
+            w.WriteNumber("VideoHeight", d.VideoHeight);
+            w.WriteNumber("VideoFps", d.VideoFps);
+            w.WriteNumber("VideoBitrate", d.VideoBitrate);
+            w.WriteNumber("VideoEye", d.VideoEye);
+            w.WriteString("VideoAspect", d.VideoAspect);
+            w.WriteNumber("VideoField", d.VideoField);
+            w.WriteBoolean("VideoGameAudio", d.VideoGameAudio);
+            w.WriteBoolean("VideoMic", d.VideoMic);
+            w.WriteString("VideoRenderDevice", d.VideoRenderDevice);
+            w.WriteString("VideoCaptureDevice", d.VideoCaptureDevice);
+            w.WriteString("VideoFolder", d.VideoFolderOrDefault);
+            w.WriteNumber("VideoKey", d.VideoKey);
             w.WriteEndObject();
         }
 
@@ -188,12 +202,13 @@ namespace XRPerfSensors
                     }
                 case "ReportHardware": if (!Bool(v, out b)) return false; o.ReportHardware = b; return true;
                 case "OpenVR": if (!Bool(v, out b)) return false; o.OpenVR = b; return true;
+                case "VideoCapture": if (!Bool(v, out b)) return false; o.VideoCapture = b; return true;
             }
             return false;
         }
 
         /// <summary>Ce qu'un réglage du bureau change, pour savoir quoi mettre à jour.</summary>
-        public enum Change { None, Mirror, Capture, Interface, Language }
+        public enum Change { None, Mirror, Capture, Interface, Language, Video }
 
         /// <summary>Applique un réglage du bureau (fenêtre miroir, capture, interface, langue).</summary>
         public static Change ApplyDesktop(Settings d, string key, JsonElement v)
@@ -221,6 +236,18 @@ namespace XRPerfSensors
                 case "UiScale": if (!Int(v, Settings.MinUiScale, Settings.MaxUiScale, out i)) return Change.None; d.UiScale = i; return Change.Interface;
                 case "UiAnimations": if (!Bool(v, out b)) return Change.None; d.UiAnimations = b; return Change.Interface;
                 case "UiStartFullscreen": if (!Bool(v, out b)) return Change.None; d.UiStartFullscreen = b; return Change.Interface;
+                case "VideoCodec": if (Array.IndexOf(Settings.VideoCodecs, text) < 0) return Change.None; d.VideoCodec = text; return Change.Video;
+                case "VideoHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.VideoHeights, i) < 0) return Change.None; d.VideoHeight = i; return Change.Video;
+                case "VideoFps": if (!Int(v, 0, 1000, out i) || Array.IndexOf(Settings.VideoRates, i) < 0) return Change.None; d.VideoFps = i; return Change.Video;
+                case "VideoBitrate": if (!Int(v, Settings.MinVideoBitrate, Settings.MaxVideoBitrate, out i)) return Change.None; d.VideoBitrate = i; return Change.Video;
+                case "VideoEye": if (!Int(v, 0, 1, out i)) return Change.None; d.VideoEye = i; return Change.Video;
+                case "VideoAspect": if (Array.IndexOf(Settings.VideoAspects, text) < 0) return Change.None; d.VideoAspect = text; return Change.Video;
+                case "VideoField": if (!Int(v, Settings.MinVideoField, 100, out i)) return Change.None; d.VideoField = i; return Change.Video;
+                case "VideoGameAudio": if (!Bool(v, out b)) return Change.None; d.VideoGameAudio = b; return Change.Video;
+                case "VideoMic": if (!Bool(v, out b)) return Change.None; d.VideoMic = b; return Change.Video;
+                case "VideoRenderDevice": if (text == null || text.Length > 250) return Change.None; d.VideoRenderDevice = text; return Change.Video;
+                case "VideoCaptureDevice": if (text == null || text.Length > 250) return Change.None; d.VideoCaptureDevice = text; return Change.Video;
+                case "VideoKey": if (!Int(v, 0, 255, out i) || (i != 0 && Array.IndexOf(Settings.VideoKeys, i) < 0)) return Change.None; d.VideoKey = i; return Change.Video;
             }
             return Change.None;
         }

@@ -54,6 +54,7 @@ Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open 
 - **Watch**: show the watch, attachment, position on the hand, style, elements, show on gaze, size, opacity, position adjustments, with its preview (see "Watch and attaching to the controllers").
 - **Window**: the desktop window shown in the headset (see "Desktop window in the headset").
 - **Desktop mirror**: the mirror window for OBS, its position, size, opacity, keep on top.
+- **Video**: headset video recording (see "Headset video").
 - **Measurements**: real GPU time measurement (otherwise an estimate), writing reports (every session, on the `Ctrl+Alt+S` hotkey or never: applies immediately, even in game), processor and graphics card models in the reports, reports folder. GPU measurement and models apply the next time a game starts.
 - **Reports**: see "Session reports".
 - **Configuration**: diagnosis of the PC for VR (see "Configuration diagnosis").
@@ -204,6 +205,25 @@ The Desktop mirror page offers its size (25 to 300 %), its opacity, its position
 
 The window always shows the panel with an opaque background, even if it is hidden or made transparent in the headset; its own opacity is set separately. It takes the panel's height, depending on the chosen layout. The layer and `XRPerfSensors` must come from the same version, which `Installer.bat` takes care of; with a DLL and an `XRPerfSensors` of different versions, the window keeps waiting. On the game side, the layer only copies the panel image while the window (or the XRPerfSensors window) is shown (about 0.15 ms four times per second); otherwise there is no extra work.
 
+## Headset video
+
+XRPerfSensors can record what you see in the headset, without OBS: one eye's image, framed in 16:9 (or 4:3, or square), encoded by the graphics card into an MP4 file, with the game sound and, if you want, the microphone.
+
+**Start and stop.** `Ctrl+Alt+V` (key to change on the Video page), the button on the Video page, or "Record headset video" in the tray icon menu. Recording starts with the first image of a VR game: started before the game, it waits ("REC waiting"). While recording, a red square and the duration ("VID 03:12") show at the top of the panel in the headset, and "REC 03:12" at the top of the XRPerfSensors window. The same hotkey stops and finishes the file. If the game closes, the file is finished by itself after 10 seconds; if XRPerfSensors closes, it finishes it before leaving.
+
+**Files.** In `Videos\XR Perf Overlay` by default ("Change..." on the Video page), named after the game and the time: `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. An MP4 file can only be played once finished: if the PC shuts down abruptly while recording, the current video is lost.
+
+**Settings** (Video page, for the next recording):
+
+- **Format**: H.264 (plays everywhere), H.265 (HEVC) or AV1, smaller at the same quality. Only the formats the graphics card can encode are offered: AV1 needs a GeForce RTX 40 or newer, a Radeon RX 7000 or an Intel Arc.
+- **Resolution** (720p to 2160p), **frames per second** (30, 60, 72 or 90; above the game's frame rate, frames are repeated) and **bitrate** (5 to 150 Mbit/s; one minute at 30 Mbit/s is about 225 MB).
+- **Recorded eye**, **aspect ratio** and **framing**: the share of the eye's image kept (75 % by default). An eye's image covers a very wide field, with stretched edges; the frame is centered on the direction of the head, which matters on headsets with canted displays (Pimax), where each eye looks slightly outward.
+- **Game sound**: everything the chosen output plays (the Windows default one, or another, usually the headset's). **Microphone**: the default one or another. Both are mixed into a single AAC track. If the output or the microphone changes while recording (headset unplugged, SteamVR changing the default output), their sound stops for the rest of the file.
+
+**Where the image comes from.** In an OpenXR game (Direct3D 11 or 12), the layer copies the eye's image when the game sends it to the runtime: it is the game's image alone, without the panel or what the runtime adds on top. With foveated rendering (Quad-Views), it is the eye's wide image, less sharp in the center than in the headset. In a SteamVR (OpenVR) game, XRPerfVR takes SteamVR's mirror image, which also contains overlays (the panel included). The copy stays on the graphics card; the recorder crops, converts and encodes it, still on the graphics card (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel), a chip separate from rendering. The cost for the game is one image copy (a few hundredths of a millisecond) per video frame, and nothing at all when not recording.
+
+**Turning it off.** The "Video recording" switch on the Video page (or `capture=0` in the `[video]` section of `XRPerfOverlay.ini`) releases the hotkey and, from the next game launch, the layer no longer follows the images of OpenXR games.
+
 ## Session reports
 
 At each game session (or, in manual mode, at each recording: see below), the layer writes a report (text file) in the `sessions\` subfolder (next to the DLL), named after the date, time and game, for example `2026-10-10_06-50-12_Game-Win64-Shipping.txt`. It contains:
@@ -280,6 +300,7 @@ The file stays open for the whole session and each update happens in the system 
 - **Frozen or flickering panel in a SteamVR (OpenVR) game**: the log reports the layer image refused by SteamVR with a code, then accepted again if things settle.
 - **The captured window doesn't appear**: the Window page of XRPerfSensors gives the capture state (window not found, minimized, Windows too old, capture refused). In a game, "Show the window in the headset" must be on (or `Ctrl+Alt+F`); placed in the room, it may be behind you: `Ctrl+Alt+G` brings it in front. A window started as administrator may refuse to be captured by XRPerfSensors if it isn't.
 - **The GPU time keeps its "~" despite the measurement option**: the option applies the next time the game starts; the log then says whether measurement is on, or why not (Vulkan, OpenGL, driver returning nothing).
+- **The video stays "waiting for a VR game"**: in an OpenXR game, video recording must be allowed when the game starts (otherwise, restart the game) and the game must use Direct3D 11 or 12; in a SteamVR game, the "Also in SteamVR games" option must be on. The log says "Video : enregistrement demande, ce processus fournit les images", or why copying is impossible (Direct3D 11.4 missing, multisampled images, shared texture refused). If the Video page reports an encoder refusal, try H.264, or a lower resolution or frame rate.
 - **`--` for CPU temperature or clock**: PawnIO isn't installed, or the processor isn't recognized by LibreHardwareMonitor.
 - **The XRPerfSensors window stays empty or says WebView2 is missing**: install Microsoft's WebView2 engine (https://developer.microsoft.com/microsoft-edge/webview2/). The rest of the program works without it.
 - **Disable without uninstalling**: the "OpenXR games (layer)" switch in XRPerfSensors (see "Turning the layer off"), or the environment variable `DISABLE_XR_APILAYER_NOVENDOR_perf_overlay=1`.

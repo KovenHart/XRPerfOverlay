@@ -175,6 +175,11 @@ void VrHost::run(double now) {
         if ((changes & Hotkeys::WindowVisibility) && !m_config.window.enabled) m_windowPlaceRequested = false;
         if (m_hotkeys.saveDue(now)) SaveState(m_config);
     }
+    // Enregistrement vidéo : image miroir de SteamVR, seulement pour un jeu que la layer n'affiche pas.
+    if (m_session.display && m_config.videoCapture)
+        m_vr.videoTick(now, m_gameText);
+    else
+        m_vr.videoStop();
     if (m_lastSample < 0.0 || (now - m_lastSample) * 1000.0 >= m_config.refreshMs) sample(now);
     // Rapport : seulement si XRPerfVR l'écrit (sinon la layer relève elle-même le raccourci).
     if (m_session.report) {
@@ -304,6 +309,7 @@ void VrHost::endSession(double now) {
     stopRecording(now);
     finishSummary(now);
     hideAll();
+    m_vr.videoStop();
     m_panelShare.reset();  // la fenêtre du bureau sait tout de suite que le jeu est terminé
     Log("XRPerfVR : fin du jeu \"%s\".", m_gameText.c_str());
     m_session = Session();
@@ -470,6 +476,7 @@ void VrHost::sample(double now) {
     data.statusElements = m_config.panelElements;
     data.sessionSeconds = now - m_sessionStart;
     data.recordState = m_reportControl.indicator(now, m_recording && m_recordManual, m_recordStart, data.recordSeconds);
+    data.videoSeconds = m_vr.videoSeconds();
     // Rapport écrit par la layer (jeu OpenXR en Vulkan ou OpenGL) : son témoin, sur le panneau d'XRPerfVR.
     if (!m_session.report) {
         int state = 0;

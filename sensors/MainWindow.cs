@@ -305,6 +305,14 @@ namespace XRPerfSensors
                             string xrLabel = Str(m, "label"), xrManifest = Str(m, "manifest");
                             Later(() => SetXrLayer(xrId, xrManifest, xrOn, xrLabel));
                             break;
+                        case "videoStart":
+                            string refused = _app.StartVideo();
+                            if (refused != null) PostToast(refused);
+                            break;
+                        case "videoStop": _app.StopVideo(); break;
+                        case "videoOpenFolder": Later(OpenVideoFolder); break;
+                        case "videoPickFolder": Later(PickVideoFolder); break;
+                        case "videoDevices": SendVideoDevices(); break;
                         case "copyText":
                             string copied = Str(m, "text");
                             if (!string.IsNullOrEmpty(copied)) Later(() => CopyText(copied));
@@ -358,6 +366,7 @@ namespace XRPerfSensors
                 w.WriteString("reportsFolder", folders.Count > 0 ? folders[0] : "");
             }));
             Post(ReportJson.List(_reports.Reports, _reports.Folders, _reports.PreviousOf, Loc.English));
+            PostVideo();
             _lastStatus = "";
             SlowTick();
             FastTick();
@@ -413,6 +422,94 @@ namespace XRPerfSensors
             PostOverlay();
         }
 
+        // --- Enregistrement vidéo ------------------------------------------------------------------------
+
+        /// <summary>État de l'enregistrement vidéo (toutes les secondes, et après chaque changement).</summary>
+        public void PostVideo()
+        {
+            if (!_pageReady) return;
+            VideoRecorder video = _app.Video;
+            VideoRecorder.Status st = video != null ? video.Current() : new VideoRecorder.Status { File = "", Game = "", Encoder = "" };
+            Post(Json(w =>
+            {
+                w.WriteString("type", "video");
+                w.WriteBoolean("available", video != null && video.Available);
+                w.WriteNumber("codecs", video != null ? video.Codecs : 0);
+                w.WriteNumber("state", st.State);
+                w.WriteNumber("seconds", Math.Round(st.Seconds, 1));
+                w.WriteNumber("bytes", st.Bytes);
+                w.WriteNumber("frames", st.Frames);
+                w.WriteNumber("repeated", st.Repeated);
+                w.WriteNumber("dropped", st.Dropped);
+                w.WriteNumber("audio", st.Audio);
+                w.WriteString("file", st.File ?? "");
+                w.WriteString("game", st.Game ?? "");
+                w.WriteString("encoder", st.Encoder ?? "");
+                w.WriteString("reason", st.State == VideoRecorder.StateStopped ? VideoRecorder.ReasonText(st.Reason, st.HResult) : "");
+                w.WriteBoolean("hotkeyOk", _app.VideoHotkeyOk);
+                w.WriteString("folder", _app.Desktop.VideoFolderOrDefault);
+            }));
+        }
+
+        private void SendVideoDevices()
+        {
+            VideoRecorder video = _app.Video;
+            if (video == null) return;
+            // Liste lue à part (quelques dizaines de millisecondes), puis envoyée.
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                List<KeyValuePair<string, string>> render = video.Devices(false), capture = video.Devices(true);
+                Later(() => Post(Json(w =>
+                {
+                    w.WriteString("type", "videoDevices");
+                    foreach (var list in new[] { new { Name = "render", Items = render }, new { Name = "capture", Items = capture } })
+                    {
+                        w.WriteStartArray(list.Name);
+                        foreach (KeyValuePair<string, string> d in list.Items)
+                        {
+                            w.WriteStartObject();
+                            w.WriteString("id", d.Key);
+                            w.WriteString("name", d.Value);
+                            w.WriteEndObject();
+                        }
+                        w.WriteEndArray();
+                    }
+                })));
+            });
+        }
+
+        private void OpenVideoFolder()
+        {
+            string folder = _app.Desktop.VideoFolderOrDefault;
+            try
+            {
+                Directory.CreateDirectory(folder);
+                Process.Start(new ProcessStartInfo("explorer.exe", "\"" + folder + "\"") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, Loc.T("Impossible d'ouvrir le dossier : ", "Could not open the folder: ") + ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void PickVideoFolder()
+        {
+            using (var dialog = new FolderBrowserDialog
+            {
+                Description = Loc.T("Dossier des vidéos du casque", "Folder for headset videos"),
+                UseDescriptionForTitle = true,
+                SelectedPath = _app.Desktop.VideoFolderOrDefault,
+                ShowNewFolderButton = true,
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath)) return;
+                _app.Desktop.VideoFolder = string.Equals(dialog.SelectedPath, Settings.DefaultVideoFolder, StringComparison.OrdinalIgnoreCase) ? "" : dialog.SelectedPath;
+                _app.VideoChanged();
+                PostDesktop();
+                PostVideo();
+            }
+        }
+
         // Un réglage changé dans la page.
         private void OnSet(string scope, string key, JsonElement value)
         {
@@ -434,6 +531,7 @@ namespace XRPerfSensors
                 case SettingsJson.Change.Mirror: _app.DesktopChanged(); break;
                 case SettingsJson.Change.Capture: _app.CaptureChanged(); FastTick(); break;
                 case SettingsJson.Change.Interface: _app.SaveDesktopSoon(); break;
+                case SettingsJson.Change.Video: _app.VideoChanged(); PostVideo(); break;
                 case SettingsJson.Change.Language:
                     d.Save();
                     if (d.Language != before)

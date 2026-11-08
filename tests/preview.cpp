@@ -24,6 +24,8 @@
 #include "../layer/src/session_stats.h"
 #include "../layer/src/settings_apply.h"
 #include "../layer/src/stats.h"
+#include "../layer/src/shared_block.h"
+#include "../layer/src/video_math.h"
 
 using namespace xrpo;
 
@@ -927,10 +929,185 @@ static void testReportControl(const std::string& dir) {
     d.recordState = kRecordTooShort; d.english = true;
     panel.render(d, 0.82f);
     writePpm(panel, dir + "/panel_rec_short.ppm", 96, 128, 112, Panel::contentHeight(d));
+    // Enregistrement vidéo : seul, puis à côté d'un rapport manuel, dans les trois présentations.
+    d.english = false;
+    d.recordState = 0;
+    d.videoSeconds = 754.0;
+    for (int layout = 0; layout < 3; ++layout) {
+        d.layout = static_cast<Layout>(layout);
+        panel.render(d, 0.82f);
+        writePpm(panel, dir + "/panel_vid_" + std::to_string(layout) + ".ppm", 96, 128, 112, Panel::contentHeight(d));
+    }
+    d.recordState = kRecordRunning; d.recordSeconds = 83.0; d.videoSeconds = 3725.0;
+    d.layout = Layout::Classic;
+    panel.render(d, 0.82f);
+    writePpm(panel, dir + "/panel_vid_rec.ppm", 96, 128, 112, Panel::contentHeight(d));
     std::printf("tests des rapports manuels : OK\n");
 }
 
+
+// Enregistrement vidéo : images copiées, cadrage, son mis bout à bout, noms des textures partagées.
+static void testVideo() {
+    // Cadence : jeu à 90 Hz, vidéo à 60 puis 30 images par seconde ; jeu à 72 Hz, vidéo à 30.
+    auto copies = [](double gameHz, double fps, double seconds) {
+        FrameThrottle t;
+        int n = 0;
+        for (int i = 0; i < static_cast<int>(gameHz * seconds); ++i)
+            if (t.take(i / gameHz, fps)) ++n;
+        return n / seconds;
+    };
+    const double c9060 = copies(90, 60, 10), c9030 = copies(90, 30, 10), c7230 = copies(72, 30, 10), c4560 = copies(45, 60, 10);
+    assert(c9060 >= 58 && c9060 <= 62);
+    assert(c9030 >= 29 && c9030 <= 31);
+    assert(c7230 >= 29 && c7230 <= 31);
+    assert(c4560 >= 44 && c4560 <= 46);  // jeu plus lent que la vidéo : chaque image
+    // Pause du jeu (chargement) : pas de rafale de copies à la reprise.
+    {
+        FrameThrottle t;
+        int n = 0;
+        for (int i = 0; i < 90; ++i) t.take(i / 90.0, 30);
+        for (int i = 0; i < 90; ++i)
+            if (t.take(5.0 + i / 90.0, 30)) ++n;
+        assert(n >= 29 && n <= 31);
+    }
+
+    // Cadrage : image symétrique, 16:9, tout le champ.
+    {
+        const CropBox b = ComputeCrop(2000, 2000, -1.f, 1.f, 1.f, -1.f, 0.f, 0.f, 16.f / 9.f, 1.f);
+        assert(std::fabs(b.x) < 1e-5f && std::fabs(b.w - 1.f) < 1e-5f);
+        assert(std::fabs(b.h - 0.5625f) < 1e-4f && std::fabs(b.y - (1.f - 0.5625f) / 2.f) < 1e-4f);
+        const CropBox half = ComputeCrop(2000, 2000, -1.f, 1.f, 1.f, -1.f, 0.f, 0.f, 16.f / 9.f, 0.5f);
+        assert(std::fabs(half.w - 0.5f) < 1e-5f && std::fabs(half.x - 0.25f) < 1e-5f);
+    }
+    // Œil asymétrique : centré sur la direction de la tête, décalé pour rester dans l'image.
+    {
+        const CropBox b = ComputeCrop(2000, 2000, -1.5f, 0.5f, 1.f, -1.f, 0.f, 0.f, 1.f, 0.5f);
+        assert(std::fabs((b.x + b.w * 0.5f) - 0.75f) < 1e-4f);  // tan 0 aux 3/4 de la largeur
+        const CropBox edge = ComputeCrop(2000, 2000, -1.5f, 0.5f, 1.f, -1.f, 0.f, 0.f, 1.f, 0.9f);
+        assert(edge.x + edge.w <= 1.f + 1e-5f && edge.x >= -1e-5f);
+    }
+    // Valeurs absurdes : tout le cadre, sans planter.
+    {
+        const CropBox b = ComputeCrop(0, 0, 0.f, 0.f, 0.f, 0.f, NAN, NAN, 16.f / 9.f, NAN);
+        assert(b.w == 1.f && b.h == 1.f);
+        const CropBox c = ComputeCrop(1000, 800, 0.f, 0.f, 0.f, 0.f, NAN, 0.f, 16.f / 9.f, 0.7f);
+        assert(c.w > 0.f && c.x >= 0.f && c.x + c.w <= 1.0001f && c.y >= 0.f && c.y + c.h <= 1.0001f);
+    }
+    // Écrans inclinés de 10° vers l'extérieur : la tête regarde 10° vers le nez dans le repère de l'œil gauche.
+    {
+        const float a = 10.f * 3.14159265f / 180.f;
+        const Quat left = {0.f, std::sin(a / 2), 0.f, std::cos(a / 2)};    // tourné vers la gauche (+Y)
+        const Quat right = {0.f, -std::sin(a / 2), 0.f, std::cos(a / 2)};
+        float x = 0.f, y = 0.f;
+        HeadForwardInEye(left, left, right, x, y);
+        assert(std::fabs(x - std::tan(a)) < 1e-4f && std::fabs(y) < 1e-5f);
+        HeadForwardInEye(right, left, right, x, y);
+        assert(std::fabs(x + std::tan(a)) < 1e-4f);
+        const Quat same = {0.f, 0.f, 0.f, 1.f};
+        HeadForwardInEye(same, same, same, x, y);
+        assert(std::fabs(x) < 1e-6f && std::fabs(y) < 1e-6f);
+    }
+    // Taille de la vidéo.
+    {
+        int w = 0, h = 0;
+        VideoSize(1440, 16.f / 9.f, w, h);
+        assert(w == 2560 && h == 1440);
+        VideoSize(1080, 4.f / 3.f, w, h);
+        assert(w == 1440 && h == 1080);
+        VideoSize(1081, 16.f / 9.f, w, h);
+        assert(w % 2 == 0 && h % 2 == 0);
+    }
+
+    // Son : paquets à la suite, trou rempli de silence, gigue ignorée, chevauchement retiré.
+    {
+        AudioTimeline t(10);
+        std::vector<float> ones(200, 1.f), out;
+        t.write(0, ones.data(), 100);
+        t.write(105, ones.data(), 100);   // 5 images de retard : gigue, collé à la suite
+        assert(t.end() == 200);
+        t.write(300, ones.data(), 50);    // trou de 100 images : silence
+        assert(t.end() == 350);
+        t.write(320, ones.data(), 50);    // chevauche de 30 : seules les 20 dernières restent
+        assert(t.end() == 370);
+        out.assign(400 * 2, 0.f);
+        t.mixInto(0, out.data(), 400);
+        assert(out[0] == 1.f && out[199 * 2] == 1.f && out[200 * 2] == 0.f && out[299 * 2 + 1] == 0.f && out[300 * 2] == 1.f);
+        assert(out[369 * 2] == 1.f && out[370 * 2] == 0.f);
+        // Lu : la suite repart d'après la lecture ; un paquet trop ancien est ignoré.
+        t.write(390, ones.data(), 5);
+        assert(t.end() == 400);
+        t.write(400, ones.data(), 10);
+        out.assign(20 * 2, 0.f);
+        t.mixInto(400, out.data(), 20, 0.5f);
+        assert(out[0] == 0.5f && out[9 * 2] == 0.5f && out[10 * 2] == 0.f);
+        // Lecture plus loin que ce qui est rangé : ce qui précède est jeté.
+        t.write(420, ones.data(), 100);
+        out.assign(10 * 2, 0.f);
+        t.mixInto(500, out.data(), 10);
+        assert(out[0] == 1.f && out[9 * 2] == 1.f);
+        assert(t.end() == 520);
+    }
+    {
+        float mono[3] = {0.5f, -0.25f, 1.f}, stereo[6];
+        ToStereo(mono, 1, 3, stereo);
+        assert(stereo[0] == 0.5f && stereo[1] == 0.5f && stereo[5] == 1.f);
+        float surround[6] = {0.2f, 0.4f, 0.2f, 1.f, 0.f, 0.f}, s2[2];
+        ToStereo(surround, 6, 1, s2);
+        assert(std::fabs(s2[0] - 0.3f) < 1e-6f && std::fabs(s2[1] - 0.5f) < 1e-6f);
+        float quad[4] = {0.1f, 0.2f, 0.9f, 0.9f};
+        ToStereo(quad, 4, 1, s2);
+        assert(std::fabs(s2[0] - 0.1f) < 1e-6f && std::fabs(s2[1] - 0.2f) < 1e-6f);
+        assert(ToPcm16(2.f) == 32767 && ToPcm16(-2.f) == -32767 && ToPcm16(0.f) == 0 && ToPcm16(NAN) == 0);
+    }
+
+    // Noms des objets partagés.
+    {
+        wchar_t name[64];
+        VideoTextureName(name, 64, 12345, 7, 2);
+        assert(std::wstring(name) == L"XRPerfOverlay.Video.12345.7.2");
+        VideoTextureName(name, 64, 0, 0, -1);
+        assert(std::wstring(name) == L"XRPerfOverlay.Video.0.0.f");
+        VideoTextureName(name, 8, 12345, 7, 2);
+        assert(std::wcslen(name) == 7);
+    }
+    // Lecture très en retard sur ce qui est rangé : les données gardent leur position.
+    {
+        AudioTimeline t(10);
+        std::vector<float> ones(200, 1.f), out(20, 0.f);
+        t.write(1000, ones.data(), 100);
+        t.mixInto(0, out.data(), 10);
+        assert(t.end() == 1100);
+        out.assign(200, 0.f);
+        t.mixInto(1000, out.data(), 100);
+        assert(out[0] == 1.f && out[99 * 2 + 1] == 1.f);
+        // Position aberrante (horloge folle) : pas d'énorme silence en mémoire, on repart de là.
+        t.write(int64_t(1) << 40, ones.data(), 100);
+        assert(t.end() == (int64_t(1) << 40) + 100);
+    }
+    // Cadence avec un peu de gigue : jamais nettement plus d'images que demandé.
+    {
+        auto jittered = [](double gameHz, double fps) {
+            FrameThrottle t;
+            int n = 0;
+            unsigned seed = 12345;
+            for (int i = 0; i < static_cast<int>(gameHz * 20); ++i) {
+                seed = seed * 1103515245u + 12345u;
+                const double jitter = (static_cast<int>((seed >> 16) % 2001) - 1000) / 1e6;  // ±1 ms
+                if (t.take(i / gameHz + jitter, fps)) ++n;
+            }
+            return n / 20.0;
+        };
+        const double a = jittered(90, 60), b = jittered(120, 90), c = jittered(120, 60), d = jittered(72, 72);
+        assert(a >= 57 && a <= 63);
+        assert(b >= 85 && b <= 95);
+        assert(c >= 57 && c <= 63);
+        assert(d >= 70 && d <= 73);
+    }
+    std::printf("tests de l'enregistrement video : OK\n");
+}
+
 int main(int argc, char** argv) {
+    testVideo();
     testStats();
     testAsciiText();
     testInfoLine();

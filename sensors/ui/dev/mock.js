@@ -15,14 +15,30 @@
     WatchEnabled: true, WatchAnchor: 1, WatchPlacement: 0, WatchStyle: 0, WatchSession: true, WatchBattery: true, WatchFps: true, WatchGazeOnly: true,
     WatchSize: 0.06, WatchOpacity: 1, WatchAlong: 0, WatchLift: 0,
     WindowEnabled: false, WindowAnchor: 2, WindowPlacement: 2, WindowGazeOnly: false, WindowWidth: 0.4, WindowAlong: 0, WindowLift: 0, WindowDistance: 0.8,
-    GpuTiming: false, ReportMode: params.get("reports") || "auto", ReportHardware: true, OpenVR: true,
+    GpuTiming: false, ReportMode: params.get("reports") || "auto", ReportHardware: true, OpenVR: true, VideoCapture: params.get("video") !== "off",
   };
   const desktop = {
     DesktopPanel: false, TopMost: true, Scale: 100, Opacity: 100, Anchor: 0,
     CaptureFps: 5, CaptureOpacity: 100, CropLeft: 0, CropTop: 0, CropRight: 0, CropBottom: 0,
     UiTheme: params.get("theme") || "panel", UiBackground: "#12161c", UiText: "#eef2f7", UiAccent: "#f2a65a", UiScale: 100, UiAnimations: true, UiStartFullscreen: false,
     Language: params.get("lang") || "auto",
+    VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75,
+    VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoKey: 86,
   };
+  // Enregistrement vidéo simulé : ?video=rec (en cours), wait (en attente d'un jeu), error (dernière fin sur erreur), off.
+  const video = { available: true, codecs: params.get("codecs") != null ? Number(params.get("codecs")) : 7, state: 0, seconds: 0, bytes: 0, frames: 0, repeated: 0, dropped: 0,
+    audio: 0, file: "", game: "", encoder: "", reason: "", hotkeyOk: params.get("hotkey") !== "taken", folder: desktop.VideoFolder };
+  if (params.get("video") === "rec") Object.assign(video, { state: 2, seconds: 754, bytes: 3.71e9, audio: 3, game: "GothicRemake-Win64-Shipping", encoder: "NVIDIA HEVC Encoder MFT" });
+  if (params.get("video") === "wait") video.state = 1;
+  if (params.get("video") === "error") video.reason = "Le jeu s'est arrêté : le fichier a été terminé.";
+  if (params.get("video") === "last") video.file = desktop.VideoFolder + "\\GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4";
+  function tickVideo() {
+    if (video.state === 1 && Math.random() < 0.3) Object.assign(video, { state: 2, game: "GothicRemake-Win64-Shipping", encoder: "NVIDIA HEVC Encoder MFT",
+      audio: (desktop.VideoGameAudio ? 1 : 0) | (desktop.VideoMic ? 2 : 0) });
+    if (video.state === 2) { video.seconds += 1; video.bytes += desktop.VideoBitrate * 125000 + 24000; video.frames += desktop.VideoFps; }
+    if (video.state === 3) { video.state = 0; video.reason = ""; }
+    reply(Object.assign({ type: "video" }, video));
+  }
   let lang = desktop.Language === "en" ? "en" : "fr";
   let page = "dashboard";
   let fullscreen = false;
@@ -118,13 +134,14 @@
       switch (msg.type) {
         case "ready":
           Promise.all([load("dev/mock_images.js"), load("dev/mock_reports.js")]).then(() => {
-            reply({ type: "init", version: "1.8.0", layerVersion: "1.8.0", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
+            reply({ type: "init", version: "1.9.0", layerVersion: "1.9.0", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
               pawnio: params.get("pawnio") !== "0", fullscreen, layer, reportsFolder: "C:\\XRPerfOverlay\\sessions", page: params.get("page") || "dashboard" });
             reply({ type: "status", game: params.get("game") || "none", sensors: "ok" });
             reply(reportsData().list);
             for (let i = 0; i < 40; i++) tickSensors();
+            reply(Object.assign({ type: "video" }, video));
             clearInterval(timer);
-            timer = setInterval(() => { tickSensors(); images(); }, 1000);
+            timer = setInterval(() => { tickSensors(); images(); tickVideo(); }, 1000);
           });
           break;
         case "page":
@@ -211,6 +228,26 @@
           (navigator.clipboard ? navigator.clipboard.writeText(msg.text) : Promise.reject()).then(
             () => reply({ type: "toast", text: lang === "en" ? "Diagnosis copied to the clipboard." : "Diagnostic copié dans le presse-papiers." }),
             () => { console.log(msg.text); reply({ type: "toast", text: "Copie impossible ici (texte dans la console)" }); });
+          break;
+        case "videoStart":
+          if (!overlay.VideoCapture) break;
+          if (!(video.codecs & ({ h264: 1, hevc: 2, av1: 4 }[desktop.VideoCodec] || 1))) { reply({ type: "toast", text: "Pas d'encodeur matériel pour ce format sur ce PC." }); break; }
+          Object.assign(video, { state: 1, seconds: 0, bytes: 0, frames: 0, reason: "", file: "" });
+          reply(Object.assign({ type: "video" }, video));
+          break;
+        case "videoStop":
+          if (video.state === 2) video.file = desktop.VideoFolder + "\\" + video.game + " 2026-11-08 21-14-03.mp4";
+          video.state = video.state === 2 ? 3 : 0;
+          reply(Object.assign({ type: "video" }, video));
+          break;
+        case "videoDevices":
+          setTimeout(() => reply({ type: "videoDevices",
+            render: [{ id: "{0.0.0.00000000}.{a1}", name: "Haut-parleurs (Pimax Dream Air Audio)" }, { id: "{0.0.0.00000000}.{a2}", name: "Casque (Realtek USB Audio)" }],
+            capture: [{ id: "{0.0.1.00000000}.{b1}", name: "Microphone (Pimax Dream Air Audio)" }, { id: "{0.0.1.00000000}.{b2}", name: "Microphone (Blue Yeti)" }] }), 150);
+          break;
+        case "videoPickFolder":
+        case "videoOpenFolder":
+          reply({ type: "toast", text: "Dossier (simulation)" });
           break;
         case "deleteReports":
           if (confirm(msg.question)) reply({ type: "toast", text: lang === "en" ? "Moved to the Recycle Bin" : "Envoyé à la corbeille" });

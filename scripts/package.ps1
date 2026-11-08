@@ -16,7 +16,7 @@
 #   docs\                   guide d'utilisation (GUIDE.md, GUIDE.en.md), développement, captures
 #   LICENSE.txt, THIRD-PARTY.md
 #   scripts\setup.ps1       script d'installation lancé par Installer.bat
-#   programme\              ce qui est copié dans le dossier d'installation (XRPerfVR et XRPerfCapture dans programme\sensors)
+#   programme\              ce qui est copié dans le dossier d'installation (XRPerfVR, XRPerfCapture et XRPerfRecord dans programme\sensors)
 param(
     # DLL de la layer compilée en Release.
     [string]$LayerDll = '',
@@ -102,8 +102,9 @@ if (-not (Test-Path -LiteralPath $runtimeConfig -PathType Leaf) -or -not ((Get-C
 # (même dossier), rangés à côté de XRPerfSensors qui les lance.
 Write-Host 'XRPerfVR (jeux SteamVR / OpenVR)...'
 $layerFolder = Split-Path -Parent $layerPath
-# XRPerfCapture.dll (fenêtre du bureau affichée dans le casque), chargée par XRPerfSensors, est rangée au même endroit.
-foreach ($file in @('XRPerfVR.exe', 'openvr_api.dll', 'XRPerfCapture.dll')) {
+# XRPerfCapture.dll (fenêtre du bureau affichée dans le casque) et XRPerfRecord.dll (enregistrement vidéo),
+# chargées par XRPerfSensors, sont rangées au même endroit.
+foreach ($file in @('XRPerfVR.exe', 'openvr_api.dll', 'XRPerfCapture.dll', 'XRPerfRecord.dll')) {
     Copy-Required (Join-Path $layerFolder $file) (Join-Path (Join-Path $program 'sensors') $file)
 }
 

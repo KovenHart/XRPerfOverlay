@@ -111,6 +111,9 @@ struct Config {
     ReportMode reportMode = ReportMode::Auto;  // quand écrire un rapport de session
     bool summaryHardware = true;        // modèles du processeur et de la carte graphique dans le résumé
     bool gpuTiming = false;             // mesurer le temps GPU par horodatages (sinon : estimation seule)
+    // Enregistrement vidéo possible dans ce jeu ([video] capture) : la layer suit alors les images des
+    // swapchains du jeu pour pouvoir les copier quand XRPerfSensors enregistre. 0 : rien de tout ça.
+    bool videoCapture = true;
     std::wstring summaryFolder;         // dossier des résumés (par défaut : "sessions" à côté de la DLL)
     std::wstring iniPath;
 };

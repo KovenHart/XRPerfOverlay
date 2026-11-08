@@ -54,6 +54,7 @@ Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit �
 - **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
 - **Fenêtre** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
 - **Miroir du bureau** : la fenêtre miroir pour OBS, son emplacement, sa taille, son opacité, premier plan.
+- **Vidéo** : enregistrement vidéo du casque (voir « Vidéo du casque »).
 - **Mesures** : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
 - **Rapports** : voir « Rapports de session ».
 - **Configuration** : diagnostic du PC pour la VR (voir « Diagnostic de configuration »).
@@ -204,6 +205,25 @@ La page Miroir du bureau propose sa taille (25 à 300 %), son opacité, son empl
 
 La fenêtre montre toujours le panneau avec un fond opaque, même s'il est masqué ou rendu transparent dans le casque ; sa propre opacité se règle à part. Elle prend la hauteur du panneau, selon la présentation choisie. La layer et `XRPerfSensors` doivent venir de la même version, ce dont `Installer.bat` se charge ; avec une DLL et un `XRPerfSensors` de versions différentes, la fenêtre reste en attente. Côté jeu, la layer ne copie l'image du panneau que lorsque la fenêtre est affichée (environ 0,15 ms quatre fois par seconde) ; fenêtre fermée, il n'y a aucun travail supplémentaire.
 
+## Vidéo du casque
+
+XRPerfSensors peut filmer ce que vous voyez dans le casque, sans OBS : l'image d'un œil, cadrée en 16:9 (ou 4:3, ou carré), encodée par la carte graphique dans un fichier MP4, avec le son du jeu et, si vous le voulez, le micro.
+
+**Démarrer et arrêter.** `Ctrl+Alt+V` (touche à changer dans la page Vidéo), le bouton de la page Vidéo, ou « Enregistrer la vidéo du casque » dans le menu de l'icône. L'enregistrement commence avec la première image d'un jeu VR : lancé avant le jeu, il attend (« REC en attente »). Pendant l'enregistrement, un carré rouge et la durée (« VID 03:12 ») s'affichent en haut du panneau dans le casque, et « REC 03:12 » en haut de la fenêtre de XRPerfSensors. Le même raccourci arrête et termine le fichier. Si le jeu se ferme, le fichier est terminé tout seul au bout de 10 secondes ; si XRPerfSensors se ferme, il le termine avant de partir.
+
+**Fichiers.** Dans `Vidéos\XR Perf Overlay` par défaut (« Changer... » dans la page Vidéo), nommés d'après le jeu et l'heure : `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. Un fichier MP4 n'est lisible qu'une fois terminé : si le PC s'arrête brutalement pendant l'enregistrement, la vidéo en cours est perdue.
+
+**Réglages** (page Vidéo, valables pour le prochain enregistrement) :
+
+- **Format** : H.264 (lu partout), H.265 (HEVC) ou AV1, plus légers à qualité égale. Seuls les formats que la carte graphique sait encoder sont proposés : AV1 demande une GeForce RTX 40 ou plus récente, une Radeon RX 7000 ou une Intel Arc.
+- **Résolution** (720p à 2160p), **images par seconde** (30, 60, 72 ou 90 ; au-delà de la cadence du jeu, des images sont répétées) et **débit** (5 à 150 Mbit/s ; une minute à 30 Mbit/s pèse environ 225 Mo).
+- **Œil filmé**, **format de l'image** et **cadrage** : la part de l'image de l'œil gardée (75 % par défaut). L'image d'un œil couvre un champ très large, aux bords étirés ; le cadre est centré sur la direction de la tête, ce qui compte sur les casques aux écrans inclinés (Pimax), où chaque œil regarde un peu vers l'extérieur.
+- **Son du jeu** : tout ce que joue la sortie choisie (celle par défaut de Windows, ou une autre, celle du casque en général). **Micro** : celui par défaut ou un autre. Les deux sont mélangés dans une seule piste AAC. Si la sortie ou le micro changent en cours d'enregistrement (casque débranché, SteamVR qui change la sortie par défaut), leur son s'arrête pour le reste du fichier.
+
+**D'où vient l'image.** Dans un jeu OpenXR (Direct3D 11 ou 12), la layer copie l'image de l'œil au moment où le jeu l'envoie au runtime : c'est l'image du jeu seule, sans le panneau ni ce que le runtime ajoute par-dessus. Avec un rendu fovéal (Quad-Views), c'est l'image large de l'œil, moins nette au centre que dans le casque. Dans un jeu SteamVR (OpenVR), XRPerfVR prend l'image miroir de SteamVR, qui contient aussi les calques (le panneau compris). La copie reste dans la carte graphique ; l'enregistreur la recadre, la convertit et l'encode, toujours sur la carte graphique (NVENC chez NVIDIA, AMF chez AMD, Quick Sync chez Intel), puce à part du rendu. Le coût pour le jeu est une copie d'image (quelques centièmes de milliseconde) par image vidéo, et rien du tout hors enregistrement.
+
+**Désactiver.** L'interrupteur « Enregistrement vidéo » de la page Vidéo (ou `capture=0` dans la section `[video]` de `XRPerfOverlay.ini`) libère le raccourci et, au prochain lancement d'un jeu, la layer ne suit plus les images des jeux OpenXR.
+
 ## Rapports de session
 
 À chaque session de jeu (ou, en mode manuel, à chaque enregistrement : voir plus bas), la layer écrit un rapport (fichier texte) dans le sous-dossier `sessions\` (à côté de la DLL), nommé d'après la date, l'heure et le jeu, par exemple `2026-10-10_06-50-12_Game-Win64-Shipping.txt`. Il contient :
@@ -282,6 +302,7 @@ Le fichier reste ouvert pendant toute la session et chaque mise à jour se fait 
 - **Panneau figé ou qui clignote dans un jeu SteamVR (OpenVR)** : le journal indique « image du calque ... refusee par SteamVR » avec un code, puis « de nouveau acceptee » si cela s'arrange. XRPerfVR envoie l'image par Direct3D 11 sur la carte graphique de SteamVR ; si Direct3D 11 est indisponible (ligne « Direct3D 11 indisponible »), il revient à l'envoi d'une image brute, moins fiable.
 - **La fenêtre capturée n'apparaît pas** : la page Fenêtre de XRPerfSensors donne l'état de la capture (fenêtre introuvable, réduite, Windows trop ancien, refus de capture). Dans un jeu, la case « Afficher la fenêtre dans le casque » doit être cochée (ou `Ctrl+Alt+F`) ; posée dans l'espace, elle peut être derrière vous : `Ctrl+Alt+G` la ramène devant. Le journal indique « Fenetre capturee : swapchain creee » à la première image reçue. Une fenêtre lancée en administrateur peut refuser d'être capturée par XRPerfSensors s'il ne l'est pas.
 - **Le temps GPU garde son « ~ » malgré l'option de mesure** : l'option ne vaut qu'au prochain lancement du jeu ; le journal indique ensuite « Mesure du temps GPU activee », ou pourquoi elle ne l'est pas (Vulkan, OpenGL, pilote qui ne renvoie rien).
+- **La vidéo reste « en attente d'un jeu »** : dans un jeu OpenXR, l'enregistrement vidéo doit être permis au lancement du jeu (sinon, relancez le jeu) et le jeu doit utiliser Direct3D 11 ou 12 ; dans un jeu SteamVR, l'option « Aussi dans les jeux SteamVR » doit être cochée. Le journal indique « Video : enregistrement demande, ce processus fournit les images », ou pourquoi la copie est impossible (Direct3D 11.4 absent, images multi-échantillonnées, texture partagée refusée). Si la page Vidéo annonce un encodeur refusé, essayez H.264, ou une résolution ou une cadence plus basses.
 - **`--` pour la température ou la fréquence CPU** : PawnIO n'est pas installé, ou le processeur n'est pas reconnu par LibreHardwareMonitor.
 - **Désactiver sans désinstaller** : interrupteur « Jeux OpenXR (layer) » de XRPerfSensors (voir « Désactiver la layer »), ou la variable d'environnement `DISABLE_XR_APILAYER_NOVENDOR_perf_overlay=1`.
 - **Rien dans un jeu OpenXR, bandeau « layer OpenXR désactivée » dans XRPerfSensors** : la layer a été désactivée ; réactivez-la au même endroit, puis relancez le jeu.
