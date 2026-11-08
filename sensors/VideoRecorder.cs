@@ -304,7 +304,11 @@ namespace XRPerfSensors
                 case 12: return Loc.T("Image du jeu illisible : textures partagées introuvables.", "Game image unreadable: shared textures not found.") + code;
                 case 20: return Loc.T("Encodeur refusé pour ce format : essayez H.264, une résolution ou une cadence plus basse.", "Encoder refused this format: try H.264, a lower resolution or frame rate.") + code;
                 case 21: return Loc.T("Impossible de créer le fichier vidéo dans le dossier choisi.", "Could not create the video file in the chosen folder.") + code;
-                case 22: return Loc.T("Écriture interrompue (disque plein ?) : le fichier a été terminé.", "Writing stopped (disk full?): the file was finalized.") + code;
+                case 22: return Loc.T("Disque plein : le fichier a été terminé.", "Disk full: the file was finalized.") + code;
+                case 23: return Loc.T("L'encodeur ou le fichier MP4 a refusé une image : essayez un autre format (H.265 ou H.264). Détails dans XRPerfRecord.log.",
+                                      "The encoder or the MP4 file refused a frame: try another format (H.265 or H.264). Details in XRPerfRecord.log.") + code;
+                case 24: return Loc.T("Le son a été refusé par l'encodeur AAC : essayez sans le micro ou sans le son du jeu. Détails dans XRPerfRecord.log.",
+                                      "The sound was refused by the AAC encoder: try without the microphone or the game sound. Details in XRPerfRecord.log.") + code;
                 case 30: return Loc.T("Le jeu s'est arrêté : le fichier a été terminé.", "The game stopped: the file was finalized.");
                 default: return Loc.T("Enregistrement arrêté sur une erreur.", "Recording stopped on an error.") + code;
             }

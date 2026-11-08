@@ -108,7 +108,7 @@ endif()
 # via Media Foundation, son WASAPI). Chargée par XRPerfSensors (rangée à côté de lui).
 add_library(XRPerfRecord SHARED src/video_record.cpp)
 target_include_directories(XRPerfRecord PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
-target_compile_definitions(XRPerfRecord PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _WIN32_WINNT=0x0A00)
+target_compile_definitions(XRPerfRecord PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _WIN32_WINNT=0x0A00 XRPO_VERSION_TEXT="${XRPO_VERSION}")
 target_link_libraries(XRPerfRecord PRIVATE d3d11 d3d12 dxgi mfplat mfreadwrite mfuuid ole32 shell32 winmm)
 set_target_properties(XRPerfRecord PROPERTIES PREFIX "")
 if(MSVC)

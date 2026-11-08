@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -95,7 +96,9 @@ enum Reason : int32_t {
     kNoTextures = 12,      // textures du jeu illisibles
     kNoEncoder = 20,       // pas d'encodeur matériel pour ce codec (ou refus du format)
     kNoFile = 21,          // fichier impossible à créer
-    kWriteFailed = 22,     // écriture impossible (disque plein...)
+    kWriteFailed = 22,     // écriture impossible (disque plein)
+    kVideoRejected = 23,   // l'encodeur ou le fichier MP4 a refusé une image
+    kAudioRejected = 24,   // ... un morceau de son
     kGameEnded = 30,       // le jeu s'est arrêté : fichier terminé
     kStoppedByUser = 31,
 };
@@ -162,6 +165,45 @@ int64_t Now100ns() {
     const int64_t f = QpcFrequency();
     return (c.QuadPart / f) * 10'000'000 + (c.QuadPart % f) * 10'000'000 / f;
 }
+
+#ifndef XRPO_VERSION_TEXT
+#define XRPO_VERSION_TEXT "dev"
+#endif
+
+// Journal : %LOCALAPPDATA%\\XRPerfOverlay\\XRPerfRecord.log (le dernier enregistrement et ses éventuelles erreurs).
+void RecordLog(const char* format, ...) {
+    wchar_t folder[MAX_PATH];
+    const DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", folder, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return;
+    std::wstring path = std::wstring(folder) + L"\\XRPerfOverlay";
+    CreateDirectoryW(path.c_str(), nullptr);
+    path += L"\\XRPerfRecord.log";
+    // Gardé court : recommencé au-delà de 256 Ko.
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    const bool big = GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data) && (data.nFileSizeHigh != 0 || data.nFileSizeLow > 256 * 1024);
+    FILE* f = _wfopen(path.c_str(), big ? L"wb" : L"ab");
+    if (!f) return;
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    std::fprintf(f, "%04u-%02u-%02u %02u:%02u:%02u.%03u  ", static_cast<unsigned>(t.wYear), static_cast<unsigned>(t.wMonth), static_cast<unsigned>(t.wDay),
+                 static_cast<unsigned>(t.wHour), static_cast<unsigned>(t.wMinute), static_cast<unsigned>(t.wSecond), static_cast<unsigned>(t.wMilliseconds));
+    va_list args;
+    va_start(args, format);
+    std::vfprintf(f, format, args);
+    va_end(args);
+    std::fputs("\r\n", f);
+    std::fclose(f);
+}
+
+std::string Utf8(const std::wstring& text) {
+    if (text.empty()) return std::string();
+    const int n = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+    std::string out(static_cast<size_t>(n > 0 ? n : 0), '\0');
+    if (n > 0) WideCharToMultiByte(CP_UTF8, 0, text.c_str(), static_cast<int>(text.size()), &out[0], n, nullptr, nullptr);
+    return out;
+}
+
+const char* kCodecNames[] = {"H.264", "HEVC", "AV1"};
 
 // Formats : texture à nous (même famille, sans type) et vue lue par le shader (valeurs brutes : un format
 // _SRGB est lu sans conversion, le shader sait s'il faut encoder).
@@ -537,6 +579,7 @@ class Recorder {
         const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         const bool mf = SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_LITE));
         int reason = mf ? kOk : kNoMediaFoundation;
+        RecordLog("Demarrage (XRPerfRecord %s).", XRPO_VERSION_TEXT);
         try {
             if (mf) reason = record();
         } catch (...) {
@@ -556,6 +599,8 @@ class Recorder {
         {
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.reason = reason;
+            RecordLog("Fin (raison %d) : %.1f s, %u image(s) dont %u repetee(s), %u sautee(s), %llu octets, son %u.", reason, m_status.seconds, m_status.frames,
+                      m_status.repeated, m_status.dropped, static_cast<unsigned long long>(m_status.bytes), m_status.audio);
         }
         m_state = kStopped;
     }
@@ -806,9 +851,14 @@ class Recorder {
         return kOk;
     }
 
-    int fail(int reason, HRESULT hr) {
-        std::lock_guard<std::mutex> lock(m_statusMutex);
-        m_status.hresult = hr;
+    int fail(int reason, HRESULT hr, const char* step = "") {
+        uint32_t frames = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_status.hresult = hr;
+            frames = m_status.frames;
+        }
+        RecordLog("Erreur %d (%s) : 0x%08lx, apres %u image(s) ecrite(s).", reason, step, static_cast<unsigned long>(hr), frames);
         return reason;
     }
 
@@ -1000,9 +1050,9 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, m_manager.get());
         if (SUCCEEDED(hr)) hr = attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, TRUE);
         if (SUCCEEDED(hr)) hr = attributes->SetGUID(MF_TRANSCODE_CONTAINERTYPE, MFTranscodeContainerType_MPEG4);
-        if (FAILED(hr)) return fail(kNoEncoder, hr);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "attributs du fichier");
         hr = MFCreateSinkWriterFromURL(m_path.c_str(), nullptr, attributes.get(), m_writer.put());
-        if (FAILED(hr)) return fail(kNoFile, hr);
+        if (FAILED(hr)) return fail(kNoFile, hr, "creation du fichier");
 
         // Vidéo.
         const UINT64 size = (static_cast<UINT64>(m_width) << 32) | static_cast<UINT32>(m_height);
@@ -1020,7 +1070,7 @@ class Recorder {
         if (SUCCEEDED(hr) && m_options.codec == 0) hr = out->SetUINT32(MF_MT_MPEG2_PROFILE, 100);  // H.264 High
         if (SUCCEEDED(hr) && m_options.codec == 1) hr = out->SetUINT32(MF_MT_MPEG2_PROFILE, 1);    // HEVC Main
         if (SUCCEEDED(hr)) hr = m_writer->AddStream(out.get(), &m_videoStream);
-        if (FAILED(hr)) return fail(kNoEncoder, hr);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "type video de sortie");
         hr = MFCreateMediaType(in.put());
         if (SUCCEEDED(hr)) hr = in->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
         if (SUCCEEDED(hr)) hr = in->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
@@ -1040,7 +1090,7 @@ class Recorder {
             encoding->SetUINT32(kGopSize, m_options.fps * 2);  // une image clé toutes les 2 s : montage et reprise faciles
             hr = m_writer->SetInputMediaType(m_videoStream, in.get(), encoding.get());
         }
-        if (FAILED(hr)) return fail(kNoEncoder, hr);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "type video d'entree (encodeur)");
 
         // Son (toujours une piste, silencieuse si rien n'est enregistré : lecteurs et montage plus simples).
         Ptr<IMFMediaType> aacType, pcmType;
@@ -1061,7 +1111,7 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = pcmType->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 4);
         if (SUCCEEDED(hr)) hr = pcmType->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, kAudioRate * 4);
         if (SUCCEEDED(hr)) hr = m_writer->SetInputMediaType(m_audioStream, pcmType.get(), nullptr);
-        if (FAILED(hr)) return fail(kNoEncoder, hr);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "son AAC");
 
         // Images NV12 réservées à l'encodeur : rendues à la réserve quand il n'en a plus besoin.
         Ptr<IMFAttributes> pool;
@@ -1071,15 +1121,20 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = pool->SetUINT32(MF_SA_D3D11_BINDFLAGS, D3D11_BIND_RENDER_TARGET);
         if (SUCCEEDED(hr)) hr = pool->SetUINT32(MF_SA_D3D11_USAGE, D3D11_USAGE_DEFAULT);
         if (SUCCEEDED(hr)) hr = m_allocator->InitializeSampleAllocatorEx(4, 16, pool.get(), in.get());
-        if (FAILED(hr)) return fail(kNoConversion, hr);
+        if (FAILED(hr)) return fail(kNoConversion, hr, "reserve d'images NV12");
 
         hr = m_writer->BeginWriting();
-        if (FAILED(hr)) return fail(kNoEncoder, hr);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "debut d'ecriture");
         m_writing = true;
         m_audioWritten = 0;
         m_videoSamples = 0;
+        RecordLog("Enregistrement : %s %dx%d %u i/s %u kbit/s, oeil %u, encodeur \"%s\", image du jeu %ux%u (format DXGI %u), fichier \"%s\".",
+                  kCodecNames[m_options.codec], m_width, m_height, m_options.fps, m_options.bitrateKbps, m_options.eye,
+                  Utf8(EncoderName(m_options.codec)).c_str(), m_privateWidth, m_privateHeight, static_cast<unsigned>(m_privateFormat), Utf8(m_path).c_str());
         return kOk;
     }
+
+    static bool DiskFull(HRESULT hr) { return hr == HRESULT_FROM_WIN32(ERROR_DISK_FULL) || hr == HRESULT_FROM_WIN32(ERROR_HANDLE_DISK_FULL); }
 
     static std::wstring EncoderName(uint32_t codec) {
         MFT_REGISTER_TYPE_INFO info = {MFMediaType_Video, CodecSubtype(codec)};
@@ -1127,7 +1182,7 @@ class Recorder {
         sample->SetSampleTime(time);
         sample->SetSampleDuration(duration);
         hr = m_writer->WriteSample(m_videoStream, sample.get());
-        if (FAILED(hr)) return fail(kWriteFailed, hr);
+        if (FAILED(hr)) return fail(DiskFull(hr) ? kWriteFailed : kVideoRejected, hr, "image video");
         ++m_videoSamples;
         std::lock_guard<std::mutex> lock(m_statusMutex);
         ++m_status.frames;
@@ -1224,7 +1279,7 @@ class Recorder {
             if (SUCCEEDED(hr)) hr = sample->SetSampleTime(m_audioWritten * 10'000'000 / kAudioRate);
             if (SUCCEEDED(hr)) hr = sample->SetSampleDuration(frames * 10'000'000 / kAudioRate);
             if (SUCCEEDED(hr)) hr = m_writer->WriteSample(m_audioStream, sample.get());
-            if (FAILED(hr)) return fail(kWriteFailed, hr);
+            if (FAILED(hr)) return fail(DiskFull(hr) ? kWriteFailed : kAudioRejected, hr, "son");
             m_audioWritten += frames;
         }
         return kOk;
