@@ -306,11 +306,15 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
                 frame.tanRight = std::tan(view.fov.angleRight);
                 frame.tanUp = std::tan(view.fov.angleUp);
                 frame.tanDown = std::tan(view.fov.angleDown);
+                const auto quat = [](const XrQuaternionf& q) { return Normalized(Quat{q.x, q.y, q.z, q.w}); };
+                frame.eyeOrientation = quat(view.pose.orientation);
+                frame.headOrientation = frame.eyeOrientation;
                 if (projection->viewCount >= 2) {
-                    const auto quat = [](const XrQuaternionf& q) { return Quat{q.x, q.y, q.z, q.w}; };
-                    HeadForwardInEye(quat(view.pose.orientation), quat(projection->views[0].pose.orientation),
-                                     quat(projection->views[1].pose.orientation), frame.centerX, frame.centerY);
+                    const Quat left = quat(projection->views[0].pose.orientation), right = quat(projection->views[1].pose.orientation);
+                    HeadForwardInEye(frame.eyeOrientation, left, right, frame.centerX, frame.centerY);
+                    frame.headOrientation = MidOrientation(left, right);
                 }
+                frame.poseValid = true;  // dans le repère de la scène du jeu (celui de la couche projetée)
                 videoPanelPlacement(*projection, view, frameEndInfo.displayTime, frame);
                 m_video->publish(frame);
             }

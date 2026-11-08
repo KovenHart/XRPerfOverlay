@@ -43,6 +43,8 @@ struct VideoFrameInfo {
     float centerX = 0.f, centerY = 0.f;  // direction de la tête, mêmes unités
     uint32_t panelFlags = 0;   // kVideoPanelShown, kVideoPanelPlaced (shared_block.h)
     float panelCorners[12] = {};  // coins du panneau dans le repère de l'œil, si kVideoPanelPlaced
+    bool poseValid = false;    // orientations de l'œil et de la tête dans la scène (stabilisation)
+    Quat eyeOrientation, headOrientation;
 };
 
 class VideoProducer {

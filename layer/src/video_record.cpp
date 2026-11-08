@@ -68,6 +68,8 @@ struct XrprOptions {
     uint32_t overlay;       // panneau dans la vidéo (jeu OpenXR) : VideoOverlayMode
     uint32_t overlayCorner; // 0 haut gauche, 1 haut droite, 2 bas gauche, 3 bas droite
     float overlaySize;      // largeur du panneau dans un coin, part de la largeur de la vidéo
+    float stabilizeSeconds; // stabilisation : temps de retard de la caméra (0 : aucune)
+    uint32_t level;         // 1 : horizon droit
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
     wchar_t captureDevice[256];  // micro ("" : celui par défaut)
@@ -253,10 +255,13 @@ DXGI_FORMAT ViewOf(DXGI_FORMAT f) {
 
 const char kShaders[] = R"(
 cbuffer Params : register(b0) {
-    float4 crop;       // origine et taille du cadre dans l'image de l'œil (coordonnées 0 à 1)
     float4 taps;       // xy : écart des quatre échantillons (coordonnées de l'image) ; z : 1 si valeurs linéaires
     float4 corner[4];  // panneau : coins à l'écran (haut gauche, haut droit, bas gauche, bas droit)
     float4 panelUv;    // panneau : partie de sa texture (u, v en bas à droite)
+    float4 rotation[3];  // caméra de la vidéo -> œil (lignes d'une matrice 3 x 3 ; identité sans stabilisation)
+    float4 cameraTan;  // bords de la vidéo, en tangentes dans le repère de la caméra (gauche, droite, haut, bas)
+    float4 eyeTan;     // bords de l'image de l'œil, en tangentes (gauche, droite, haut, bas)
+    float4 eyeRect;    // partie de la texture qui contient l'œil (coordonnées 0 à 1 : origine, taille)
 };
 Texture2D image : register(t0);
 SamplerState linearClamp : register(s0);
@@ -271,9 +276,14 @@ VsOut VsMain(uint id : SV_VertexID) {
     return o;
 }
 
-// 1. Image de l'œil cadrée et réduite, en valeurs linéaires (la cible sRGB les encode).
+// 1. Image de l'œil cadrée et réduite, en valeurs linéaires (la cible sRGB les encode). Chaque pixel de la
+// vidéo est une direction de la caméra, ramenée dans l'œil puis dans sa texture.
 float4 PsEye(VsOut i) : SV_Target {
-    float2 p = crop.xy + i.uv * crop.zw;
+    float3 d = float3(lerp(cameraTan.x, cameraTan.y, i.uv.x), lerp(cameraTan.z, cameraTan.w, i.uv.y), -1.0);
+    float3 e = float3(dot(rotation[0].xyz, d), dot(rotation[1].xyz, d), dot(rotation[2].xyz, d));
+    float2 t = e.xy / max(-e.z, 1e-4);
+    float2 q = float2((t.x - eyeTan.x) / (eyeTan.y - eyeTan.x), (eyeTan.z - t.y) / (eyeTan.z - eyeTan.w));
+    float2 p = eyeRect.xy + q * eyeRect.zw;
     float3 c = 0.25 * (image.SampleLevel(linearClamp, p + float2(taps.x, taps.y), 0).rgb +
                        image.SampleLevel(linearClamp, p + float2(-taps.x, taps.y), 0).rgb +
                        image.SampleLevel(linearClamp, p + float2(taps.x, -taps.y), 0).rgb +
@@ -317,11 +327,15 @@ float2 PsChroma(VsOut i) : SV_Target {
 )";
 
 struct ShaderParams {
-    float crop[4];
     float taps[4];
     float corner[16];
     float panelUv[4];
+    float rotation[12];
+    float cameraTan[4];
+    float eyeTan[4];
+    float eyeRect[4];
 };
+static_assert(sizeof(ShaderParams) % 16 == 0, "tampon de constantes : multiple de 16 octets");
 
 typedef HRESULT(WINAPI* PFN_Compile)(LPCVOID, SIZE_T, LPCSTR, const D3D_SHADER_MACRO*, ID3DInclude*, LPCSTR, LPCSTR, UINT, UINT, ID3DBlob**,
                                      ID3DBlob**);
@@ -560,7 +574,8 @@ class Recorder {
         if (!share || bytes < kVideoShareBytes) return kBadOptions;
         if (options.size != sizeof(XrprOptions) || options.codec > 2 || options.fps < 10 || options.fps > 240 || options.height < 240 ||
             options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f) ||
-            options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f))
+            options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f) ||
+            !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1)
             return kBadOptions;
         m_options = options;
         m_options.folder[259] = m_options.renderDevice[255] = m_options.captureDevice[255] = 0;
@@ -810,6 +825,9 @@ class Recorder {
         m_raster.reset();
         m_panelPixels.clear();
         m_panelFlags = 0;
+        m_poseValid = false;
+        m_stabilizer.reset();
+        m_lastConvertTime = -1;
         m_params.reset();
         m_sampler.reset();
         m_copyFence.reset();
@@ -1025,6 +1043,9 @@ class Recorder {
             const uint32_t rx = info.rectX, ry = info.rectY, rw = info.rectWidth, rh = info.rectHeight, linear = info.linear;
             const float tl = info.tanLeft, tr = info.tanRight, tu = info.tanUp, td = info.tanDown, cx = info.centerX, cy = info.centerY;
             const uint32_t panelFlags = info.panelFlags;
+            const bool poseValid = info.poseValid != 0;
+            const Quat eyeOrientation = {info.eyeOrientation[0], info.eyeOrientation[1], info.eyeOrientation[2], info.eyeOrientation[3]};
+            const Quat headOrientation = {info.headOrientation[0], info.headOrientation[1], info.headOrientation[2], info.headOrientation[3]};
             float panelCorners[12];
             for (int i = 0; i < 12; ++i) panelCorners[i] = info.panelCorners[i];
             bool ok = true;
@@ -1065,6 +1086,9 @@ class Recorder {
             m_center[0] = cx;
             m_center[1] = cy;
             m_panelFlags = panelFlags;
+            m_poseValid = poseValid;
+            m_eyeOrientation = Normalized(eyeOrientation);
+            m_headOrientation = Normalized(headOrientation);
             std::memcpy(m_panelCorners, panelCorners, sizeof(m_panelCorners));
             m_hasFrame = true;
             fresh = true;
@@ -1251,10 +1275,11 @@ class Recorder {
         m_audioWritten = 0;
         m_videoSamples = 0;
         static const char* kOverlayNames[] = {"non", "a sa place", "dans un coin"};
-        RecordLog("Enregistrement : %s %dx%d %u i/s %u kbit/s, vitesse/qualite %u (%s), panneau %s, oeil %u, encodeur \"%s\", image du jeu %ux%u "
+        RecordLog("Enregistrement : %s %dx%d %u i/s %u kbit/s, vitesse/qualite %u (%s), panneau %s, stabilisation %.2f s%s, oeil %u, encodeur \"%s\", image du jeu %ux%u "
                   "(format DXGI %u), fichier \"%s\".",
                   kCodecNames[m_options.codec], m_width, m_height, m_options.fps, m_options.bitrateKbps, m_options.qualityVsSpeed,
-                  m_options.qualityVsSpeed == 0 ? "encodeur" : m_qualityApplied ? "accepte" : "refuse", kOverlayNames[m_options.overlay], m_options.eye,
+                  m_options.qualityVsSpeed == 0 ? "encodeur" : m_qualityApplied ? "accepte" : "refuse", kOverlayNames[m_options.overlay],
+                  static_cast<double>(m_options.stabilizeSeconds), m_options.level ? " et horizon droit" : "", m_options.eye,
                   Utf8(EncoderName(m_options.codec)).c_str(), m_privateWidth, m_privateHeight, static_cast<unsigned>(m_privateFormat), Utf8(m_path).c_str());
         return kOk;
     }
@@ -1303,7 +1328,7 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = dxgi->GetResource(__uuidof(ID3D11Texture2D), texture.putVoid());
         if (SUCCEEDED(hr)) hr = dxgi->GetSubresourceIndex(&subresource);
         if (FAILED(hr)) return fail(kNoConversion, hr);
-        if (!convert(texture.get(), subresource)) return fail(kNoConversion, E_FAIL);
+        if (!convert(texture.get(), subresource, time)) return fail(kNoConversion, E_FAIL);
         // Une image Direct3D a une longueur nulle tant qu'on ne la donne pas : l'encodeur la refuserait
         // (E_INVALIDARG). Longueur d'une image NV12 complète.
         Ptr<IMF2DBuffer> buffer2d;
@@ -1346,7 +1371,7 @@ class Recorder {
         m_panelHeight = height;
     }
 
-    bool convert(ID3D11Texture2D* target, UINT subresource) {
+    bool convert(ID3D11Texture2D* target, UINT subresource, int64_t time) {
         updatePanel();
         DeviceLock lock(m_multithread.get());
         D3D11_TEXTURE2D_DESC desc;
@@ -1365,31 +1390,65 @@ class Recorder {
         rtv.Format = DXGI_FORMAT_R8G8_UNORM;
         if (FAILED(m_device->CreateRenderTargetView(target, &rtv, chroma.put()))) return false;
 
-        // Cadre dans la partie qui contient l'œil, puis ramené aux coordonnées de toute la texture.
+        // Cadre dans la partie qui contient l'œil (coordonnées 0 à 1 de cette partie), centré sur la tête.
         const uint32_t rw = m_rect[2] ? m_rect[2] : m_privateWidth, rh = m_rect[3] ? m_rect[3] : m_privateHeight;
         const float videoAspect = static_cast<float>(m_width) / static_cast<float>(m_height);
-        const CropBox eyeBox = ComputeCrop(static_cast<int>(rw), static_cast<int>(rh), m_fov[0], m_fov[1], m_fov[2], m_fov[3], m_center[0], m_center[1],
-                                           videoAspect, m_options.field);
-        CropBox box = eyeBox;
-        const float tw = static_cast<float>(m_privateWidth), th = static_cast<float>(m_privateHeight);
-        box.x = (static_cast<float>(m_rect[0]) + box.x * static_cast<float>(rw)) / tw;
-        box.y = (static_cast<float>(m_rect[1]) + box.y * static_cast<float>(rh)) / th;
-        box.w = box.w * static_cast<float>(rw) / tw;
-        box.h = box.h * static_cast<float>(rh) / th;
+        float eyeTan[4] = {m_fov[0], m_fov[1], m_fov[2], m_fov[3]};
+        if (!(eyeTan[1] - eyeTan[0] > 1e-4f) || !(eyeTan[2] - eyeTan[3] > 1e-4f)) {  // champ inconnu : cadre en proportion de l'image
+            eyeTan[0] = -1.f;
+            eyeTan[1] = 1.f;
+            eyeTan[2] = 1.f;
+            eyeTan[3] = -1.f;
+        }
+        const CropBox box = ComputeCrop(static_cast<int>(rw), static_cast<int>(rh), eyeTan[0], eyeTan[1], eyeTan[2], eyeTan[3], m_center[0], m_center[1],
+                                        videoAspect, m_options.field);
+        // Le même cadre en tangentes : bords de la caméra de la vidéo.
+        const float cameraTan[4] = {eyeTan[0] + box.x * (eyeTan[1] - eyeTan[0]), eyeTan[0] + (box.x + box.w) * (eyeTan[1] - eyeTan[0]),
+                                    eyeTan[2] - box.y * (eyeTan[2] - eyeTan[3]), eyeTan[2] - (box.y + box.h) * (eyeTan[2] - eyeTan[3])};
+        // Stabilisation : la caméra suit la tête lissée (rotation identité sans stabilisation).
+        Quat cameraToEye;
+        const bool stabilize = (m_options.stabilizeSeconds > 0.f || m_options.level != 0) && m_poseValid;
+        if (stabilize) {
+            const double dt = m_lastConvertTime >= 0 && time > m_lastConvertTime ? static_cast<double>(time - m_lastConvertTime) / 1e7 : 0.0;
+            const Quat camera = m_stabilizer.update(m_eyeOrientation, m_headOrientation, dt, m_options.stabilizeSeconds, m_options.level != 0, cameraTan, eyeTan);
+            cameraToEye = CameraToEye(m_eyeOrientation, m_headOrientation, camera);
+        } else {
+            m_stabilizer.reset();
+        }
+        m_lastConvertTime = time;
 
+        ShaderParams p = {};
+        const float tw = static_cast<float>(m_privateWidth), th = static_cast<float>(m_privateHeight);
         // Quatre échantillons par pixel de sortie, à un quart de pixel du centre : moyenne d'une zone
         // d'environ deux pixels, assez pour réduire une image d'œil de 3 ou 4 K sans scintillement.
-        ShaderParams p = {};
-        const float crop[4] = {box.x, box.y, box.w, box.h};
-        const float taps[4] = {box.w / static_cast<float>(m_width) * 0.25f, box.h / static_cast<float>(m_height) * 0.25f, m_linear ? 1.f : 0.f, 0.f};
-        std::memcpy(p.crop, crop, sizeof(crop));
+        const float taps[4] = {box.w * static_cast<float>(rw) / tw / static_cast<float>(m_width) * 0.25f,
+                               box.h * static_cast<float>(rh) / th / static_cast<float>(m_height) * 0.25f, m_linear ? 1.f : 0.f, 0.f};
+        const float eyeRect[4] = {static_cast<float>(m_rect[0]) / tw, static_cast<float>(m_rect[1]) / th, static_cast<float>(rw) / tw, static_cast<float>(rh) / th};
         std::memcpy(p.taps, taps, sizeof(taps));
-        // Panneau : à sa place (coins vus par l'œil enregistré) ou dans un coin, s'il est affiché dans le casque.
+        std::memcpy(p.cameraTan, cameraTan, sizeof(cameraTan));
+        std::memcpy(p.eyeTan, eyeTan, sizeof(eyeTan));
+        std::memcpy(p.eyeRect, eyeRect, sizeof(eyeRect));
+        const Vec3 columns[3] = {Rotate(cameraToEye, {1.f, 0.f, 0.f}), Rotate(cameraToEye, {0.f, 1.f, 0.f}), Rotate(cameraToEye, {0.f, 0.f, 1.f})};
+        for (int row = 0; row < 3; ++row) {
+            p.rotation[row * 4] = row == 0 ? columns[0].x : row == 1 ? columns[0].y : columns[0].z;
+            p.rotation[row * 4 + 1] = row == 0 ? columns[1].x : row == 1 ? columns[1].y : columns[1].z;
+            p.rotation[row * 4 + 2] = row == 0 ? columns[2].x : row == 1 ? columns[2].y : columns[2].z;
+        }
+        // Panneau : à sa place (coins vus par l'œil enregistré, ramenés dans la caméra) ou dans un coin, s'il
+        // est affiché dans le casque.
         bool panel = false;
         if (m_panelView && m_panelWidth > 0 && m_panelHeight > 0 && (m_panelFlags & kVideoPanelShown)) {
-            if (m_options.overlay == kVideoOverlayPlace && (m_panelFlags & kVideoPanelPlaced))
-                panel = PanelClipCorners(m_panelCorners, m_fov[0], m_fov[1], m_fov[2], m_fov[3], eyeBox, p.corner);
-            else if (m_options.overlay == kVideoOverlayCorner) {
+            if (m_options.overlay == kVideoOverlayPlace && (m_panelFlags & kVideoPanelPlaced)) {
+                const Quat eyeToCamera = Conjugate(cameraToEye);
+                float corners[12];
+                for (int i = 0; i < 4; ++i) {
+                    const Vec3 c = Rotate(eyeToCamera, {m_panelCorners[i * 3], m_panelCorners[i * 3 + 1], m_panelCorners[i * 3 + 2]});
+                    corners[i * 3] = c.x;
+                    corners[i * 3 + 1] = c.y;
+                    corners[i * 3 + 2] = c.z;
+                }
+                panel = PanelClipCorners(corners, cameraTan[0], cameraTan[1], cameraTan[2], cameraTan[3], CropBox(), p.corner);
+            } else if (m_options.overlay == kVideoOverlayCorner) {
                 PanelCornerRect(static_cast<int>(m_options.overlayCorner), m_options.overlaySize,
                                 static_cast<float>(m_panelHeight) / static_cast<float>(m_panelWidth), videoAspect, p.corner);
                 panel = true;
@@ -1512,6 +1571,10 @@ class Recorder {
     std::vector<uint8_t> m_panelPixels;
     uint32_t m_panelSequence = 0, m_panelWidth = 0, m_panelHeight = 0;
     uint32_t m_panelFlags = 0;     // de la dernière image du jeu (shared_block.h)
+    bool m_poseValid = false;      // orientations de l'œil et de la tête de la dernière image du jeu
+    Quat m_eyeOrientation, m_headOrientation;
+    Stabilizer m_stabilizer;
+    int64_t m_lastConvertTime = -1;  // instant de la dernière image vidéo (100 ns), pour la stabilisation
     float m_panelCorners[12] = {};
     Ptr<ID3D11Buffer> m_params;
     Ptr<ID3D11SamplerState> m_sampler;

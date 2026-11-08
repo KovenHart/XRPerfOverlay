@@ -549,6 +549,8 @@ namespace XRPerfSensors
         // Panneau de performances dans la vidéo d'un jeu OpenXR : non, à sa place dans le casque, ou dans un coin.
         public static readonly string[] VideoOverlays = { "off", "place", "corner" };
         public static readonly string[] VideoCorners = { "topleft", "topright", "bottomleft", "bottomright" };
+        // Stabilisation : la caméra de la vidéo suit la tête avec un temps de retard (léger ou fort).
+        public static readonly string[] VideoStabilizations = { "off", "light", "strong" };
         public const int MinVideoOverlaySize = 15, MaxVideoOverlaySize = 50; // largeur du panneau, en % de la largeur de la vidéo
         // Touches proposées pour Ctrl+Alt+... : lettres et F1 à F12 (codes de touches virtuelles), sauf celles
         // des raccourcis du casque (O, P, R, F, G, S, voir [hotkeys] dans XRPerfOverlay.ini).
@@ -565,6 +567,8 @@ namespace XRPerfSensors
         public string VideoOverlay = "off";
         public string VideoOverlayCorner = "topleft";
         public int VideoOverlaySize = 30;
+        public string VideoStabilize = "off";
+        public bool VideoLevel;                // horizon droit
         public bool VideoGameAudio = true;
         public bool VideoMic;
         public string VideoRenderDevice = "";  // identifiant Windows de la sortie audio enregistrée ("" : celle par défaut)
@@ -624,6 +628,7 @@ namespace XRPerfSensors
                     if (key == "video_aspect") { if (Array.IndexOf(VideoAspects, text) >= 0) settings.VideoAspect = text; continue; }
                     if (key == "video_quality") { if (Array.IndexOf(VideoQualities, text) >= 0) settings.VideoQuality = text; continue; }
                     if (key == "video_overlay") { if (Array.IndexOf(VideoOverlays, text) >= 0) settings.VideoOverlay = text; continue; }
+                    if (key == "video_stabilize") { if (Array.IndexOf(VideoStabilizations, text) >= 0) settings.VideoStabilize = text; continue; }
                     if (key == "video_overlay_corner") { if (Array.IndexOf(VideoCorners, text) >= 0) settings.VideoOverlayCorner = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
@@ -655,6 +660,7 @@ namespace XRPerfSensors
                         case "video_bitrate": if (value >= MinVideoBitrate && value <= MaxVideoBitrate) settings.VideoBitrate = value; break;
                         case "video_eye": if (value == 0 || value == 1) settings.VideoEye = value; break;
                         case "video_field": if (value >= MinVideoField && value <= 100) settings.VideoField = value; break;
+                        case "video_level": settings.VideoLevel = value != 0; break;
                         case "video_overlay_size": if (value >= MinVideoOverlaySize && value <= MaxVideoOverlaySize) settings.VideoOverlaySize = value; break;
                         case "video_game_audio": settings.VideoGameAudio = value != 0; break;
                         case "video_mic": settings.VideoMic = value != 0; break;
@@ -729,6 +735,8 @@ namespace XRPerfSensors
                     "video_overlay=" + VideoOverlay,
                     "video_overlay_corner=" + VideoOverlayCorner,
                     "video_overlay_size=" + VideoOverlaySize.ToString(CultureInfo.InvariantCulture),
+                    "video_stabilize=" + VideoStabilize,
+                    "video_level=" + (VideoLevel ? 1 : 0),
                     "video_game_audio=" + (VideoGameAudio ? 1 : 0),
                     "video_mic=" + (VideoMic ? 1 : 0),
                     "video_render_device=" + OneLine(VideoRenderDevice),

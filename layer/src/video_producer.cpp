@@ -277,6 +277,13 @@ void VideoProducer::publish(const VideoFrameInfo& info) {
     s.linear = info.linear ? 1u : 0u;
     s.panelFlags = info.panelFlags;
     for (int i = 0; i < 12; ++i) s.panelCorners[i] = info.panelCorners[i];
+    const float eye[4] = {info.eyeOrientation.x, info.eyeOrientation.y, info.eyeOrientation.z, info.eyeOrientation.w};
+    const float head[4] = {info.headOrientation.x, info.headOrientation.y, info.headOrientation.z, info.headOrientation.w};
+    for (int i = 0; i < 4; ++i) {
+        s.eyeOrientation[i] = eye[i];
+        s.headOrientation[i] = head[i];
+    }
+    s.poseValid = info.poseValid ? 1u : 0u;
     LARGE_INTEGER qpc;
     QueryPerformanceCounter(&qpc);
     b->latestQpc = static_cast<uint64_t>(qpc.QuadPart);

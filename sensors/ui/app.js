@@ -1129,6 +1129,11 @@ window.App = (function () {
         segRow("desktop", "VideoAspect", t("vid.aspect"), null, ["16:9", "4:3", "1:1"].map(a => ({ value: a, label: a }))),
         sliderRow("desktop", "VideoField", t("vid.field"), t("vid.field.help"), 40, 100, pct),
       ], videoEnabled),
+      group(t("vid.motion"), t("vid.motion.help"), [
+        liveHelp(segRow("desktop", "VideoStabilize", t("vid.stabilize"), " ", ["off", "light", "strong"].map(o => ({ value: o, label: t("vid.stabilize." + o) }))),
+          () => t("vid.stabilize.help." + (get("desktop", "VideoStabilize") || "off"))),
+        switchCtl("desktop", "VideoLevel", t("vid.level"), t("vid.level.help")),
+      ], videoEnabled),
       group(t("vid.panel"), t("vid.panel.help"), [
         liveHelp(segRow("desktop", "VideoOverlay", t("vid.overlay"), " ", ["off", "place", "corner"].map(o => ({ value: o, label: t("vid.overlay." + o) }))),
           () => t("vid.overlay.help." + (get("desktop", "VideoOverlay") || "off"))),

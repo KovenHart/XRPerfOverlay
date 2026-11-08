@@ -146,7 +146,8 @@ constexpr size_t kWindowShareBytes = sizeof(WindowShareHeader) + static_cast<siz
 //    encodage par l'enregistreur.
 constexpr wchar_t kVideoShareName[] = L"Local\\XRPerfOverlay.Video";
 constexpr uint32_t kVideoShareMagic = 0x56505258;  // "XRPV"
-constexpr uint32_t kVideoShareVersion = 3;  // 2 : textures de la taille de la swapchain, infos par texture ; 3 : panneau dans la vidéo
+constexpr uint32_t kVideoShareVersion = 4;  // 2 : textures de la taille de la swapchain, infos par texture ; 3 : panneau dans la vidéo ;
+                                           // 4 : orientation de l'œil et de la tête (stabilisation)
 constexpr int kVideoSlots = 3;  // textures partagées : la plus récente, une en lecture, une en écriture
 
 // Panneau de performances dans la vidéo (overlay, demandé par l'enregistreur) : un jeu OpenXR ne met pas le
@@ -176,9 +177,15 @@ struct VideoSlotInfo {
     // 48 : coins du panneau (haut gauche, haut droit, bas gauche, bas droit), en mètres dans le repère de
     // l'œil de cette image (x à droite, y en haut, -z devant), quand kVideoPanelPlaced.
     float panelCorners[12];
-};                               // 96 octets
+    // 96 : orientations (quaternions x, y, z, w) de l'œil et de la tête dans le repère de la scène (y vers
+    // le haut), pour stabiliser la vidéo ; poseValid = 0 si inconnues.
+    float eyeOrientation[4];
+    float headOrientation[4];    // 112
+    uint32_t poseValid;          // 128
+    uint32_t reserved[3];        // 132
+};                               // 144 octets
 
-static_assert(sizeof(VideoSlotInfo) == 96, "disposition fixe");
+static_assert(sizeof(VideoSlotInfo) == 144, "disposition fixe");
 
 struct VideoShareHeader {
     uint32_t magic;              // offset 0
@@ -206,18 +213,18 @@ struct VideoShareHeader {
     uint32_t slotBusy[kVideoSlots];  // 96 : 1 pendant que l'enregistreur lit cette texture (le fournisseur n'y écrit pas)
     uint32_t reserved;           // 108
     VideoSlotInfo slots[kVideoSlots];  // 112
-    uint16_t game[64];           // 400 : nom de l'exécutable du jeu, sans « .exe » (UTF-16)
+    uint16_t game[64];           // 544 : nom de l'exécutable du jeu, sans « .exe » (UTF-16)
     // --- Panneau dans la vidéo -------------------------------------------------------------------
-    uint32_t overlay;            // 528 : VideoOverlayMode, écrit par l'enregistreur
-    uint32_t panelSequence;      // 532 : impair pendant que la layer écrit l'image du panneau
-    uint32_t panelWidth;         // 536 : taille de l'image du panneau (0 : pas d'image)
-    uint32_t panelHeight;        // 540
-    uint32_t reserved2[4];       // 544
-};                               // 560 octets, puis (à kVideoPanelOffset) l'image du panneau : panelWidth x
+    uint32_t overlay;            // 672 : VideoOverlayMode, écrit par l'enregistreur
+    uint32_t panelSequence;      // 676 : impair pendant que la layer écrit l'image du panneau
+    uint32_t panelWidth;         // 680 : taille de l'image du panneau (0 : pas d'image)
+    uint32_t panelHeight;        // 684
+    uint32_t reserved2[4];       // 688
+};                               // 704 octets, puis (à kVideoPanelOffset) l'image du panneau : panelWidth x
                                  // panelHeight pixels RGBA 8 bits (sRGB, alpha prémultiplié, opacité du casque),
                                  // lignes de kVideoPanelMaxWidth pixels
 
-static_assert(sizeof(VideoShareHeader) == 560, "la disposition doit rester identique a celle de VideoRecorder.cs");
+static_assert(sizeof(VideoShareHeader) == 704, "la disposition doit rester identique a celle de VideoRecorder.cs");
 static_assert(sizeof(VideoShareHeader) <= kVideoPanelOffset, "l'image du panneau suit l'en-tete");
 inline uint64_t VideoLatest(uint64_t frame, int slot) { return (frame << 2) | static_cast<uint64_t>(slot & 3); }
 inline uint64_t VideoLatestFrame(uint64_t latest) { return latest >> 2; }

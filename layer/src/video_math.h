@@ -55,17 +55,34 @@ class FrameThrottle {
 // Sur un casque aux écrans inclinés (Pimax), chaque œil regarde un peu vers l'extérieur : le centre de
 // son image n'est pas devant la tête. La direction de la tête est entre les deux yeux ; on la
 // ramène dans le repère de l'œil enregistré, en tangentes d'angle (comme les bords de l'image).
+// Orientation entre deux autres (le chemin le plus court), normalisée.
+inline Quat MidOrientation(const Quat& a, const Quat& b, float t = 0.5f) {
+    Quat r = b;
+    if (a.x * r.x + a.y * r.y + a.z * r.z + a.w * r.w < 0.f) r = {-r.x, -r.y, -r.z, -r.w};
+    Quat m = {a.x + (r.x - a.x) * t, a.y + (r.y - a.y) * t, a.z + (r.z - a.z) * t, a.w + (r.w - a.w) * t};
+    const float n = std::sqrt(m.x * m.x + m.y * m.y + m.z * m.z + m.w * m.w);
+    if (!(n > 1e-6f)) return a;
+    return {m.x / n, m.y / n, m.z / n, m.w / n};
+}
+
+inline Quat Conjugate(const Quat& q) { return {-q.x, -q.y, -q.z, q.w}; }
+
+inline Quat Normalized(const Quat& q) {
+    const float n = std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    if (!(n > 1e-6f)) return Quat();
+    return {q.x / n, q.y / n, q.z / n, q.w / n};
+}
+
 inline void HeadForwardInEye(const Quat& eye, const Quat& left, const Quat& right, float& tanX, float& tanY) {
-    Quat r = right;
-    if (left.x * r.x + left.y * r.y + left.z * r.z + left.w * r.w < 0.f) r = {-r.x, -r.y, -r.z, -r.w};
-    Quat mid = {left.x + r.x, left.y + r.y, left.z + r.z, left.w + r.w};
-    const float n = std::sqrt(mid.x * mid.x + mid.y * mid.y + mid.z * mid.z + mid.w * mid.w);
     tanX = 0.f;
     tanY = 0.f;
+    Quat r = right;
+    if (left.x * r.x + left.y * r.y + left.z * r.z + left.w * r.w < 0.f) r = {-r.x, -r.y, -r.z, -r.w};
+    const float n = std::sqrt((left.x + r.x) * (left.x + r.x) + (left.y + r.y) * (left.y + r.y) + (left.z + r.z) * (left.z + r.z) +
+                              (left.w + r.w) * (left.w + r.w));
     if (!(n > 1e-6f)) return;
-    mid = {mid.x / n, mid.y / n, mid.z / n, mid.w / n};
-    const Quat inverseEye = {-eye.x, -eye.y, -eye.z, eye.w};
-    const Vec3 forward = Rotate(inverseEye, Rotate(mid, {0.f, 0.f, -1.f}));
+    const Quat mid = MidOrientation(left, right);
+    const Vec3 forward = Rotate(Conjugate(eye), Rotate(mid, {0.f, 0.f, -1.f}));
     if (!(forward.z < -0.1f)) return;  // invraisemblable : on garde le centre de l'œil
     tanX = forward.x / -forward.z;
     tanY = forward.y / -forward.z;
@@ -165,6 +182,91 @@ inline void PanelCornerRect(int corner, float size, float panelRatio, float vide
         out[i * 4 + 3] = 1.f;
     }
 }
+
+// --- Stabilisation -----------------------------------------------------------------------------------
+//
+// La vidéo est filmée par une caméra virtuelle qui suit la tête avec un temps de retard : les petites
+// secousses disparaissent, les mouvements voulus restent. Seule la rotation compte (une rotation se
+// recalcule exactement à partir de l'image de l'œil ; un déplacement non). La caméra garde avec la tête
+// lissée la même relation que l'œil avec la tête : sans stabilisation, la vidéo est exactement le cadre
+// habituel. Elle ne sort jamais de l'image de l'œil : quand la tête va trop vite, elle est rattrapée.
+// Tangentes rangées gauche, droite, haut, bas.
+
+// Rotation qui ramène une direction de la caméra virtuelle dans le repère de l'œil. `smoothed` : orientation
+// lissée de la tête (même repère que `eye` et `head`).
+inline Quat CameraToEye(const Quat& eye, const Quat& head, const Quat& smoothed) {
+    return Mul(Mul(Conjugate(eye), smoothed), Mul(Conjugate(head), eye));
+}
+
+// Les quatre coins de la caméra (tangentes `camera`) tombent-ils dans l'image de l'œil (tangentes `eyeTan`) ?
+// Une rotation garde les droites : les coins suffisent.
+inline bool FrameInside(const Quat& cameraToEye, const float camera[4], const float eyeTan[4]) {
+    constexpr float kSlack = 1e-4f;
+    for (int i = 0; i < 4; ++i) {
+        const Vec3 d = Rotate(cameraToEye, {camera[i & 1], camera[2 + (i >> 1)], -1.f});
+        if (!(d.z < -1e-4f)) return false;
+        const float x = d.x / -d.z, y = d.y / -d.z;
+        if (!(x >= eyeTan[0] - kSlack && x <= eyeTan[1] + kSlack && y <= eyeTan[2] + kSlack && y >= eyeTan[3] - kSlack)) return false;
+    }
+    return true;
+}
+
+// Horizon droit : même direction, sans inclinaison sur le côté (le haut de la scène est +y). Regard
+// presque vertical : inchangé (l'horizon n'y a plus de sens).
+inline Quat Level(const Quat& q) {
+    const Vec3 forward = Rotate(q, {0.f, 0.f, -1.f});
+    if (!(std::fabs(forward.y) < 0.97f)) return q;
+    Vec3 right = Cross(forward, {0.f, 1.f, 0.f});
+    const float n = Length(right);
+    if (!(n > 1e-6f)) return q;
+    right = right * (1.f / n);
+    const Vec3 up = Cross(right, forward);
+    return FromBasis(right, up, forward * -1.f);
+}
+
+class Stabilizer {
+  public:
+    void reset() { m_has = false; }
+
+    // Orientation de la caméra virtuelle (repère de la tête) pour cette image vidéo. `dt` : secondes depuis
+    // l'image précédente ; `seconds` : temps de retard (0 : aucun lissage) ; `level` : horizon droit.
+    // `camera` : cadre de la vidéo dans l'image de l'œil (tangentes), `eyeTan` : bords de l'image de l'œil.
+    Quat update(const Quat& eye, const Quat& head, double dt, float seconds, bool level, const float camera[4], const float eyeTan[4]) {
+        const auto finite = [](const Quat& q) { return std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w); };
+        if (!finite(eye) || !finite(head)) {
+            m_has = false;
+            return head;
+        }
+        if (!m_has || !(seconds > 0.f)) {
+            m_smoothed = head;
+            m_has = true;
+        } else if (dt > 0.0) {
+            const float a = static_cast<float>(1.0 - std::exp(-std::min(dt, 1.0) / static_cast<double>(seconds)));
+            m_smoothed = MidOrientation(m_smoothed, head, a);
+        }
+        Quat target = level ? Level(m_smoothed) : m_smoothed;
+        if (FrameInside(CameraToEye(eye, head, target), camera, eyeTan)) return target;
+        // Hors de l'image : rapprochée de la tête juste assez (la tête elle-même donne le cadre habituel).
+        if (!FrameInside(CameraToEye(eye, head, head), camera, eyeTan)) {
+            m_smoothed = head;
+            return head;
+        }
+        float low = 0.f, high = 1.f;
+        for (int i = 0; i < 12; ++i) {
+            const float mid = (low + high) * 0.5f;
+            if (FrameInside(CameraToEye(eye, head, MidOrientation(target, head, mid)), camera, eyeTan))
+                high = mid;
+            else
+                low = mid;
+        }
+        m_smoothed = MidOrientation(m_smoothed, head, high);
+        return MidOrientation(target, head, high);
+    }
+
+  private:
+    Quat m_smoothed;
+    bool m_has = false;
+};
 
 // Taille de la vidéo : hauteur choisie (720, 1080, 1440, 2160...), largeur selon le format, nombres
 // pairs (exigés par l'encodage 4:2:0) et multiples de 2.

@@ -1051,6 +1051,62 @@ static void testVideo() {
         assert(!PanelClipCorners(corners, -1.f, 1.f, 1.f, -1.f, full, clip));
         assert(!PanelClipCorners(corners, 1.f, 1.f, 1.f, -1.f, full, clip));
     }
+    // Stabilisation.
+    {
+        const auto axisAngle = [](float ax, float ay, float az, float degrees) {
+            const float h = degrees * 3.14159265f / 360.f;
+            return Quat{ax * std::sin(h), ay * std::sin(h), az * std::sin(h), std::cos(h)};
+        };
+        const auto angle = [](const Quat& a, const Quat& b) {  // écart en degrés
+            const float d = std::fabs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w);
+            return 2.f * std::acos(std::min(1.f, d)) * 180.f / 3.14159265f;
+        };
+        const Quat id;
+        // Sans lissage, la caméra est l'œil : rotation nulle.
+        const Quat cant = axisAngle(0.f, 1.f, 0.f, 10.f);
+        assert(angle(CameraToEye(cant, id, id), id) < 1e-3f);
+        // Horizon droit : la tête penchée de 20° est redressée, la direction gardée.
+        const Quat tilted = Mul(axisAngle(0.f, 1.f, 0.f, 30.f), axisAngle(0.f, 0.f, 1.f, 20.f));
+        const Quat flat = Level(tilted);
+        assert(std::fabs(Rotate(flat, {1.f, 0.f, 0.f}).y) < 1e-4f);
+        const Vec3 f1 = Rotate(flat, {0.f, 0.f, -1.f}), f2 = Rotate(tilted, {0.f, 0.f, -1.f});
+        assert(Length(f1 - f2) < 1e-4f);
+        assert(angle(Level(id), id) < 1e-3f);
+        // Œil de ±45° (tangentes ±1), cadre 16:9 au centre, sur 75 % de la largeur.
+        const float eyeTan[4] = {-1.f, 1.f, 1.f, -1.f};
+        const float camera[4] = {-0.75f, 0.75f, 0.421875f, -0.421875f};
+        assert(FrameInside(id, camera, eyeTan));
+        assert(!FrameInside(axisAngle(0.f, 1.f, 0.f, 20.f), camera, eyeTan));  // 20° de côté : sort de l'image
+        // Tremblement de 1° à 8 Hz : fortement atténué avec 0,3 s de retard.
+        Stabilizer st;
+        float worst = 0.f;
+        for (int i = 0; i < 600; ++i) {
+            const double t = i / 60.0;
+            const Quat head = axisAngle(0.f, 1.f, 0.f, 1.f * static_cast<float>(std::sin(t * 8.0 * 6.2831853)));
+            const Quat cam = st.update(head, head, 1.0 / 60.0, 0.3f, false, camera, eyeTan);
+            if (i > 120) worst = std::max(worst, angle(cam, id));
+        }
+        assert(worst < 0.15f);
+        // Demi-tour rapide (90° en 0,25 s) : la caméra suit sans jamais sortir de l'image, et rattrape ensuite.
+        st.reset();
+        Quat cam;
+        for (int i = 0; i < 120; ++i) {
+            const float deg = std::min(90.f, i * 6.f);
+            const Quat head = axisAngle(0.f, 1.f, 0.f, deg);
+            cam = st.update(head, head, 1.0 / 60.0, 0.3f, true, camera, eyeTan);
+            assert(FrameInside(CameraToEye(head, head, cam), camera, eyeTan));
+        }
+        assert(angle(cam, axisAngle(0.f, 1.f, 0.f, 90.f)) < 0.5f);
+        // Tête penchée de 30° avec horizon droit : redressée autant que l'image le permet, jamais au-delà.
+        st.reset();
+        const Quat roll = axisAngle(0.f, 0.f, 1.f, 30.f);
+        cam = st.update(roll, roll, 1.0 / 60.0, 0.f, true, camera, eyeTan);
+        assert(FrameInside(CameraToEye(roll, roll, cam), camera, eyeTan));
+        assert(angle(cam, roll) > 3.f);
+        // Valeurs absurdes : la tête telle quelle.
+        cam = st.update(Quat{NAN, 0.f, 0.f, 1.f}, roll, 1.0 / 60.0, 0.3f, true, camera, eyeTan);
+        assert(angle(cam, roll) < 0.05f);
+    }
     // Panneau dans un coin : 30 % de la largeur d'une vidéo 16:9, panneau deux fois plus large que haut.
     {
         float r[16];

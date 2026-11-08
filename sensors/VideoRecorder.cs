@@ -17,7 +17,7 @@ namespace XRPerfSensors
         // Mémoire partagée : même disposition que VideoShareHeader (layer/src/shared_block.h).
         private const string ShareName = @"Local\XRPerfOverlay.Video";
         private const uint Magic = 0x56505258; // "XRPV"
-        private const uint Version = 3;
+        private const uint Version = 4;
         // En-tête (4096 octets), puis l'image du panneau pour la vidéo : 640 x 320 pixels RGBA (kVideoShareBytes).
         private const int ShareSize = 4096 + 640 * 320 * 4;
         // Lecture et écriture pour les jeux (non administrateurs, en conteneur d'application ou à faible
@@ -44,6 +44,8 @@ namespace XRPerfSensors
             public uint Overlay;        // panneau dans la vidéo : 0 non, 1 à sa place dans le casque, 2 dans un coin
             public uint OverlayCorner;  // 0 haut gauche, 1 haut droite, 2 bas gauche, 3 bas droite
             public float OverlaySize;   // largeur du panneau dans un coin, part de la largeur de la vidéo
+            public float StabilizeSeconds; // stabilisation : temps de retard de la caméra (0 : aucune)
+            public uint Level;          // 1 : horizon droit
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Folder;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string RenderDevice;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string CaptureDevice;
@@ -280,6 +282,8 @@ namespace XRPerfSensors
                 Overlay = (uint)Math.Max(0, Array.IndexOf(Settings.VideoOverlays, s.VideoOverlay)),
                 OverlayCorner = (uint)Math.Max(0, Array.IndexOf(Settings.VideoCorners, s.VideoOverlayCorner)),
                 OverlaySize = s.VideoOverlaySize / 100f,
+                StabilizeSeconds = s.VideoStabilize == "strong" ? 0.35f : s.VideoStabilize == "light" ? 0.12f : 0f,
+                Level = s.VideoLevel ? 1u : 0u,
                 Eye = (uint)s.VideoEye,
                 Aspect = aspect,
                 Field = s.VideoField / 100f,

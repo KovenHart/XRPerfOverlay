@@ -291,6 +291,12 @@ class OpenVrBackend final : public VrBackend {
             frame.centerX = fx / -fz;
             frame.centerY = fy / -fz;
         }
+        // Stabilisation : orientation du casque pour l'image composée (celle dont le jeu s'est servi), et de l'œil.
+        if (timing.m_HmdPose.bPoseIsValid) {
+            frame.headOrientation = Matrix34ToPose(timing.m_HmdPose.mDeviceToAbsoluteTracking.m).orientation;
+            frame.eyeOrientation = Mul(frame.headOrientation, Matrix34ToPose(m.m).orientation);
+            frame.poseValid = true;
+        }
         if (m_video->copy(source)) m_video->publish(frame);
         texture->Release();
     }
