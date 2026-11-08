@@ -826,6 +826,7 @@ class Recorder {
         m_panelPixels.clear();
         m_panelFlags = 0;
         m_poseValid = false;
+        m_diagnostics = 0;
         m_stabilizer.reset();
         m_lastConvertTime = -1;
         m_params.reset();
@@ -974,6 +975,18 @@ class Recorder {
         return kOk;
     }
 
+    // Pourquoi une image du jeu n'a pas pu être lue : écrit dans le journal, une dizaine de fois au plus par enregistrement.
+    void diagnose(const char* format, ...) {
+        if (m_diagnostics >= 12) return;
+        ++m_diagnostics;
+        char text[512];
+        va_list args;
+        va_start(args, format);
+        std::vsnprintf(text, sizeof(text), format, args);
+        va_end(args);
+        RecordLog("Image du jeu : %s.", text);
+    }
+
     int fail(int reason, HRESULT hr, const char* step = "") {
         uint32_t frames = 0;
         {
@@ -998,14 +1011,21 @@ class Recorder {
             const int slot = i < kVideoSlots ? i : -1;
             VideoTextureName(name, 96, pid, generation, slot);
             HANDLE handle = nullptr;
-            if (FAILED(m_d3d12->OpenSharedHandleByName(name, GENERIC_ALL, &handle)) || !handle) return false;
-            HRESULT hr;
+            HRESULT hr = m_d3d12->OpenSharedHandleByName(name, GENERIC_ALL, &handle);
+            if (FAILED(hr) || !handle) {
+                diagnose("ouverture de \"%s\" par son nom : 0x%08lx", Utf8(name).c_str(), static_cast<unsigned long>(hr));
+                return false;
+            }
             if (slot >= 0)
                 hr = m_device1->OpenSharedResource1(handle, __uuidof(ID3D11Texture2D), m_shared[slot].putVoid());
             else
                 hr = m_device5->OpenSharedFence(handle, __uuidof(ID3D11Fence), m_fence.putVoid());
             CloseHandle(handle);
-            if (FAILED(hr)) return false;
+            if (FAILED(hr)) {
+                diagnose("%s \"%s\" refuse par Direct3D 11 : 0x%08lx (textures %ux%u, format DXGI %u, fournisseur %u)", slot >= 0 ? "texture" : "fence",
+                         Utf8(name).c_str(), static_cast<unsigned long>(hr), m_block->width, m_block->height, m_block->format, m_block->producerKind);
+                return false;
+            }
         }
         m_openPid = pid;
         m_openGeneration = generation;
@@ -1030,7 +1050,11 @@ class Recorder {
             const uint32_t generation = b->generation, pid = b->producerPid;
             const uint64_t luid = b->adapterLuid;
             if (frame == m_lastFrame && generation == m_openGeneration && pid == m_openPid) return kOk;
-            if (luid != m_luid) return kOk;  // autre carte graphique : on garde l'image d'avant
+            if (luid != m_luid) {  // autre carte graphique : on garde l'image d'avant
+                diagnose("image sur une autre carte graphique (0x%llx, enregistreur sur 0x%llx)", static_cast<unsigned long long>(luid),
+                         static_cast<unsigned long long>(m_luid));
+                return kOk;
+            }
             // Réservation de la texture, puis vérification qu'elle est toujours la dernière publiée : le
             // fournisseur n'écrit jamais ni la dernière, ni une texture réservée.
             InterlockedExchange(reinterpret_cast<volatile LONG*>(&b->slotBusy[slot]), 1);
@@ -1057,6 +1081,9 @@ class Recorder {
             if (ok && m_fence && m_shared[slot]) {
                 // Copie faite côté jeu (fence) : quelques millisecondes au plus, sinon l'image est laissée.
                 ok = WaitFence(m_fence.get(), frame, m_fenceEvent, 30);
+                if (!ok)
+                    diagnose("copie du jeu pas terminee apres 30 ms (image %llu, fence a %llu)", static_cast<unsigned long long>(frame),
+                             static_cast<unsigned long long>(m_fence->GetCompletedValue()));
                 if (ok) {
                     const int copied = copyToPrivate(m_shared[slot].get());
                     if (copied < 0) {
@@ -1126,12 +1153,18 @@ class Recorder {
             own.CPUAccessFlags = 0;
             own.MiscFlags = 0;
             m_hasFrame = false;  // l'ancienne image n'existe plus : rien à répéter tant que la copie n'est pas faite
-            if (FAILED(m_device->CreateTexture2D(&own, nullptr, m_private.put()))) return 0;
+            HRESULT hr = m_device->CreateTexture2D(&own, nullptr, m_private.put());
+            if (FAILED(hr)) {
+                diagnose("texture privee %ux%u (format DXGI %u) : 0x%08lx", desc.Width, desc.Height, static_cast<unsigned>(own.Format), static_cast<unsigned long>(hr));
+                return 0;
+            }
             D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
             view.Format = ViewOf(desc.Format);
             view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
             view.Texture2D.MipLevels = 1;
-            if (FAILED(m_device->CreateShaderResourceView(m_private.get(), &view, m_privateView.put()))) {
+            hr = m_device->CreateShaderResourceView(m_private.get(), &view, m_privateView.put());
+            if (FAILED(hr)) {
+                diagnose("lecture de la texture privee (format DXGI %u) : 0x%08lx", static_cast<unsigned>(view.Format), static_cast<unsigned long>(hr));
                 m_private.reset();
                 return 0;
             }
@@ -1571,6 +1604,7 @@ class Recorder {
     std::vector<uint8_t> m_panelPixels;
     uint32_t m_panelSequence = 0, m_panelWidth = 0, m_panelHeight = 0;
     uint32_t m_panelFlags = 0;     // de la dernière image du jeu (shared_block.h)
+    int m_diagnostics = 0;         // lignes de diagnostic écrites pour cet enregistrement
     bool m_poseValid = false;      // orientations de l'œil et de la tête de la dernière image du jeu
     Quat m_eyeOrientation, m_headOrientation;
     Stabilizer m_stabilizer;
