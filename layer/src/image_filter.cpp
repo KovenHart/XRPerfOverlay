@@ -124,7 +124,8 @@ class ImageFilterD3D11 final : public ImageFilter {
         texture->GetDesc(&desc);
         const DXGI_FORMAT viewFormat = ViewOf(static_cast<DXGI_FORMAT>(format));
         const DXGI_FORMAT typeless = TypelessOf(desc.Format);
-        if (desc.SampleDesc.Count > 1 || typeless == DXGI_FORMAT_UNKNOWN || TypelessOf(viewFormat) != typeless) return false;
+        if (desc.SampleDesc.Count > 1 || typeless == DXGI_FORMAT_UNKNOWN || TypelessOf(viewFormat) != typeless)
+            return refused(static_cast<int>(desc.Format), format, desc.SampleDesc.Count);
         (void)mipCount;
         // Copies de travail d'abord (hors de notre état de rendu) : chaque zone telle que le jeu l'a rendue.
         ID3D11ShaderResourceView* views[4] = {};
@@ -317,7 +318,8 @@ class ImageFilterD3D12 final : public ImageFilter {
         const D3D12_RESOURCE_DESC desc = image->GetDesc();
         const DXGI_FORMAT viewFormat = ViewOf(static_cast<DXGI_FORMAT>(format));
         const DXGI_FORMAT typeless = TypelessOf(desc.Format);
-        if (desc.SampleDesc.Count > 1 || typeless == DXGI_FORMAT_UNKNOWN || TypelessOf(viewFormat) != typeless) return false;
+        if (desc.SampleDesc.Count > 1 || typeless == DXGI_FORMAT_UNKNOWN || TypelessOf(viewFormat) != typeless)
+            return refused(static_cast<int>(desc.Format), format, desc.SampleDesc.Count);
         ID3D12PipelineState* pso = pipelineFor(viewFormat);
         if (!pso) return fail("pipeline");
         count = count > kTargets ? kTargets : count;
@@ -522,6 +524,14 @@ std::unique_ptr<ImageFilter> ImageFilter::CreateD3D12(ID3D12Device* device, ID3D
     if (!filter->init(device, queue)) return nullptr;
     Log("Filtres d'image : prets (Direct3D 12).");
     return filter;
+}
+
+bool ImageFilter::refused(int textureFormat, int64_t swapchainFormat, unsigned samples) {
+    if (!m_refusedLogged)
+        Log("Filtres d'image : texture refusee (format de la texture %d, de la swapchain %lld, %u echantillon(s)).", textureFormat,
+            static_cast<long long>(swapchainFormat), samples);
+    m_refusedLogged = true;
+    return false;
 }
 
 bool ImageFilter::Supported(int64_t format) { return TypelessOf(static_cast<DXGI_FORMAT>(format)) != DXGI_FORMAT_UNKNOWN; }

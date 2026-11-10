@@ -48,7 +48,10 @@ class ImageFilter {
 
   protected:
     ImageFilter() = default;
+    // Texture que les filtres ne savent pas traiter : signalé une fois dans le journal ; retourne false.
+    bool refused(int textureFormat, int64_t swapchainFormat, unsigned samples);
     bool m_failed = false;
+    bool m_refusedLogged = false;
 };
 
 }  // namespace xrpo

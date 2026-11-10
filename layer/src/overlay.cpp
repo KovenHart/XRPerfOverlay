@@ -128,6 +128,9 @@ void Overlay::onSessionCreated(XrSession session, const XrSessionCreateInfo* cre
         m_imageZones.clear();
         m_imageActive = false;
         m_imageFormatLogged = false;
+        m_imageLoggedState = -1;
+        m_imageLoggedNoZone = m_imageLoggedApplied = m_imageLoggedFailed = m_imageLoggedMiss = false;
+        m_imageMisses = 0;
         m_bindingD3D12 = false;
         m_bindingDevice11 = nullptr;
         m_bindingDevice12 = nullptr;
@@ -442,27 +445,43 @@ void Overlay::imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistr
     // Zones de toutes les vues des scènes 3D de l'image (deux yeux ; quatre vues avec un rendu fovéal).
     const double now = nowSeconds();
     std::vector<ImageZone> zones;
+    int projections = 0, views = 0, unknown = 0, multisampled = 0, unreadable = 0, small = 0;
     for (uint32_t l = 0; l < frameEndInfo.layerCount && l < 64; ++l) {
         const XrCompositionLayerBaseHeader* layer = frameEndInfo.layers[l];
         if (!layer || layer->type != XR_TYPE_COMPOSITION_LAYER_PROJECTION) continue;
         const auto* projection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
+        ++projections;
         for (uint32_t v = 0; projection->views && v < projection->viewCount && v < 8; ++v) {
             const XrSwapchainSubImage& sub = projection->views[v].subImage;
             SwapchainRegistry::Info info;
-            if (!swapchains.lookup(sub.swapchain, info) || info.sampleCount > 1) continue;
+            ++views;
+            if (!swapchains.lookup(sub.swapchain, info)) {
+                ++unknown;
+                continue;
+            }
+            if (info.sampleCount > 1) {
+                ++multisampled;
+                continue;
+            }
             if (!ImageFilter::Supported(info.format)) {
                 if (!m_imageFormatLogged) Log("Filtres d'image : format d'image %lld non gere (flottant ?), image laissee telle quelle.", static_cast<long long>(info.format));
                 m_imageFormatLogged = true;
                 continue;
             }
-            if (!readImages(swapchains, sub.swapchain, info, enumerate)) continue;
+            if (!readImages(swapchains, sub.swapchain, info, enumerate)) {
+                ++unreadable;
+                continue;
+            }
             ImageZone z;
             z.swapchain = sub.swapchain;
             z.slice = sub.imageArrayIndex < info.arraySize ? sub.imageArrayIndex : 0;
             const int64_t x0 = std::max<int64_t>(0, sub.imageRect.offset.x), y0 = std::max<int64_t>(0, sub.imageRect.offset.y);
             const int64_t x1 = std::min<int64_t>(info.width, static_cast<int64_t>(sub.imageRect.offset.x) + sub.imageRect.extent.width);
             const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(sub.imageRect.offset.y) + sub.imageRect.extent.height);
-            if (x1 - x0 < 16 || y1 - y0 < 16) continue;
+            if (x1 - x0 < 16 || y1 - y0 < 16) {
+                ++small;
+                continue;
+            }
             z.x = static_cast<uint32_t>(x0);
             z.y = static_cast<uint32_t>(y0);
             z.width = static_cast<uint32_t>(x1 - x0);
@@ -491,6 +510,12 @@ void Overlay::imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistr
                 duplicate = duplicate || (other.swapchain == z.swapchain && other.slice == z.slice && other.x == z.x && other.y == z.y);
             if (!duplicate && zones.size() < 8) zones.push_back(z);
         }
+    }
+    if (zones.empty() && !m_imageLoggedNoZone) {
+        m_imageLoggedNoZone = true;
+        Log("Filtres d'image : aucune zone a filtrer (%d scene(s) 3D, %d vue(s) : %d swapchain(s) inconnue(s), %d multi-echantillonnee(s), %d "
+            "image(s) illisible(s), %d trop petite(s)).",
+            projections, views, unknown, multisampled, unreadable, small);
     }
     m_imageZones.swap(zones);
 }
@@ -522,12 +547,28 @@ void Overlay::imageRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains)
         t.height = std::min(z.height, info.height > z.y ? info.height - z.y : 0u);
         if (t.width == 0 || t.height == 0) --count;
     }
-    if (count == 0) return;
+    if (count == 0) {
+        // Aucune des images rendues ne correspond aux zones vues : le signaler une fois (après quelques secondes).
+        if (!m_imageLoggedApplied && !m_imageLoggedMiss && ++m_imageMisses >= 600) {
+            m_imageLoggedMiss = true;
+            Log("Filtres d'image : aucune image rendue ne correspond aux zones (%zu zone(s), swapchain %p, derniere rendue %p).", m_imageZones.size(),
+                static_cast<void*>(m_imageZones.front().swapchain), static_cast<void*>(swapchain));
+        }
+        return;
+    }
     ImageFilterParams params = ImageParamsFrom(m_imageSettings);
     params.seed = static_cast<float>((m_imageFrame++ % 997u) * 7u % 997u);  // tramage qui change à chaque image
     if (m_imageFilter->apply(targets, count, format, mipCount, params)) {
         m_imageLastSwapchain = swapchain;
         m_imageLastIndex = index;
+        if (!m_imageLoggedApplied) {
+            m_imageLoggedApplied = true;
+            Log("Filtres d'image : premiere image filtree (texture %ux%u, %u tranche(s), format %lld, %d zone(s), la premiere %u,%u %ux%u).", info.width,
+                info.height, info.arraySize, static_cast<long long>(format), count, targets[0].x, targets[0].y, targets[0].width, targets[0].height);
+        }
+    } else if (!m_imageLoggedFailed) {
+        m_imageLoggedFailed = true;
+        Log("Filtres d'image : image non filtree (texture %ux%u, format %lld).", info.width, info.height, static_cast<long long>(format));
     }
 }
 
@@ -1152,6 +1193,25 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
         std::lock_guard<std::mutex> imageLock(m_imageMutex);
         m_imageSettings = m_config.image;
         m_imageActive = m_config.imageAllowed && m_config.image.mode == 1 && !m_config.imageBypass && m_config.image.changesImage();
+        // Journal : chaque changement d'état (réglages reçus de XRPerfSensors, raccourci).
+        const ImageSettings& is = m_config.image;
+        const int state = !m_config.imageAllowed ? 0 : is.mode != 1 ? 1 : m_config.imageBypass ? 2 : !is.changesImage() ? 3 : 4;
+        if (state != m_imageLoggedState) {
+            if (state == 0)
+                Log("Filtres d'image : non autorises ([image] enabled=0).");
+            else if (state == 1)
+                Log("Filtres d'image : pas dans le casque (mode %d).", is.mode);
+            else if (state == 2)
+                Log("Filtres d'image : coupes au raccourci.");
+            else if (state == 3)
+                Log("Filtres d'image : aucun reglage ne change l'image.");
+            else
+                Log("Filtres d'image : actifs dans le casque (nettete %d force %d, luminosite %d, contraste %d, saturation %d, vibrance %d, gamma %d, "
+                    "ombres %d, temperature %d, debandage %d, daltonisme %d).",
+                    is.sharpen, is.sharpness, is.brightness, is.contrast, is.saturation, is.vibrance, is.gamma, is.shadows, is.temperature, is.deband,
+                    is.colorblind);
+            m_imageLoggedState = state;
+        }
     }
     if (m_session == XR_NULL_HANDLE) return 0;
 

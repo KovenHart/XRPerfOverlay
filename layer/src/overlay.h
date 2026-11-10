@@ -293,6 +293,10 @@ class Overlay {
     XrSwapchain m_imageLastSwapchain = XR_NULL_HANDLE;  // dernière image filtrée (pour la vidéo)
     uint32_t m_imageLastIndex = 0;
     bool m_imageFormatLogged = false;
+    // Diagnostic (une ligne par cas et par session) : état des filtres, zones introuvables, première image filtrée.
+    int m_imageLoggedState = -1;
+    bool m_imageLoggedNoZone = false, m_imageLoggedApplied = false, m_imageLoggedFailed = false, m_imageLoggedMiss = false;
+    uint32_t m_imageMisses = 0;
     // Panneau dans la vidéo (jeu OpenXR : le runtime l'ajoute après l'image du jeu, l'enregistreur le dessine).
     std::unique_ptr<Panel> m_videoPanel;  // même dessin que dans le casque, préparé au relevé
     struct VideoQuad {
