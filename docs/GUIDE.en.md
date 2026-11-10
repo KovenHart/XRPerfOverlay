@@ -243,6 +243,8 @@ The **Image** page of XRPerfSensors sets filters applied to each eye's image. Th
 - **Debanding**: smooths visible steps in gradients (skies, fog), with light dithering.
 - **Colorblind mode**: protanopia, deuteranopia or tritanopia. Colors are shifted to keep hard-to-see differences visible.
 
+**Tip: fewer pixels, same sharpness.** RCAS was designed to go with FSR 1, that is to restore sharpness to an image rendered at a reduced resolution. Lowering the render resolution (headset, SteamVR or game settings) and adding RCAS or LumaSharpen gains frames per second while losing little sharpness: the filter costs far less than the pixels saved. RCAS suits a marked reduction (it never creates halos, so it can go high), LumaSharpen a slight one (softer, colors untouched). If fine detail (fences, cables, foliage) starts to shimmer, lower the strength rather than switch filters.
+
 **Comparing.** `Ctrl+Alt+I` turns every filter off at once, then back on, for the session (nothing is saved). The key is changed with `image=` in the `[hotkeys]` section.
 
 **Cost.** A copy of the eye's area and one pass over its pixels on the graphics card, in the game's work queue: a few tenths of a millisecond per frame for two high-resolution eyes, nothing when no filter changes the image. 8- and 10-bit image formats are supported; a floating-point (HDR) image is left as it is (the log says so).

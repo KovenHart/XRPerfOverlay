@@ -243,6 +243,8 @@ La page **Image** de XRPerfSensors règle des filtres appliqués à l'image de c
 - **Débandage** : adoucit les marches visibles dans les dégradés (ciels, brouillard), avec un léger tramage.
 - **Mode daltonien** : protanopie, deutéranopie ou tritanopie. Les couleurs sont décalées pour garder visibles les différences difficiles à percevoir.
 
+**Astuce : moins de pixels, autant de piqué.** RCAS a été conçu pour accompagner FSR 1, c'est-à-dire pour rendre du piqué à une image calculée en résolution réduite. Baisser la résolution de rendu (réglages du casque, de SteamVR ou du jeu) et ajouter RCAS ou LumaSharpen fait gagner des images par seconde en perdant peu en netteté : le filtre coûte bien moins que les pixels économisés. RCAS convient à une baisse marquée (il ne crée jamais de halo, on peut monter haut), LumaSharpen à une baisse légère (plus doux, couleurs intactes). Si des détails fins (grillages, câbles, feuillages) se mettent à scintiller, baissez la force plutôt que de changer de filtre.
+
 **Comparer.** `Ctrl+Alt+I` coupe tous les filtres d'un coup, puis les rétablit, le temps de la session (rien n'est enregistré). La touche se change avec `image=` dans la section `[hotkeys]`.
 
 **Coût.** Une copie de la zone de l'œil et un passage sur ses pixels par la carte graphique, dans la file de travail du jeu : de l'ordre de quelques dixièmes de milliseconde par image pour deux yeux à haute résolution, rien quand aucun filtre ne change l'image. Les formats d'image 8 et 10 bits sont pris en charge ; une image en virgule flottante (HDR) est laissée telle quelle (le journal le dit).
