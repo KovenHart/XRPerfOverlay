@@ -862,7 +862,8 @@ static void testReportControl(const std::string& dir) {
     // Filtres d'image (version 7) : mêmes positions que OverlaySettings.ToBlock (XRPerfSensors).
     assert(offsetof(SettingsBlock, imageMode) == 200 && offsetof(SettingsBlock, imageColorblind) == 244);
     // Faux HDR et raccourcis (version 8).
-    assert(offsetof(SettingsBlock, imageHdr) == 248 && offsetof(SettingsBlock, hotkeys) == 252 && sizeof(SettingsBlock) == 296);
+    assert(offsetof(SettingsBlock, imageHdr) == 248 && offsetof(SettingsBlock, hotkeys) == 252 && offsetof(SettingsBlock, imageSharpenLimit) == 296 &&
+           sizeof(SettingsBlock) == 304);
     // Raccourcis : touche seule refusée sauf F1 à F24 ; un invalide reçu de XRPerfSensors garde le précédent.
     assert(NormalizeHotkey((3 << 16) | 'O') == ((3 << 16) | 'O') && NormalizeHotkey(0) == 0);
     assert(NormalizeHotkey('O') == -1 && NormalizeHotkey(0x78) == 0x78);  // O seul refusé, F9 seul accepté
@@ -884,9 +885,9 @@ static void testReportControl(const std::string& dir) {
         assert(k.keyToggle == ((6 << 16) | 'H') && k.keyPosition == 0x7B && k.keyReset == ((3 << 16) | 'R') && k.keyImage == 0 &&
                k.keyRecord == ((3 << 16) | 'S'));
     }
-    b.imageMode = 1; b.imageSharpen = 2; b.imageSharpness = 140; b.imageGamma = 10; b.imageTemperature = -30; b.imageColorblind = 3;
+    b.imageMode = 1; b.imageSharpen = 2; b.imageSharpness = 240; b.imageGamma = 10; b.imageTemperature = -30; b.imageColorblind = 3;
     ApplySettings(cfg, b);
-    assert(cfg.image.mode == 1 && cfg.image.sharpen == 2 && cfg.image.sharpness == 100 && cfg.image.gamma == 50 && cfg.image.temperature == -30 &&
+    assert(cfg.image.mode == 1 && cfg.image.sharpen == 2 && cfg.image.sharpness == 200 && cfg.image.sharpenLimit == 1 && cfg.image.sharpenRadius == 1 && cfg.image.gamma == 50 && cfg.image.temperature == -30 &&
            cfg.image.colorblind == 3 && cfg.image.changesImage());
     b.imageMode = 7; ApplySettings(cfg, b); assert(cfg.image.mode == 0);
     b.imageMode = 0;
@@ -1001,8 +1002,9 @@ static void testImageFilters() {
     const auto near = [](float3 a, float3 b, float tolerance) {
         return std::fabs(a.x - b.x) <= tolerance && std::fabs(a.y - b.y) <= tolerance && std::fabs(a.z - b.z) <= tolerance;
     };
-    const auto identity = [](float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float sharpen, float amount) {
-        return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, e, e, sharpen, amount, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
+    const auto identity = [](float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float sharpen, float amount,
+                             float limit = 0.035f) {
+        return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, e, e, sharpen, amount, limit, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
     };
     // Réglages neutres : image inchangée (y compris des couleurs extrêmes).
     const float3 samples[] = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {0.2f, 0.5f, 0.9f}, {0.73f, 0.11f, 0.04f}, {0.5f, 0.5f, 0.5f}};
@@ -1024,6 +1026,23 @@ static void testImageFilters() {
     // Plus de force, plus d'effet ; force nulle de RCAS : rien.
     assert(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 1.f).x > cas.x);
     assert(near(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 2.f, 0.f), bright, 1e-6f));
+    // Au-delà de 100 % : CAS et RCAS accentuent davantage ; LumaSharpen va jusqu'à sa limite (ici 0,1, celle
+    // d'un réglage ReShade courant), ni plus.
+    assert(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 2.f).x > identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 1.f).x);
+    {
+        const float3 grey(0.5f, 0.5f, 0.5f), light(0.52f, 0.52f, 0.52f);
+        assert(identity(grey, grey, grey, grey, light, grey, grey, grey, grey, 2.f, 2.f).x >
+               identity(grey, grey, grey, grey, light, grey, grey, grey, grey, 2.f, 1.f).x);
+    }
+    assert(near(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 3.f, 2.f, 0.1f), float3(0.7f, 0.7f, 0.7f), 1e-5f));
+    {
+        ImageSettings strong;
+        strong.sharpness = 250;
+        strong.sharpenLimit = 0;
+        strong.sharpenRadius = 7;
+        const ImageFilterParams sp = ImageParamsFrom(strong);
+        assert(sp.sharpenAmount == 2.f && std::fabs(sp.sharpenLimit - 0.01f) < 1e-6f && sp.sharpenRadius == 3.f);
+    }
     // LumaSharpen ne change pas la teinte : les trois composantes bougent ensemble.
     const float3 tinted(0.5f, 0.3f, 0.2f), around(0.4f, 0.2f, 0.1f);
     const float3 lumaTint = identity(around, around, around, around, tinted, around, around, around, around, 3.f, 1.f);
@@ -1067,7 +1086,7 @@ static void testImageFilters() {
     // unie, un plus sombre s'assombrit davantage ; noir, blanc et teinte gardés.
     {
         const float3 mid(0.6f, 0.6f, 0.6f), lower(0.4f, 0.4f, 0.4f), higher(0.8f, 0.8f, 0.8f);
-        assert(near(FilterPixel(mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, 0.f, lower, lower, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        assert(near(FilterPixel(mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, 0.f, lower, lower, 0.f, 0.f, 0.035f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
                                 1.f, 0.f, 0.f, 0.f),
                     mid, 1e-6f));
         const float3 flatHdr = FakeHdr(mid, mid, mid, 1.f);

@@ -16,7 +16,7 @@ namespace XRPerfSensors
         // Réglages qu'un preset fixe (noms JSON de SettingsJson.WriteOverlay).
         public static readonly string[] Keys =
         {
-            "ImageSharpen", "ImageSharpness", "ImageBrightness", "ImageContrast", "ImageSaturation", "ImageVibrance",
+            "ImageSharpen", "ImageSharpness", "ImageSharpenLimit", "ImageSharpenRadius", "ImageBrightness", "ImageContrast", "ImageSaturation", "ImageVibrance",
             "ImageGamma", "ImageShadows", "ImageTemperature", "ImageDeband", "ImageColorblind", "ImageHdr",
         };
 
@@ -34,7 +34,7 @@ namespace XRPerfSensors
         private static readonly Preset[] BuiltIns =
         {
             new Preset { Id = "lowres", Values = "{\"ImageSharpen\":\"rcas\",\"ImageSharpness\":70}" },
-            new Preset { Id = "crisp", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":60}" },
+            new Preset { Id = "crisp", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":60,\"ImageSharpenLimit\":6}" },
             new Preset { Id = "vivid", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageContrast\":5,\"ImageSaturation\":10,\"ImageVibrance\":40}" },
             new Preset { Id = "hdr", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageVibrance\":25,\"ImageHdr\":60}" },
             new Preset { Id = "cinema", Values = "{\"ImageContrast\":10,\"ImageSaturation\":-10,\"ImageVibrance\":15,\"ImageTemperature\":12,\"ImageHdr\":20}" },
@@ -103,6 +103,7 @@ namespace XRPerfSensors
         {
             var fresh = new OverlaySettings();
             o.ImageSharpen = fresh.ImageSharpen; o.ImageSharpness = fresh.ImageSharpness;
+            o.ImageSharpenLimit = fresh.ImageSharpenLimit; o.ImageSharpenRadius = fresh.ImageSharpenRadius;
             o.ImageBrightness = fresh.ImageBrightness; o.ImageContrast = fresh.ImageContrast; o.ImageSaturation = fresh.ImageSaturation;
             o.ImageVibrance = fresh.ImageVibrance; o.ImageGamma = fresh.ImageGamma; o.ImageShadows = fresh.ImageShadows;
             o.ImageTemperature = fresh.ImageTemperature; o.ImageDeband = fresh.ImageDeband; o.ImageColorblind = fresh.ImageColorblind;
@@ -123,6 +124,8 @@ namespace XRPerfSensors
             w.WriteStartObject();
             w.WriteString("ImageSharpen", o.ImageSharpen);
             w.WriteNumber("ImageSharpness", o.ImageSharpness);
+            w.WriteNumber("ImageSharpenLimit", o.ImageSharpenLimit);
+            w.WriteNumber("ImageSharpenRadius", o.ImageSharpenRadius);
             w.WriteNumber("ImageBrightness", o.ImageBrightness);
             w.WriteNumber("ImageContrast", o.ImageContrast);
             w.WriteNumber("ImageSaturation", o.ImageSaturation);

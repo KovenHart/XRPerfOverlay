@@ -119,6 +119,8 @@ inline void ApplySettings(Config& c, const SettingsBlock& s) {
     im.deband = s.imageDeband;
     im.colorblind = s.imageColorblind;
     im.hdr = s.imageHdr;
+    im.sharpenLimit = s.imageSharpenLimit;
+    im.sharpenRadius = s.imageSharpenRadius;
     im.clamp();
     // Raccourcis (un invalide garde le précédent).
     for (int i = 0; i < Config::kHotkeyCount; ++i) {

@@ -182,7 +182,7 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
         ImageSettings& im = c.image;
         im.mode = pick(lower(readString(c, L"image", L"mode")), {L"off", L"headset", L"video"});
         im.sharpen = pick(lower(readString(c, L"image", L"sharpen")), {L"none", L"cas", L"rcas", L"luma"});
-        im.sharpness = readInt(c, L"image", L"sharpness", im.sharpness, 0, 100);
+        im.sharpness = readInt(c, L"image", L"sharpness", im.sharpness, 0, 200);
         im.brightness = readInt(c, L"image", L"brightness", 0, -50, 50);
         im.contrast = readInt(c, L"image", L"contrast", 0, -50, 50);
         im.saturation = readInt(c, L"image", L"saturation", 0, -100, 100);
@@ -193,6 +193,8 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
         im.deband = readInt(c, L"image", L"deband", 0, 0, 100);
         im.colorblind = pick(lower(readString(c, L"image", L"colorblind")), {L"none", L"protan", L"deutan", L"tritan"});
         im.hdr = readInt(c, L"image", L"hdr", 0, 0, 100);
+        im.sharpenLimit = readInt(c, L"image", L"sharpen_limit", 4, 1, 50);
+        im.sharpenRadius = readInt(c, L"image", L"sharpen_radius", 1, 1, 3);
     }
 
     c.clock = readInt(c, L"overlay", L"clock", 1, 0, 1) != 0;

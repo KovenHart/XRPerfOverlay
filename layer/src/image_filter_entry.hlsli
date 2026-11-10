@@ -9,6 +9,7 @@ cbuffer ImageParams : register(b0) {
     float4 p2;  // ombres, température, daltonisme (0 à 3), graine du bruit
     float4 p3;  // origine de la zone dans la cible (pixels), entrée linéaire, sortie linéaire
     float4 p4;  // taille de la zone (pixels), faux HDR, libre
+    float4 p5;  // limite de LumaSharpen, portée de la netteté (pixels), libres
 };
 Texture2D<float4> source : register(t0);
 
@@ -28,15 +29,18 @@ float Hash(float2 p) { return frac(sin(dot(p, float2(12.9898f, 78.233f))) * 4375
 
 float4 PsFilter(float4 position : SV_Position) : SV_Target {
     int2 at = int2(position.xy - p3.xy);
-    float3 a = Fetch(at + int2(-1, -1));
-    float3 b = Fetch(at + int2(0, -1));
-    float3 c = Fetch(at + int2(1, -1));
-    float3 d = Fetch(at + int2(-1, 0));
+    // Voisinage de la netteté à `r` pixels : 2 ou 3 quand l'image est suréchantillonnée, pour que l'effet
+    // survive à sa réduction vers l'écran du casque.
+    int r = clamp(int(p5.y), 1, 3);
+    float3 a = Fetch(at + int2(-r, -r));
+    float3 b = Fetch(at + int2(0, -r));
+    float3 c = Fetch(at + int2(r, -r));
+    float3 d = Fetch(at + int2(-r, 0));
     float3 e = Fetch(at);
-    float3 f = Fetch(at + int2(1, 0));
-    float3 g = Fetch(at + int2(-1, 1));
-    float3 h = Fetch(at + int2(0, 1));
-    float3 i = Fetch(at + int2(1, 1));
+    float3 f = Fetch(at + int2(r, 0));
+    float3 g = Fetch(at + int2(-r, r));
+    float3 h = Fetch(at + int2(0, r));
+    float3 i = Fetch(at + int2(r, r));
     // Débandage : quatre échantillons à 8-24 pixels, dans une direction tirée au hasard pour chaque pixel.
     float3 far1 = e, far2 = e, far3 = e, far4 = e;
     float noise = 0.0f;
@@ -65,7 +69,7 @@ float4 PsFilter(float4 position : SV_Position) : SV_Target {
                    Fetch(at + int2(int(d2), int(d2))) + Fetch(at - int2(int(d2), int(d2))) + Fetch(at + int2(int(d2), -int(d2))) +
                    Fetch(at + int2(-int(d2), int(d2)))) * 0.125f;
     }
-    float3 color = FilterPixel(a, b, c, d, e, f, g, h, i, far1, far2, far3, far4, noise, nearRing, farRing, p0.x, p0.y, p0.z, p4.z, p0.w, p1.x,
+    float3 color = FilterPixel(a, b, c, d, e, f, g, h, i, far1, far2, far3, far4, noise, nearRing, farRing, p0.x, p0.y, p5.x, p0.z, p4.z, p0.w, p1.x,
                                p1.y, p1.z, p1.w, p2.x, p2.y, p2.z);
     if (p3.w > 0.5f) color = ToLinear(color);
     float alpha = source.Load(int3(clamp(at, int2(0, 0), int2(p4.xy) - int2(1, 1)), 0)).a;

@@ -1433,7 +1433,11 @@ window.App = (function () {
       group(t("img.sharpen"), t("img.sharpen.help"), [
         liveHelp(selectRow("overlay", "ImageSharpen", t("img.sharpen.method"), " ", ["none", "cas", "rcas", "luma"].map(m => ({ value: m, label: t("img.sharpen." + m) }))),
           () => t("img.sharpen.help." + (get("overlay", "ImageSharpen") || "none"))),
-        sliderRow("overlay", "ImageSharpness", t("img.sharpness"), null, 0, 100, pct, { enabled: sharpening }),
+        sliderRow("overlay", "ImageSharpness", t("img.sharpness"), t("img.sharpness.help"), 0, 200, pct, { enabled: sharpening }),
+        sliderRow("overlay", "ImageSharpenLimit", t("img.sharpenLimit"), t("img.sharpenLimit.help"), 1, 50, v => num(v / 100, 2),
+          { enabled: () => on() && get("overlay", "ImageSharpen") === "luma" }),
+        segRow("overlay", "ImageSharpenRadius", t("img.sharpenRadius"), t("img.sharpenRadius.help"),
+          [1, 2, 3].map(r => ({ value: r, label: t("img.sharpenRadius.px", { n: r }) })), { enabled: sharpening }),
       ], on),
       group(t("img.colors"), t("img.colors.help"), [
         sliderRow("overlay", "ImageBrightness", t("img.brightness"), null, -50, 50, signed),
