@@ -9,7 +9,13 @@
 
   const overlay = {
     Visible: true, Position: 5, Distance: 1.0, OffsetX: 0.34, OffsetY: 0.26, Width: 0.36, Opacity: 0.82, GlobalOpacity: 1.0, FaceViewer: true,
-    Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: false, PowerColumn: false, VideoSource: "final", Layout: Number(params.get("layout") || 0), Theme: Number(params.get("ptheme") || 0),
+    Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: false, PowerColumn: false, VideoSource: "final",
+    ImageAllowed: true, ImageMode: "off", ImageSharpen: "none", ImageSharpness: 50, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
+    ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none", ImageHdr: 0,
+    "Hotkey.toggle": 0x3004F, "Hotkey.position": 0x30050, "Hotkey.reset": 0x30052, "Hotkey.size_up": 0x30021, "Hotkey.size_down": 0x30022,
+    "Hotkey.opacity_up": 0x30024, "Hotkey.opacity_down": 0x30023, "Hotkey.window_toggle": 0x30046, "Hotkey.window_place": 0x30047,
+    "Hotkey.record": 0x30053, "Hotkey.image": 0x30049,
+    ImagePresets: [], Layout: Number(params.get("layout") || 0), Theme: Number(params.get("ptheme") || 0),
     CustomBackground: "#101820", CustomText: "#f0f3f8", CustomAccent: "#7fd1c7", HeadsetName: "Pimax Dream Air",
     Anchor: 0, HandPlacement: 2, GazeOnly: false, HandAlong: 0, HandLift: 0,
     WatchEnabled: true, WatchAnchor: 1, WatchPlacement: 0, WatchStyle: 0, WatchSession: true, WatchBattery: true, WatchFps: true, WatchGazeOnly: true,
@@ -17,6 +23,19 @@
     WindowEnabled: false, WindowAnchor: 2, WindowPlacement: 2, WindowGazeOnly: false, WindowWidth: 0.4, WindowAlong: 0, WindowLift: 0, WindowDistance: 0.8,
     GpuTiming: false, ReportMode: params.get("reports") || "auto", ReportHardware: true, OpenVR: true, VideoCapture: params.get("video") !== "off",
   };
+  // Presets fournis (mêmes valeurs que ImagePresets.cs).
+  const IMAGE_KEYS = ["ImageSharpen", "ImageSharpness", "ImageBrightness", "ImageContrast", "ImageSaturation", "ImageVibrance", "ImageGamma",
+    "ImageShadows", "ImageTemperature", "ImageDeband", "ImageColorblind", "ImageHdr"];
+  const NEUTRAL = { ImageSharpen: "none", ImageSharpness: 50, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0, ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none", ImageHdr: 0 };
+  overlay.ImagePresets = [
+    ["lowres", { ImageSharpen: "rcas", ImageSharpness: 70 }],
+    ["crisp", { ImageSharpen: "luma", ImageSharpness: 60 }],
+    ["vivid", { ImageSharpen: "cas", ImageSharpness: 40, ImageContrast: 5, ImageSaturation: 10, ImageVibrance: 40 }],
+    ["hdr", { ImageSharpen: "cas", ImageSharpness: 40, ImageVibrance: 25, ImageHdr: 60 }],
+    ["cinema", { ImageContrast: 10, ImageSaturation: -10, ImageVibrance: 15, ImageTemperature: 12, ImageHdr: 20 }],
+    ["dark", { ImageBrightness: 6, ImageGamma: 85, ImageShadows: 25 }],
+    ["oled", { ImageShadows: 35, ImageDeband: 60 }],
+  ].map(([id, v]) => ({ id, name: "", builtin: true, values: Object.assign({}, NEUTRAL, v) }));
   const desktop = {
     DesktopPanel: false, TopMost: true, Scale: 100, Opacity: 100, Anchor: 0,
     CaptureFps: 5, CaptureOpacity: 100, CropLeft: 0, CropTop: 0, CropRight: 0, CropBottom: 0,
@@ -192,6 +211,34 @@
           break;
         case "resetDefaults":
           Object.assign(overlay, { Position: 5, Distance: 1, OffsetX: 0.34, OffsetY: 0.26, Width: 0.36, Opacity: 0.82, GlobalOpacity: 1, Layout: 0, Theme: 0 });
+          reply({ type: "overlay", overlay });
+          break;
+        case "imagePresetApply": {
+          const p = overlay.ImagePresets.find(x => x.id === msg.id);
+          if (p) { Object.assign(overlay, p.values); if (overlay.ImageMode === "off") overlay.ImageMode = "headset"; }
+          reply({ type: "overlay", overlay: JSON.parse(JSON.stringify(overlay)) });
+          break;
+        }
+        case "imagePresetSave": {
+          const values = {};
+          IMAGE_KEYS.forEach(k => values[k] = overlay[k]);
+          overlay.ImagePresets = overlay.ImagePresets.filter(x => x.name !== msg.name).concat([{ id: "user:" + msg.name, name: msg.name, builtin: false, values }]);
+          reply({ type: "overlay", overlay: JSON.parse(JSON.stringify(overlay)) });
+          break;
+        }
+        case "imagePresetDelete":
+          overlay.ImagePresets = overlay.ImagePresets.filter(x => x.id !== msg.id);
+          reply({ type: "overlay", overlay: JSON.parse(JSON.stringify(overlay)) });
+          break;
+        case "resetHotkeys":
+          Object.assign(overlay, { "Hotkey.toggle": 0x3004F, "Hotkey.position": 0x30050, "Hotkey.reset": 0x30052, "Hotkey.size_up": 0x30021,
+            "Hotkey.size_down": 0x30022, "Hotkey.opacity_up": 0x30024, "Hotkey.opacity_down": 0x30023, "Hotkey.window_toggle": 0x30046,
+            "Hotkey.window_place": 0x30047, "Hotkey.record": 0x30053, "Hotkey.image": 0x30049 });
+          reply({ type: "overlay", overlay: JSON.parse(JSON.stringify(overlay)) });
+          break;
+        case "resetImage":
+          Object.assign(overlay, { ImageSharpen: "none", ImageSharpness: 50, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
+            ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none" });
           reply({ type: "overlay", overlay });
           break;
         case "diagnose":

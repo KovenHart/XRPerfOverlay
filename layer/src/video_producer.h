@@ -46,6 +46,7 @@ struct VideoFrameInfo {
     float panelCorners[12] = {};  // coins du panneau dans le repère de l'œil, si kVideoPanelPlaced
     bool poseValid = false;    // orientations de l'œil et de la tête dans la scène (stabilisation)
     Quat eyeOrientation, headOrientation;
+    uint32_t imageState = 0;   // VideoImageState (shared_block.h)
 };
 
 class VideoProducer {

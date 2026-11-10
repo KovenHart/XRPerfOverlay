@@ -44,6 +44,8 @@
 #include <thread>
 #include <vector>
 
+#include "image_filter_source.h"
+#include "image_params.h"
 #include "shared_block.h"
 #include "video_math.h"
 
@@ -70,6 +72,11 @@ struct XrprOptions {
     float overlaySize;      // largeur du panneau dans un coin, part de la largeur de la vidéo
     float stabilizeSeconds; // stabilisation : temps de retard de la caméra (0 : aucune)
     uint32_t level;         // 1 : horizon droit
+    // Filtres d'image (ImageSettings, image_params.h) : mode 1 = ceux du casque (appliqués ici seulement si
+    // le jeu ne les a pas encore reçus), 2 = dans la vidéo seulement (aussi dans un jeu SteamVR).
+    int32_t imageMode, imageSharpen, imageSharpness, imageBrightness, imageContrast, imageSaturation;
+    int32_t imageVibrance, imageGamma, imageShadows, imageTemperature, imageDeband, imageColorblind;
+    int32_t imageHdr;
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
     wchar_t captureDevice[256];  // micro ("" : celui par défaut)
@@ -575,7 +582,7 @@ class Recorder {
         if (options.size != sizeof(XrprOptions) || options.codec > 2 || options.fps < 10 || options.fps > 240 || options.height < 240 ||
             options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f) ||
             options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f) ||
-            !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1)
+            !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2)
             return kBadOptions;
         m_options = options;
         m_options.folder[259] = m_options.renderDevice[255] = m_options.captureDevice[255] = 0;
@@ -819,6 +826,14 @@ class Recorder {
         m_frame.reset();
         m_frameTarget.reset();
         m_frameView.reset();
+        m_vsFilter.reset();
+        m_psFilter.reset();
+        m_filterParams.reset();
+        m_filtered.reset();
+        m_filteredRaw.reset();
+        m_filteredTarget.reset();
+        m_filteredView.reset();
+        m_imageState = 0;
         m_panel.reset();
         m_panelView.reset();
         m_blend.reset();
@@ -892,6 +907,7 @@ class Recorder {
         HMODULE compiler = LoadLibraryW(L"d3dcompiler_47.dll");
         PFN_Compile compile = compiler ? reinterpret_cast<PFN_Compile>(reinterpret_cast<void*>(GetProcAddress(compiler, "D3DCompile"))) : nullptr;
         if (!compile) return fail(kNoConversion, E_NOINTERFACE);
+        m_compile = compile;
         Ptr<ID3DBlob> vs, vsPanel, psEye, psPanel, psY, psUV, errors;
         const auto build = [&](const char* entry, const char* target, Ptr<ID3DBlob>& out) {
             return compile(kShaders, sizeof(kShaders) - 1, "video", nullptr, nullptr, entry, target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, out.put(), errors.put());
@@ -944,6 +960,26 @@ class Recorder {
         if (FAILED(hr = m_device->CreateRenderTargetView(m_frame.get(), &frameTarget, m_frameTarget.put())) ||
             FAILED(hr = m_device->CreateShaderResourceView(m_frame.get(), &frameView, m_frameView.put())))
             return fail(kNoConversion, hr, "image intermediaire");
+        // Filtres d'image : seconde image intermédiaire (filtrée), shaders communs avec la layer.
+        m_image = ImageSettings();
+        m_image.mode = m_options.imageMode;
+        m_image.sharpen = m_options.imageSharpen;
+        m_image.sharpness = m_options.imageSharpness;
+        m_image.brightness = m_options.imageBrightness;
+        m_image.contrast = m_options.imageContrast;
+        m_image.saturation = m_options.imageSaturation;
+        m_image.vibrance = m_options.imageVibrance;
+        m_image.gamma = m_options.imageGamma;
+        m_image.shadows = m_options.imageShadows;
+        m_image.temperature = m_options.imageTemperature;
+        m_image.deband = m_options.imageDeband;
+        m_image.colorblind = m_options.imageColorblind;
+        m_image.hdr = m_options.imageHdr;
+        m_image.clamp();
+        if (m_image.mode != 0 && m_image.changesImage() && !setupFilter(td)) {
+            RecordLog("Filtres d'image indisponibles dans la video (shader ou textures) : video sans filtres.");
+            m_image.mode = 0;
+        }
         // Panneau (jeu OpenXR) : sa texture, mélange en alpha prémultiplié, quadrilatère vu des deux côtés.
         if (m_options.overlay != kVideoOverlayOff) {
             td.Width = kVideoPanelMaxWidth;
@@ -1067,6 +1103,7 @@ class Recorder {
             const uint32_t rx = info.rectX, ry = info.rectY, rw = info.rectWidth, rh = info.rectHeight, linear = info.linear;
             const float tl = info.tanLeft, tr = info.tanRight, tu = info.tanUp, td = info.tanDown, cx = info.centerX, cy = info.centerY;
             const uint32_t panelFlags = info.panelFlags;
+            const uint32_t imageState = info.imageState;
             const bool poseValid = info.poseValid != 0;
             const Quat eyeOrientation = {info.eyeOrientation[0], info.eyeOrientation[1], info.eyeOrientation[2], info.eyeOrientation[3]};
             const Quat headOrientation = {info.headOrientation[0], info.headOrientation[1], info.headOrientation[2], info.headOrientation[3]};
@@ -1113,6 +1150,7 @@ class Recorder {
             m_center[0] = cx;
             m_center[1] = cy;
             m_panelFlags = panelFlags;
+            m_imageState = imageState;
             m_poseValid = poseValid;
             m_eyeOrientation = Normalized(eyeOrientation);
             m_headOrientation = Normalized(headOrientation);
@@ -1381,6 +1419,42 @@ class Recorder {
         return kOk;
     }
 
+    // Filtres d'image dans la vidéo : shaders (même source que la layer), seconde image intermédiaire.
+    bool setupFilter(D3D11_TEXTURE2D_DESC td) {
+        const std::string source = std::string(kImageFilterCore) + "\n" + kImageFilterEntry;
+        Ptr<ID3DBlob> vs, ps, errors;
+        HRESULT hr = m_compile(source.data(), source.size(), "image_filter", nullptr, nullptr, "VsFilter", "vs_4_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, vs.put(),
+                               errors.put());
+        if (SUCCEEDED(hr))
+            hr = m_compile(source.data(), source.size(), "image_filter", nullptr, nullptr, "PsFilter", "ps_4_0", D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, ps.put(),
+                           errors.put());
+        if (FAILED(hr)) {
+            if (errors) RecordLog("Filtres : %.*s", static_cast<int>(errors->GetBufferSize()), static_cast<const char*>(errors->GetBufferPointer()));
+            return false;
+        }
+        if (FAILED(m_device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, m_vsFilter.put())) ||
+            FAILED(m_device->CreatePixelShader(ps->GetBufferPointer(), ps->GetBufferSize(), nullptr, m_psFilter.put())))
+            return false;
+        D3D11_BUFFER_DESC bd = {};
+        bd.ByteWidth = sizeof(ImageFilterParams);
+        bd.Usage = D3D11_USAGE_DYNAMIC;
+        bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        if (FAILED(m_device->CreateBuffer(&bd, nullptr, m_filterParams.put()))) return false;
+        if (FAILED(m_device->CreateTexture2D(&td, nullptr, m_filtered.put()))) return false;
+        D3D11_RENDER_TARGET_VIEW_DESC rd = {};
+        rd.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        rd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // le filtre écrit des valeurs encodées (lues telles quelles)
+        if (FAILED(m_device->CreateRenderTargetView(m_filtered.get(), &rd, m_filteredRaw.put()))) return false;
+        rd.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;  // le panneau s'y mélange en linéaire
+        if (FAILED(m_device->CreateRenderTargetView(m_filtered.get(), &rd, m_filteredTarget.put()))) return false;
+        D3D11_SHADER_RESOURCE_VIEW_DESC vd = {};
+        vd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        vd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        vd.Texture2D.MipLevels = 1;
+        return SUCCEEDED(m_device->CreateShaderResourceView(m_filtered.get(), &vd, m_filteredView.put()));
+    }
+
     // Image du panneau fournie par la layer : recopiée dans notre texture quand elle a changé (numéro pair
     // et identique avant et après la lecture : la layer n'écrivait pas pendant).
     void updatePanel() {
@@ -1519,15 +1593,39 @@ class Recorder {
         c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
         c->RSSetState(nullptr);
         pass(m_frameTarget.get(), m_width, m_height, m_vs.get(), m_psEye.get(), m_privateView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        // Filtres d'image : « vidéo seulement », ou ceux du casque que le jeu n'a pas encore reçus (appliqués
+        // plus bas dans sa chaîne que la copie). Jamais ceux du casque dans un jeu SteamVR (l'image miroir est
+        // celle du casque, sans filtres).
+        ID3D11RenderTargetView* panelTarget = m_frameTarget.get();
+        ID3D11ShaderResourceView* converted = m_frameView.get();
+        const bool filter = m_filteredView && (m_image.mode == 2 || (m_image.mode == 1 && m_block->producerKind != kVideoSteamVr && m_imageState == kVideoImageLater));
+        if (filter) {
+            ImageFilterParams fp = ImageParamsFrom(m_image);
+            fp.seed = static_cast<float>((m_filterFrame++ % 997u) * 7u % 997u);
+            fp.inLinear = fp.outLinear = 0.f;  // image intermédiaire lue et écrite encodée
+            fp.width = static_cast<float>(m_width);
+            fp.height = static_cast<float>(m_height);
+            D3D11_MAPPED_SUBRESOURCE filterMapped;
+            if (SUCCEEDED(c->Map(m_filterParams.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &filterMapped))) {
+                std::memcpy(filterMapped.pData, &fp, sizeof(fp));
+                c->Unmap(m_filterParams.get(), 0);
+                ID3D11Buffer* filterBuffers[] = {m_filterParams.get()};
+                c->PSSetConstantBuffers(0, 1, filterBuffers);
+                pass(m_filteredRaw.get(), m_width, m_height, m_vsFilter.get(), m_psFilter.get(), m_frameView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+                c->PSSetConstantBuffers(0, 1, buffers);
+                panelTarget = m_filteredTarget.get();
+                converted = m_filteredView.get();
+            }
+        }
         if (panel) {
             c->OMSetBlendState(m_blend.get(), nullptr, 0xFFFFFFFF);
             c->RSSetState(m_raster.get());
-            pass(m_frameTarget.get(), m_width, m_height, m_vsPanel.get(), m_psPanel.get(), m_panelView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, 4);
+            pass(panelTarget, m_width, m_height, m_vsPanel.get(), m_psPanel.get(), m_panelView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, 4);
             c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
             c->RSSetState(nullptr);
         }
-        pass(luma.get(), m_width, m_height, m_vs.get(), m_psY.get(), m_frameView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
-        pass(chroma.get(), m_width / 2, m_height / 2, m_vs.get(), m_psUV.get(), m_frameView.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        pass(luma.get(), m_width, m_height, m_vs.get(), m_psY.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        pass(chroma.get(), m_width / 2, m_height / 2, m_vs.get(), m_psUV.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
         ID3D11RenderTargetView* none[] = {nullptr};
         c->OMSetRenderTargets(1, none, nullptr);
         c->PSSetShaderResources(0, 1, noView);
@@ -1596,6 +1694,17 @@ class Recorder {
     Ptr<ID3D11Texture2D> m_frame;  // image intermédiaire de la taille de la vidéo (œil cadré, puis panneau)
     Ptr<ID3D11RenderTargetView> m_frameTarget;
     Ptr<ID3D11ShaderResourceView> m_frameView;
+    // Filtres d'image dans la vidéo (option).
+    PFN_Compile m_compile = nullptr;
+    ImageSettings m_image;
+    uint32_t m_imageState = 0;  // de la dernière image du jeu (VideoImageState)
+    uint32_t m_filterFrame = 0;
+    Ptr<ID3D11VertexShader> m_vsFilter;
+    Ptr<ID3D11PixelShader> m_psFilter;
+    Ptr<ID3D11Buffer> m_filterParams;
+    Ptr<ID3D11Texture2D> m_filtered;
+    Ptr<ID3D11RenderTargetView> m_filteredRaw, m_filteredTarget;
+    Ptr<ID3D11ShaderResourceView> m_filteredView;
     // Panneau dans la vidéo : image fournie par la layer, recopiée quand elle change.
     Ptr<ID3D11Texture2D> m_panel;
     Ptr<ID3D11ShaderResourceView> m_panelView;

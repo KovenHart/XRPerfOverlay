@@ -97,6 +97,110 @@ namespace XRPerfSensors
         public bool VideoCapture = true;   // [video] capture : enregistrement vidéo du casque possible (layer et XRPerfVR)
         public bool VideoFinal = true;     // [video] source : image envoyée au casque (après les autres layers) ou celle du jeu
 
+        // [image] : filtres d'image (layer/src/image_params.h, mêmes bornes). Désactivés par défaut.
+        public static readonly string[] ImageModes = { "off", "headset", "video" };
+        public static readonly string[] ImageSharpens = { "none", "cas", "rcas", "luma" };
+        public static readonly string[] ImageColorblinds = { "none", "protan", "deutan", "tritan" };
+        public bool ImageAllowed = true;   // [image] enabled : filtres possibles dans les jeux OpenXR
+        public string ImageMode = "off";
+        public string ImageSharpen = "none";
+        public int ImageSharpness = 50;    // 0 à 100
+        public int ImageBrightness;        // -50 à 50
+        public int ImageContrast;          // -50 à 50
+        public int ImageSaturation;        // -100 à 100
+        public int ImageVibrance;          // 0 à 100
+        public int ImageGamma = 100;       // 50 à 200
+        public int ImageShadows;           // 0 à 100
+        public int ImageTemperature;       // -50 à 50
+        public int ImageDeband;            // 0 à 100
+        public string ImageColorblind = "none";
+        public int ImageHdr;               // faux HDR (contraste local), 0 à 100
+
+        // [hotkeys] : raccourcis du casque, modificateurs << 16 | touche (modificateurs : 1 Alt, 2 Ctrl, 4 Maj,
+        // 8 Windows), 0 = sans raccourci. Même ordre que Config::hotkey (layer/src/config.h) et le bloc partagé.
+        public static readonly string[] HotkeyNames =
+            { "toggle", "position", "reset", "size_up", "size_down", "opacity_up", "opacity_down", "window_toggle", "window_place", "record", "image" };
+        public const int CtrlAlt = 3 << 16;
+        public static readonly int[] DefaultHotkeys =
+        {
+            CtrlAlt | 'O', CtrlAlt | 'P', CtrlAlt | 'R', CtrlAlt | 0x21, CtrlAlt | 0x22, CtrlAlt | 0x24, CtrlAlt | 0x23,
+            CtrlAlt | 'F', CtrlAlt | 'G', CtrlAlt | 'S', CtrlAlt | 'I',
+        };
+        public int[] Hotkeys = (int[])DefaultHotkeys.Clone();
+
+        /// <summary>
+        /// Raccourci tel que la layer l'accepte (NormalizeHotkey de layer/src/config.h) : 0 = sans ; -1 si invalide
+        /// (modificateur seul, modificateur inconnu, touche sans modificateur autre que F1 à F24).
+        /// </summary>
+        public static int NormalizeHotkey(int value)
+        {
+            if (value == 0) return 0;
+            if (value < 0) return -1;
+            int mods = value >> 16, key = value & 0xFFFF;
+            if (mods > 0xF || key < 0x08 || key > 0xFE) return -1;
+            if (key == 0x10 || key == 0x11 || key == 0x12 || key == 0x5B || key == 0x5C || (key >= 0xA0 && key <= 0xA5)) return -1;
+            if (mods == 0 && !(key >= 0x70 && key <= 0x87)) return -1;
+            return value;
+        }
+
+        // Nombre entier du .ini, en décimal ou en hexadécimal (0x4F) ; `fallback` si absent ou illisible.
+        private static int ReadNumber(string path, string section, string key, int fallback)
+        {
+            string text = ReadText(path, section, key).Trim();
+            if (text.Length == 0) return fallback;
+            bool hex = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+            return int.TryParse(hex ? text.Substring(2) : text, hex ? NumberStyles.HexNumber : NumberStyles.Integer, CultureInfo.InvariantCulture, out int v)
+                ? v : fallback;
+        }
+
+        /// <summary>Le raccourci est déjà pris par un autre raccourci du casque (sauf celui n° `except`).</summary>
+        public bool HotkeyTaken(int combo, int except)
+        {
+            if (combo == 0) return false;
+            for (int i = 0; i < Hotkeys.Length; i++)
+                if (i != except && Hotkeys[i] == combo) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Réglages d'image dans l'ordre du bloc partagé et de XrprOptions : mode, netteté, force, luminosité,
+        /// contraste, saturation, vibrance, gamma, ombres, température, débandage, daltonisme, faux HDR.
+        /// </summary>
+        public int[] ImageValues()
+        {
+            return new[]
+            {
+                Math.Max(0, Array.IndexOf(ImageModes, ImageMode)), Math.Max(0, Array.IndexOf(ImageSharpens, ImageSharpen)), ImageSharpness, ImageBrightness,
+                ImageContrast, ImageSaturation, ImageVibrance, ImageGamma, ImageShadows, ImageTemperature, ImageDeband,
+                Math.Max(0, Array.IndexOf(ImageColorblinds, ImageColorblind)), ImageHdr,
+            };
+        }
+
+        /// <summary>Bornes d'un réglage d'image (nom JSON), ou false s'il n'existe pas.</summary>
+        public static bool ImageRange(string key, out int min, out int max)
+        {
+            min = 0; max = 100;
+            switch (key)
+            {
+                case "ImageSharpness": case "ImageVibrance": case "ImageShadows": case "ImageDeband": case "ImageHdr": return true;
+                case "ImageBrightness": case "ImageContrast": case "ImageTemperature": min = -50; max = 50; return true;
+                case "ImageSaturation": min = -100; max = 100; return true;
+                case "ImageGamma": min = 50; max = 200; return true;
+            }
+            return false;
+        }
+
+        private static string ImageChoice(string path, string key, string[] names)
+        {
+            string text = ReadText(path, "image", key).Trim().ToLowerInvariant();
+            return Array.IndexOf(names, text) >= 0 ? text : names[0];
+        }
+
+        private static int ImageInt(string path, string key, int fallback, int min, int max)
+        {
+            return int.TryParse(ReadText(path, "image", key), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? Math.Min(max, Math.Max(min, v)) : fallback;
+        }
+
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetPrivateProfileStringW(string section, string key, string defaultValue, StringBuilder result, uint size, string path);
 
@@ -196,6 +300,30 @@ namespace XRPerfSensors
             s.OpenVR = ReadBool(path, "openvr", "enabled", s.OpenVR);
             s.VideoCapture = ReadBool(path, "video", "capture", s.VideoCapture);
             s.VideoFinal = ReadText(path, "video", "source").Trim().ToLowerInvariant() != "game";
+            s.ImageAllowed = ReadBool(path, "image", "enabled", s.ImageAllowed);
+            s.ImageMode = ImageChoice(path, "mode", ImageModes);
+            s.ImageSharpen = ImageChoice(path, "sharpen", ImageSharpens);
+            s.ImageSharpness = ImageInt(path, "sharpness", 50, 0, 100);
+            s.ImageBrightness = ImageInt(path, "brightness", 0, -50, 50);
+            s.ImageContrast = ImageInt(path, "contrast", 0, -50, 50);
+            s.ImageSaturation = ImageInt(path, "saturation", 0, -100, 100);
+            s.ImageVibrance = ImageInt(path, "vibrance", 0, 0, 100);
+            s.ImageGamma = ImageInt(path, "gamma", 100, 50, 200);
+            s.ImageShadows = ImageInt(path, "shadows", 0, 0, 100);
+            s.ImageTemperature = ImageInt(path, "temperature", 0, -50, 50);
+            s.ImageDeband = ImageInt(path, "deband", 0, 0, 100);
+            s.ImageColorblind = ImageChoice(path, "colorblind", ImageColorblinds);
+            s.ImageHdr = ImageInt(path, "hdr", 0, 0, 100);
+            // Raccourcis : touche, et modificateurs à part (« _mods », absent = Ctrl+Alt), comme la layer.
+            for (int i = 0; i < HotkeyNames.Length; i++)
+            {
+                int key = ReadNumber(path, "hotkeys", HotkeyNames[i], -1);
+                if (key < 0 || key > 0xFF) continue;
+                int mods = ReadNumber(path, "hotkeys", HotkeyNames[i] + "_mods", 3);
+                if (mods < 0 || mods > 0xF) continue;
+                int combo = key == 0 ? 0 : NormalizeHotkey((mods << 16) | key);
+                if (combo >= 0) s.Hotkeys[i] = combo;
+            }
 
             s.Anchor = ReadName(path, "anchor", AnchorNames, s.Anchor);
             s.HandPlacement = ReadName(path, "hand_position", PlacementNames, s.HandPlacement);
@@ -227,7 +355,9 @@ namespace XRPerfSensors
 
         public OverlaySettings Clone()
         {
-            return (OverlaySettings)MemberwiseClone();
+            var copy = (OverlaySettings)MemberwiseClone();
+            copy.Hotkeys = (int[])Hotkeys.Clone();
+            return copy;
         }
 
         /// <summary>
@@ -293,6 +423,23 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW("openvr", "enabled", OpenVR ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("video", "capture", VideoCapture ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("video", "source", VideoFinal ? "final" : "game", path);
+            ok &= WritePrivateProfileStringW("image", "enabled", ImageAllowed ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW("image", "mode", ImageMode, path);
+            ok &= WritePrivateProfileStringW("image", "sharpen", ImageSharpen, path);
+            foreach (var pair in new[] { ("sharpness", ImageSharpness), ("brightness", ImageBrightness), ("contrast", ImageContrast), ("saturation", ImageSaturation),
+                                         ("vibrance", ImageVibrance), ("gamma", ImageGamma), ("shadows", ImageShadows), ("temperature", ImageTemperature),
+                                         ("deband", ImageDeband) })
+                ok &= WritePrivateProfileStringW("image", pair.Item1, pair.Item2.ToString(CultureInfo.InvariantCulture), path);
+            ok &= WritePrivateProfileStringW("image", "colorblind", ImageColorblind, path);
+            ok &= WritePrivateProfileStringW("image", "hdr", ImageHdr.ToString(CultureInfo.InvariantCulture), path);
+            // Raccourcis : la touche (0x4F) et, sauf pour Ctrl+Alt, ses modificateurs (clé retirée sinon).
+            for (int i = 0; i < HotkeyNames.Length; i++)
+            {
+                int combo = Hotkeys[i];
+                ok &= WritePrivateProfileStringW("hotkeys", HotkeyNames[i], "0x" + (combo & 0xFFFF).ToString("X2", CultureInfo.InvariantCulture), path);
+                int mods = combo >> 16;
+                ok &= WritePrivateProfileStringW("hotkeys", HotkeyNames[i] + "_mods", combo == 0 || mods == 3 ? null : mods.ToString(CultureInfo.InvariantCulture), path);
+            }
             ok &= WritePrivateProfileStringW(Section, "anchor", AnchorNames[Anchor], path);
             ok &= WritePrivateProfileStringW(Section, "hand_position", PlacementNames[HandPlacement], path);
             ok &= WritePrivateProfileStringW(Section, "gaze_only", GazeOnly ? "1" : "0", path);
@@ -396,6 +543,11 @@ namespace XRPerfSensors
             // Mode des rapports : 1 = automatique, 2 = manuel, 3 = aucun (0 laisserait celui du .ini).
             Put(block, 188, (uint)(Math.Min(ReportOff, Math.Max(ReportAuto, ReportMode)) + 1));
             Put(block, 192, PowerColumn ? 1u : 0u);
+            // Filtres d'image (version 7).
+            int[] image = ImageValues();
+            for (int i = 0; i < image.Length; i++) Put(block, 200 + 4 * i, unchecked((uint)image[i]));  // 200 à 248
+            // Raccourcis (version 8).
+            for (int i = 0; i < Hotkeys.Length; i++) Put(block, 252 + 4 * i, unchecked((uint)Hotkeys[i]));
             return block;
         }
     }
@@ -406,9 +558,9 @@ namespace XRPerfSensors
     /// </summary>
     internal sealed class SettingsShare : IDisposable
     {
-        public const int Size = 200;
+        public const int Size = 296;
         public const uint Magic = 0x53505258; // "XRPS"
-        public const uint Version = 6;
+        public const uint Version = 8;
 
         private const string Name = @"Local\XRPerfOverlay.Settings";
         private const int OffsetSequence = 8;

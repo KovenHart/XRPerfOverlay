@@ -24,6 +24,11 @@ set(XRPO_VERSION_MINOR ${CMAKE_MATCH_2})
 set(XRPO_VERSION_PATCH ${CMAKE_MATCH_3})
 message(STATUS "XR Perf Overlay ${XRPO_VERSION}")
 configure_file(src/version_info.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version_info.h" @ONLY)
+# Filtres d'image : source HLSL (aussi compilée en C++ par les tests) recopiée dans une chaîne C++.
+file(READ src/image_filter_core.hlsli XRPO_IMAGE_FILTER_CORE)
+file(READ src/image_filter_entry.hlsli XRPO_IMAGE_FILTER_ENTRY)
+configure_file(src/image_filter_source.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/image_filter_source.h" @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/image_filter_core.hlsli src/image_filter_entry.hlsli)
 
 option(XRPO_BUILD_TESTS "Compiler l'outil de test et d'aperçu du panneau (tests/preview.cpp)" OFF)
 
@@ -45,6 +50,7 @@ add_library(XR_APILAYER_NOVENDOR_perf_overlay SHARED
     src/layer_presence.cpp
     src/window_share.cpp
     src/video_producer.cpp
+    src/image_filter.cpp
     src/version.rc
     exports.def
 )

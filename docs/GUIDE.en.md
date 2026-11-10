@@ -7,7 +7,7 @@ Everything XR Perf Overlay does, page by page, and what to know when something g
 ## Why it doesn't get in the way of mods
 
 - The layer uses OpenXR's official mechanism (a DLL declared in the registry, inserted by the loader between the game and the runtime). It injects nothing, hooks no Direct3D or DXGI function and creates no window. By default it doesn't touch the controllers; only attaching to a hand (wrist watch, panel on a hand), if you choose it, adds the hand positions (see "Watch and attaching to the controllers").
-- It intercepts only six OpenXR functions and changes only one: at `xrEndFrame`, it adds **one quad layer at the end** of the list sent by the game (two if the watch is shown). The game's or UEVR's images, poses and settings pass through unchanged. A frame the game submits empty (loading) stays empty.
+- It intercepts only six OpenXR functions and changes only one: at `xrEndFrame`, it adds **one quad layer at the end** of the list sent by the game (two if the watch is shown). The game's or UEVR's images, poses and settings pass through unchanged (one exception, if you turn it on: the image filters, see "Image filters"). A frame the game submits empty (loading) stays empty.
 - The only graphics call is a copy of the panel (640 × 320 pixels at most, four times per second) to a texture owned by the layer. No game rendering state is read or changed. The panel is drawn in memory and costs about a tenth of a millisecond per update. The only exception, and only if you turn it on: real GPU time measurement adds two timestamps per frame to the game's GPU work (see "GPU time: estimate or measurement").
 - If the runtime rejects a frame because of our layer, the layer resubmits it right away without it; on the third rejection it disables itself for the session. At the slightest problem on its side, it steps aside.
 - Sensors are read in a separate program: nothing risky (driver, hardware access) runs inside the game.
@@ -41,6 +41,9 @@ Options, from a command prompt: `Installer.bat -Target "D:\Tools\XRPerfOverlay"`
 | `Ctrl + Alt + F` | Show / hide the captured window |
 | `Ctrl + Alt + G` | Place the captured window in front of you, where you are looking |
 | `Ctrl + Alt + S` | Manual report mode: start / stop recording (see "Session reports") |
+| `Ctrl + Alt + I` | Image filters: all off / back on (see "Image filters") |
+
+These are the default shortcuts. Each one is changed on the **Hotkeys** page of XRPerfSensors: click the hotkey then press the combination you want (Ctrl, Alt, Shift or Win with a key; an F1 to F24 key can be used alone), "Remove" turns it off, "Default" restores it, and "Reset all to default" restores them all. A hotkey already used by another one (or by the video) is refused. The change applies immediately, even in game, in OpenXR and SteamVR games alike.
 
 The shortcuts work even if the game window doesn't have focus, and settings changed in game (display, position, size, opacity) are remembered in `XRPerfOverlay.ini`. This commented file also lets you set the update rate, the keys and the list of programs to ignore.
 
@@ -53,11 +56,13 @@ Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open 
 - **Appearance** (headset, watch and mirror): layout, colors (thumbnails of the nine sets), clock, headset / resolution line, session / battery line.
 - **Watch**: show the watch, attachment, position on the hand, style, elements, show on gaze, size, opacity, position adjustments, with its preview (see "Watch and attaching to the controllers").
 - **Window**: the desktop window shown in the headset (see "Desktop window in the headset").
+- **Image**: presets, sharpening filters, colors, fake HDR, debanding and colorblind mode, in the headset or in the video (see "Image filters").
 - **Desktop mirror**: the mirror window for OBS, its position, size, opacity, keep on top.
 - **Video**: headset video recording (see "Headset video").
 - **Measurements**: real GPU time measurement (otherwise an estimate), writing reports (every session, on the `Ctrl+Alt+S` hotkey or never: applies immediately, even in game), processor and graphics card models in the reports, reports folder. GPU measurement and models apply the next time a game starts.
 - **Reports**: see "Session reports".
 - **Configuration**: diagnosis of the PC for VR (see "Configuration diagnosis").
+- **Hotkeys**: every headset hotkey and the video one (see "Usage").
 - **Interface**: language (Windows', French or English), window colors ("same as the panel" in the headset, one of the eight themes, or three colors of your own), text size, animations, full screen and opening in full screen.
 
 A session report, with the analysis in sentences on the left and the minute-by-minute curves on the right:
@@ -211,7 +216,7 @@ The window always shows the panel with an opaque background, even if it is hidde
 
 XRPerfSensors can record what you see in the headset, without OBS: one eye's image, framed in 16:9 (or 4:3, or square), encoded by the graphics card into an MP4 file, with the game sound and, if you want, the microphone.
 
-**Start and stop.** `Ctrl+Alt+V` by default (any combination on the Video page: click the hotkey then press the keys you want; an F1 to F24 key can be used alone; the panel's hotkeys are refused), the button on the Video page, or "Record headset video" in the tray icon menu. Recording starts with the first image of a VR game: started before the game, it waits ("REC waiting"). While recording, a red square and the duration ("VID 03:12") show at the top of the panel in the headset, and "REC 03:12" at the top of the XRPerfSensors window. The same hotkey stops and finishes the file. If the game closes, the file is finished by itself after 10 seconds; if XRPerfSensors closes, it finishes it before leaving.
+**Start and stop.** `Ctrl+Alt+V` by default (any combination on the Video or Hotkeys page: click the hotkey then press the keys you want; an F1 to F24 key can be used alone; a headset hotkey is refused), the button on the Video page, or "Record headset video" in the tray icon menu. Recording starts with the first image of a VR game: started before the game, it waits ("REC waiting"). While recording, a red square and the duration ("VID 03:12") show at the top of the panel in the headset, and "REC 03:12" at the top of the XRPerfSensors window. The same hotkey stops and finishes the file. If the game closes, the file is finished by itself after 10 seconds; if XRPerfSensors closes, it finishes it before leaving.
 
 **Files.** In `Videos\XR Perf Overlay` by default ("Change..." on the Video page), named after the game and the time: `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. An MP4 file can only be played once finished: if the PC shuts down abruptly while recording, the current video is lost.
 
@@ -228,6 +233,30 @@ XRPerfSensors can record what you see in the headset, without OBS: one eye's ima
 **Where the image comes from.** In an OpenXR game (Direct3D 11 or 12), the layer copies the eye's image when it leaves for the runtime. If other layers sit below XR Perf Overlay (Pimax NR and its DLSS, OpenXR Toolkit...), **Recorded image** picks which one: *The headset's* (default), after their processing, as the runtime receives it (the layer adds a link at the very bottom of the OpenXR chain for this); *The game's*, before them (`source=game` in the `[video]` section). The choice applies from the next game launch. It is the game's image, without what the runtime adds on top; the recorder puts the panel back if you ask for it (see above), from its image provided by the layer. With foveated rendering (Quad-Views), it is the eye's wide image, less sharp in the center than in the headset. In a SteamVR (OpenVR) game, XRPerfVR takes SteamVR's mirror image, which also contains overlays (the panel included). The copy stays on the graphics card; the recorder crops, converts and encodes it, still on the graphics card (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel), a chip separate from rendering. The cost for the game is one copy of the recorded eye's image per video frame (around 0.1 ms on a high-end card, a few tenths on a more modest one), and nothing at all when not recording. While recording, the copy and the recorder also use video memory: a few hundred MB, more in 4K.
 
 **Turning it off.** The "Video recording" switch on the Video page (or `capture=0` in the `[video]` section of `XRPerfOverlay.ini`) releases the hotkey and, from the next game launch, the layer no longer follows the images of OpenXR games.
+
+## Image filters
+
+The **Image** page of XRPerfSensors sets filters applied to each eye's image. They are all neutral by default, and the *Off* mode turns them all off.
+
+**Where.** *In the headset*: in an OpenXR game (Direct3D 11 or 12), the layer filters each eye's image when it leaves for the runtime, after the other layers (Pimax NR and its DLSS, OpenXR Toolkit...) when they sit below ours; the recorded video is filtered the same way. In a SteamVR game, the game's image doesn't go through XR Perf Overlay: no filter in the headset. *Video only*: only the recorded video is filtered, in OpenXR and SteamVR games alike, and the headset image doesn't change.
+
+**Presets.** At the top of the page, a preset sets everything at once (except the mode), as a starting point: *Reduced resolution* (RCAS), *Natural crispness* (LumaSharpen), *Vivid colors*, *Fake HDR*, *Cinema*, *Game too dark* and *OLED*. Chosen while the filters are off, it puts them in the headset. "Save the settings" keeps the current settings under a name of yours (the game's, for example); they appear under "Mine", and "Delete" removes the selected one. As soon as a setting differs from the preset, the list shows "Custom". Yours are in `%LOCALAPPDATA%\XRPerfOverlay\ImagePresets.json`.
+
+**Settings** (applied immediately, even in game):
+
+- **Sharpening**: *CAS* (AMD FidelityFX Contrast Adaptive Sharpening: mostly sharpens low-contrast detail, without halos), *RCAS* (FSR 1's: stronger, limited so it creates neither halos nor clipping) or *LumaSharpen* (sharpens brightness only, colors don't shift), with its **strength**. Useful after supersampling, DLSS or FSR that soften the image.
+- **Fake HDR**: local contrast, like ReShade's FakeHDR. Brings out detail in bright and dark areas and deepens midtones, without changing hues. Slightly costlier than sharpening (sixteen more reads per pixel).
+- **Colors**: brightness, contrast, saturation, **vibrance** (boosts dull colors without pushing vivid ones), gamma, **shadows** (lifts dark areas while black stays black) and **temperature** (cooler or warmer).
+- **Debanding**: smooths visible steps in gradients (skies, fog), with light dithering.
+- **Colorblind mode**: protanopia, deuteranopia or tritanopia. Colors are shifted to keep hard-to-see differences visible.
+
+**Tip: fewer pixels, same sharpness.** RCAS was designed to go with FSR 1, that is to restore sharpness to an image rendered at a reduced resolution. Lowering the render resolution (headset, SteamVR or game settings) and adding RCAS or LumaSharpen gains frames per second while losing little sharpness: the filter costs far less than the pixels saved. RCAS suits a marked reduction (it never creates halos, so it can go high), LumaSharpen a slight one (softer, colors untouched). If fine detail (fences, cables, foliage) starts to shimmer, lower the strength rather than switch filters.
+
+**Comparing.** `Ctrl+Alt+I` turns every filter off at once, then back on, for the session (nothing is saved). The hotkey is changed on the Hotkeys page.
+
+**Cost.** A copy of the eye's area and one pass over its pixels on the graphics card, in the game's work queue: a few tenths of a millisecond per frame for two high-resolution eyes, nothing when no filter changes the image. 8- and 10-bit image formats are supported; a floating-point (HDR) image is left as it is (the log says so).
+
+**Turning off.** *Off* mode, or, so that the layer never sits between the game and the runtime for its images, the "Headset filters possible" switch on the Image page (`enabled=0` in the `[image]` section of the `.ini`), from the next game launch. The layer's log shows "Filtres d'image : prets" at the first filtered frame, or the reason for a failure (the filters are then off for the session, the game is untouched); the recorder's log (`XRPerfRecord.log`) does the same for the video.
 
 ## Session reports
 
@@ -247,7 +276,7 @@ The report is written in the language chosen at the time of writing (see "Langua
 **When to write a report.** Measurements page, "Write a report" (or `mode=` in the `[summary]` section of the `.ini`):
 
 - **Every session** (`auto`, default): one report from game start to exit, as described above.
-- **On hotkey** (`manual`): nothing is written until you ask for it. `Ctrl+Alt+S` starts a recording: a red dot and the duration ("REC 01:23") show next to the target, at the top of the panel. `Ctrl+Alt+S` again stops it and writes the report, which covers only that stretch ("OK" in green for a few seconds); under 5 seconds leaves no file ("< 5 s" in orange). Handy to compare the same stretch with different settings. A recording still running when the game closes is ended and kept. The report carries the line "Recording: manual", and the Reports page shows it. The key is changed with `record=` in the `[hotkeys]` section.
+- **On hotkey** (`manual`): nothing is written until you ask for it. `Ctrl+Alt+S` starts a recording: a red dot and the duration ("REC 01:23") show next to the target, at the top of the panel. `Ctrl+Alt+S` again stops it and writes the report, which covers only that stretch ("OK" in green for a few seconds); under 5 seconds leaves no file ("< 5 s" in orange). Handy to compare the same stretch with different settings. A recording still running when the game closes is ended and kept. The report carries the line "Recording: manual", and the Reports page shows it. The hotkey is changed on the Hotkeys page.
 - **Never** (`off`): no report; the panel is still measured and shown normally.
 
 The mode applies immediately, even in game: switching from "every session" to another mode ends the current report; switching back to "every session" starts a new one. It also applies in SteamVR games (XRPerfVR), where the hotkey and the indicator work the same way. The hotkey is read by whoever writes the report: in an OpenXR game in Vulkan or OpenGL started through SteamVR, that's the layer, which passes its indicator to the panel shown by XRPerfVR. Switching to "never" mid-session keeps the report already started if it covers at least 15 seconds.

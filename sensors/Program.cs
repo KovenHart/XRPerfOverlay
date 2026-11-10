@@ -485,7 +485,7 @@ namespace XRPerfSensors
             if (_video == null) return Loc.T("Enregistrement vidéo indisponible.", "Video recording unavailable.");
             if (!VideoEnabled)
                 return Loc.T("L'enregistrement vidéo est désactivé (page Vidéo).", "Video recording is turned off (Video page).");
-            string refused = _video.Start(_settings);
+            string refused = _video.Start(_settings, _overlay);
             if (_main != null && !_main.IsDisposed) _main.PostVideo();
             if (refused != null && (_main == null || _main.IsDisposed || !_main.Visible))
                 _icon.ShowBalloonTip(6000, "XRPerfSensors", refused, ToolTipIcon.Warning);
@@ -718,6 +718,42 @@ namespace XRPerfSensors
             o.Layout = fresh.Layout; o.Theme = fresh.Theme;
             o.CustomBackground = fresh.CustomBackground; o.CustomText = fresh.CustomText; o.CustomAccent = fresh.CustomAccent;
             o.Anchor = fresh.Anchor; o.HandPlacement = fresh.HandPlacement; o.GazeOnly = fresh.GazeOnly; o.HandAlong = fresh.HandAlong; o.HandLift = fresh.HandLift;
+            OverlayChanged();
+        }
+
+        /// <summary>Filtres d'image remis à zéro (aucun effet ; le mode et l'autorisation ne changent pas).</summary>
+        public void ResetImageDefaults()
+        {
+            if (_settingsUnavailable != null) return;
+            ImagePresets.Neutral(_overlay);
+            OverlayChanged();
+        }
+
+        /// <summary>Preset d'image appliqué (fourni ou de l'utilisateur).</summary>
+        public void ApplyImagePreset(string id)
+        {
+            if (_settingsUnavailable != null || !ImagePresets.Apply(_overlay, id)) return;
+            OverlayChanged();
+        }
+
+        /// <summary>Réglages d'image actuels enregistrés comme preset (false : nom vide, trop de presets, disque).</summary>
+        public bool SaveImagePreset(string name)
+        {
+            return _settingsUnavailable == null && ImagePresets.Save(_overlay, name);
+        }
+
+        public bool DeleteImagePreset(string id)
+        {
+            return ImagePresets.Delete(id);
+        }
+
+        /// <summary>Raccourcis du casque remis par défaut (Ctrl+Alt+touche), sauf ceux pris par la vidéo : désactivés.</summary>
+        public void ResetHotkeys()
+        {
+            if (_settingsUnavailable != null) return;
+            int video = _settings.VideoKey == 0 ? 0 : (_settings.VideoMods << 16) | _settings.VideoKey;
+            for (int i = 0; i < OverlaySettings.DefaultHotkeys.Length; i++)
+                _overlay.Hotkeys[i] = OverlaySettings.DefaultHotkeys[i] == video ? 0 : OverlaySettings.DefaultHotkeys[i];
             OverlayChanged();
         }
 
