@@ -104,7 +104,9 @@ namespace XRPerfSensors
         public bool ImageAllowed = true;   // [image] enabled : filtres possibles dans les jeux OpenXR
         public string ImageMode = "off";
         public string ImageSharpen = "none";
-        public int ImageSharpness = 50;    // 0 à 100
+        public int ImageSharpness = 100;   // 0 à 200 (LumaSharpen 100 = force 2 de ReShade)
+        public int ImageSharpenLimit = 10; // LumaSharpen : écart maximal, % de luminosité, 1 à 50 (« clamp » x 100)
+        public int ImageSharpenRadius = 1; // portée de la netteté, 1 à 3 pixels
         public int ImageBrightness;        // -50 à 50
         public int ImageContrast;          // -50 à 50
         public int ImageSaturation;        // -100 à 100
@@ -182,7 +184,10 @@ namespace XRPerfSensors
             min = 0; max = 100;
             switch (key)
             {
-                case "ImageSharpness": case "ImageVibrance": case "ImageShadows": case "ImageDeband": case "ImageHdr": return true;
+                case "ImageVibrance": case "ImageShadows": case "ImageDeband": case "ImageHdr": return true;
+                case "ImageSharpness": max = 200; return true;
+                case "ImageSharpenLimit": min = 1; max = 50; return true;
+                case "ImageSharpenRadius": min = 1; max = 3; return true;
                 case "ImageBrightness": case "ImageContrast": case "ImageTemperature": min = -50; max = 50; return true;
                 case "ImageSaturation": min = -100; max = 100; return true;
                 case "ImageGamma": min = 50; max = 200; return true;
@@ -303,7 +308,9 @@ namespace XRPerfSensors
             s.ImageAllowed = ReadBool(path, "image", "enabled", s.ImageAllowed);
             s.ImageMode = ImageChoice(path, "mode", ImageModes);
             s.ImageSharpen = ImageChoice(path, "sharpen", ImageSharpens);
-            s.ImageSharpness = ImageInt(path, "sharpness", 50, 0, 100);
+            s.ImageSharpness = ImageInt(path, "sharpness", 100, 0, 200);
+            s.ImageSharpenLimit = ImageInt(path, "sharpen_limit", 10, 1, 50);
+            s.ImageSharpenRadius = ImageInt(path, "sharpen_radius", 1, 1, 3);
             s.ImageBrightness = ImageInt(path, "brightness", 0, -50, 50);
             s.ImageContrast = ImageInt(path, "contrast", 0, -50, 50);
             s.ImageSaturation = ImageInt(path, "saturation", 0, -100, 100);
@@ -426,7 +433,7 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW("image", "enabled", ImageAllowed ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("image", "mode", ImageMode, path);
             ok &= WritePrivateProfileStringW("image", "sharpen", ImageSharpen, path);
-            foreach (var pair in new[] { ("sharpness", ImageSharpness), ("brightness", ImageBrightness), ("contrast", ImageContrast), ("saturation", ImageSaturation),
+            foreach (var pair in new[] { ("sharpness", ImageSharpness), ("sharpen_limit", ImageSharpenLimit), ("sharpen_radius", ImageSharpenRadius), ("brightness", ImageBrightness), ("contrast", ImageContrast), ("saturation", ImageSaturation),
                                          ("vibrance", ImageVibrance), ("gamma", ImageGamma), ("shadows", ImageShadows), ("temperature", ImageTemperature),
                                          ("deband", ImageDeband) })
                 ok &= WritePrivateProfileStringW("image", pair.Item1, pair.Item2.ToString(CultureInfo.InvariantCulture), path);
@@ -548,6 +555,8 @@ namespace XRPerfSensors
             for (int i = 0; i < image.Length; i++) Put(block, 200 + 4 * i, unchecked((uint)image[i]));  // 200 à 248
             // Raccourcis (version 8).
             for (int i = 0; i < Hotkeys.Length; i++) Put(block, 252 + 4 * i, unchecked((uint)Hotkeys[i]));
+            Put(block, 296, unchecked((uint)ImageSharpenLimit));
+            Put(block, 300, unchecked((uint)ImageSharpenRadius));
             return block;
         }
     }
@@ -558,7 +567,7 @@ namespace XRPerfSensors
     /// </summary>
     internal sealed class SettingsShare : IDisposable
     {
-        public const int Size = 296;
+        public const int Size = 304;
         public const uint Magic = 0x53505258; // "XRPS"
         public const uint Version = 8;
 

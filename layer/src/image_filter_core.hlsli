@@ -35,7 +35,7 @@ float3 ToLinear(float3 c) {
 // Voisinage 3 x 3 :   a b c
 //                     d e f
 //                     g h i
-// `amount` : 0 à 1.
+// `amount` : 0 à 2 (au-delà de 1, l'écart ajouté par CAS et RCAS est amplifié d'autant).
 
 // CAS (AMD FidelityFX Contrast Adaptive Sharpening, licence MIT) : accentue moins là où le contraste
 // est déjà fort, sans halo.
@@ -51,7 +51,8 @@ float3 SharpenCas(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, fl
     float peak = -1.0f / lerp(8.0f, 5.0f, saturate(amount));
     float3 w = amp * peak;
     float3 weight = float3(1.0f, 1.0f, 1.0f) + 4.0f * w;
-    return saturate((b * w + d * w + f * w + h * w + e) / weight);
+    float3 sharp = (b * w + d * w + f * w + h * w + e) / weight;
+    return saturate(e + (sharp - e) * max(amount, 1.0f));
 }
 
 // RCAS (« Robust CAS » de FSR 1, licence MIT) : plus fort, limité pour ne jamais sortir des valeurs
@@ -63,14 +64,16 @@ float3 SharpenRcas(float3 b, float3 d, float3 e, float3 f, float3 h, float amoun
     float3 hitMax = (float3(1.0f, 1.0f, 1.0f) - max(mx4, e)) / min(4.0f * mn4 - float3(4.0f, 4.0f, 4.0f), float3(-1e-5f, -1e-5f, -1e-5f));
     float3 lobeRgb = max(-hitMin, hitMax);
     float lobe = max(-0.1875f, min(Max3(lobeRgb), 0.0f)) * saturate(amount);
-    return saturate((lobe * (b + d + f + h) + e) / (4.0f * lobe + 1.0f));
+    float3 sharp = (lobe * (b + d + f + h) + e) / (4.0f * lobe + 1.0f);
+    return saturate(e + (sharp - e) * max(amount, 1.0f));
 }
 
-// LumaSharpen : accentue la luminosité seule (les couleurs ne bougent pas), écart borné.
-float3 SharpenLuma(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float amount) {
+// LumaSharpen : accentue la luminosité seule (les couleurs ne bougent pas), écart borné par `limit`
+// (« clamp » de ReShade, 0,035 par défaut là-bas). amount 1 = force 2 de ReShade.
+float3 SharpenLuma(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float amount, float limit) {
     float3 blur = (a + c + g + i) * 0.0625f + (b + d + f + h) * 0.125f + e * 0.25f;
-    float detail = Luma(e - blur) * (1.5f * saturate(amount));
-    detail = clamp(detail, -0.035f, 0.035f);
+    float detail = Luma(e - blur) * (2.0f * amount);
+    detail = clamp(detail, -limit, limit);
     return saturate(e + float3(detail, detail, detail));
 }
 
@@ -147,12 +150,13 @@ float3 Daltonize(float3 c, float mode) {
 // noise : -0,5 à 0,5 (tramage, avec le débandage). nearRing, farRing : moyennes des anneaux (faux HDR).
 // colorblind : 0 à 3.
 float3 FilterPixel(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float3 far1, float3 far2, float3 far3,
-                   float3 far4, float noise, float3 nearRing, float3 farRing, float sharpenMode, float sharpenAmount, float deband, float hdr,
+                   float3 far4, float noise, float3 nearRing, float3 farRing, float sharpenMode, float sharpenAmount, float sharpenLimit, float deband,
+                   float hdr,
                    float brightness, float contrast, float saturation, float vibrance, float gammaInverse, float shadows, float temperature,
                    float colorblind) {
     float3 color = e;
     if (sharpenMode > 2.5f) {
-        color = SharpenLuma(a, b, c, d, e, f, g, h, i, sharpenAmount);
+        color = SharpenLuma(a, b, c, d, e, f, g, h, i, sharpenAmount, sharpenLimit);
     } else if (sharpenMode > 1.5f) {
         color = SharpenRcas(b, d, e, f, h, sharpenAmount);
     } else if (sharpenMode > 0.5f) {

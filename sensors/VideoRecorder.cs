@@ -49,7 +49,7 @@ namespace XRPerfSensors
             // Filtres d'image, même ordre que OverlaySettings.ImageValues() (mode 0 aucun, 1 ceux du casque, 2 vidéo seulement).
             public int ImageMode, ImageSharpen, ImageSharpness, ImageBrightness, ImageContrast, ImageSaturation;
             public int ImageVibrance, ImageGamma, ImageShadows, ImageTemperature, ImageDeband, ImageColorblind;
-            public int ImageHdr;
+            public int ImageHdr, ImageSharpenLimit, ImageSharpenRadius;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Folder;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string RenderDevice;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string CaptureDevice;
@@ -302,6 +302,8 @@ namespace XRPerfSensors
             options.ImageContrast = values[4]; options.ImageSaturation = values[5]; options.ImageVibrance = values[6]; options.ImageGamma = values[7];
             options.ImageShadows = values[8]; options.ImageTemperature = values[9]; options.ImageDeband = values[10]; options.ImageColorblind = values[11];
             options.ImageHdr = values[12];
+            options.ImageSharpenLimit = image.ImageSharpenLimit;
+            options.ImageSharpenRadius = image.ImageSharpenRadius;
             int result;
             try
             {

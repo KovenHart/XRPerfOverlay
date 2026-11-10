@@ -10,7 +10,9 @@ namespace xrpo {
 struct ImageSettings {
     int mode = 0;         // 0 aucun filtre, 1 dans le casque (et la vidéo), 2 dans la vidéo seulement
     int sharpen = 0;      // 0 aucune netteté, 1 CAS, 2 RCAS, 3 LumaSharpen
-    int sharpness = 50;   // force de la netteté, 0 à 100
+    int sharpness = 100;  // force de la netteté, 0 à 200 (LumaSharpen 100 = force 2 de ReShade)
+    int sharpenLimit = 10;// LumaSharpen : écart maximal ajouté, en % de luminosité, 1 à 50 (« clamp » x 100)
+    int sharpenRadius = 1;// portée de la netteté, 1 à 3 pixels
     int brightness = 0;   // -50 à 50
     int contrast = 0;     // -50 à 50
     int saturation = 0;   // -100 à 100
@@ -29,7 +31,9 @@ struct ImageSettings {
         const auto pick = [](int v, int count) { return v >= 0 && v < count ? v : 0; };
         mode = pick(mode, 3);
         sharpen = pick(sharpen, 4);
-        sharpness = c(sharpness, 0, 100);
+        sharpness = c(sharpness, 0, 200);
+        sharpenLimit = c(sharpenLimit, 1, 50);
+        sharpenRadius = c(sharpenRadius, 1, 3);
         brightness = c(brightness, -50, 50);
         contrast = c(contrast, -50, 50);
         saturation = c(saturation, -100, 100);
@@ -49,7 +53,8 @@ struct ImageSettings {
     }
 
     bool operator==(const ImageSettings& o) const {
-        return mode == o.mode && sharpen == o.sharpen && sharpness == o.sharpness && brightness == o.brightness && contrast == o.contrast &&
+        return mode == o.mode && sharpen == o.sharpen && sharpness == o.sharpness && sharpenLimit == o.sharpenLimit &&
+               sharpenRadius == o.sharpenRadius && brightness == o.brightness && contrast == o.contrast &&
                saturation == o.saturation && vibrance == o.vibrance && gamma == o.gamma && shadows == o.shadows && temperature == o.temperature &&
                deband == o.deband && colorblind == o.colorblind && hdr == o.hdr;
     }
@@ -63,8 +68,9 @@ struct ImageFilterParams {
     float shadows = 0.f, temperature = 0.f, colorblind = 0.f, seed = 0.f;
     float originX = 0.f, originY = 0.f, inLinear = 1.f, outLinear = 1.f;
     float width = 0.f, height = 0.f, hdr = 0.f, reserved = 0.f;
+    float sharpenLimit = 0.1f, sharpenRadius = 1.f, reserved1 = 0.f, reserved2 = 0.f;
 };
-static_assert(sizeof(ImageFilterParams) == 80, "20 valeurs (5 x float4)");
+static_assert(sizeof(ImageFilterParams) == 96, "24 valeurs (6 x float4)");
 
 inline ImageFilterParams ImageParamsFrom(ImageSettings s) {
     s.clamp();
@@ -81,6 +87,8 @@ inline ImageFilterParams ImageParamsFrom(ImageSettings s) {
     p.temperature = s.temperature / 50.f;
     p.colorblind = static_cast<float>(s.colorblind);
     p.hdr = s.hdr / 100.f;
+    p.sharpenLimit = s.sharpenLimit / 100.f;
+    p.sharpenRadius = static_cast<float>(s.sharpenRadius);
     return p;
 }
 

@@ -57,7 +57,7 @@ constexpr wchar_t kSettingsBlockName[] = L"Local\\XRPerfOverlay.Settings";
 constexpr uint32_t kSettingsBlockMagic = 0x53505258;  // "XRPS"
 constexpr uint32_t kSettingsBlockVersion = 8;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
                                                // 6 : puissance à la place de la fréquence ; 7 : filtres d'image ;
-                                               // 8 : faux HDR et raccourcis modifiables
+                                               // 8 : faux HDR, raccourcis modifiables, limite et portée de la netteté
 
 struct SettingsBlock {
     uint32_t magic;             // offset 0
@@ -132,9 +132,11 @@ struct SettingsBlock {
     // Raccourcis : modificateurs << 16 | touche (code de touche virtuelle) ; modificateurs comme RegisterHotKey
     // (1 Alt, 2 Ctrl, 4 Maj, 8 Windows) ; 0 = sans raccourci. Ordre de Hotkeys::kNames (hotkeys.h).
     int32_t hotkeys[11];        // 252 à 292
-};                              // 296 octets
+    int32_t imageSharpenLimit;  // 296 : LumaSharpen, écart maximal en % de luminosité (1 à 50)
+    int32_t imageSharpenRadius; // 300 : portée de la netteté, 1 à 3 pixels
+};                              // 304 octets
 
-static_assert(sizeof(SettingsBlock) == 296, "la disposition doit rester identique a celle de OverlaySettings.cs");
+static_assert(sizeof(SettingsBlock) == 304, "la disposition doit rester identique a celle de OverlaySettings.cs");
 
 // 4. Image d'une fenêtre du bureau (un chat, par exemple), capturée par XRPerfSensors.exe (bibliothèque
 //    XRPerfCapture.dll) et affichée dans le casque par la layer ou par XRPerfVR. La mémoire est créée par
