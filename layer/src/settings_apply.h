@@ -105,6 +105,20 @@ inline void ApplySettings(Config& c, const SettingsBlock& s) {
     c.watch.lift = clamped(s.watchLift, kMinHandLift, kMaxHandLift, c.watch.lift);
     c.panelElements = s.panelElements & (kWatchSession | kWatchBattery);
     c.showPower = s.power != 0;
+    ImageSettings& im = c.image;
+    im.mode = s.imageMode;
+    im.sharpen = s.imageSharpen;
+    im.sharpness = s.imageSharpness;
+    im.brightness = s.imageBrightness;
+    im.contrast = s.imageContrast;
+    im.saturation = s.imageSaturation;
+    im.vibrance = s.imageVibrance;
+    im.gamma = s.imageGamma;
+    im.shadows = s.imageShadows;
+    im.temperature = s.imageTemperature;
+    im.deband = s.imageDeband;
+    im.colorblind = s.imageColorblind;
+    im.clamp();
 
     // Fenêtre capturée (la pose dans l'espace ne vient que du .ini et du raccourci Ctrl+Alt+G).
     WindowConfig& w = c.window;

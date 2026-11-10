@@ -7,7 +7,7 @@ Tout ce que fait XR Perf Overlay, page par page, et ce qu'il faut savoir en cas 
 ## Pourquoi ça ne gêne pas les mods
 
 - La layer passe par le mécanisme officiel d'OpenXR (une DLL déclarée dans le registre, insérée par le chargeur entre le jeu et le runtime). Elle n'injecte rien, ne détourne aucune fonction Direct3D ou DXGI et ne crée pas de fenêtre. Par défaut, elle ne touche pas aux manettes ; seule l'accroche à une main (montre au poignet, panneau sur une main), si vous la choisissez, y ajoute la position des mains (voir « Montre et accroche aux manettes »).
-- Elle n'intercepte que six fonctions OpenXR et n'en modifie qu'une : à `xrEndFrame`, elle ajoute **un calque rectangulaire à la fin** de la liste envoyée par le jeu (deux si la montre est affichée). Les images, les poses et les réglages du jeu ou d'UEVR passent tels quels. Une image que le jeu soumet vide (chargement) reste vide.
+- Elle n'intercepte que six fonctions OpenXR et n'en modifie qu'une : à `xrEndFrame`, elle ajoute **un calque rectangulaire à la fin** de la liste envoyée par le jeu (deux si la montre est affichée). Les images, les poses et les réglages du jeu ou d'UEVR passent tels quels (seule exception, si vous l'activez : les filtres d'image, voir « Filtres d'image »). Une image que le jeu soumet vide (chargement) reste vide.
 - Le seul appel graphique est une copie du panneau (640 × 320 pixels au plus, quatre fois par seconde) vers une texture qui appartient à la layer. Aucun état de rendu du jeu n'est lu ni modifié. Le dessin du panneau se fait en mémoire et coûte de l'ordre d'un dixième de milliseconde par mise à jour. Seule exception, et seulement si vous l'activez : la mesure réelle du temps GPU ajoute deux horodatages par image au travail GPU du jeu (voir « Temps GPU : estimation ou mesure »).
 - Si le runtime refuse une image à cause de notre calque, la layer la renvoie aussitôt sans lui ; au troisième refus elle se désactive pour la session. Au moindre problème de son côté, elle s'efface.
 - Les capteurs sont lus dans un programme séparé : rien de risqué (pilote, accès matériel) ne tourne dans le jeu.
@@ -53,6 +53,7 @@ Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit �
 - **Apparence** (casque, montre et miroir) : présentation, couleurs (vignettes des neuf jeux), heure, ligne casque / résolution, ligne session / batterie.
 - **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
 - **Fenêtre** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
+- **Image** : filtres de netteté, couleurs, débandage et mode daltonien, dans le casque ou dans la vidéo (voir « Filtres d'image »).
 - **Miroir du bureau** : la fenêtre miroir pour OBS, son emplacement, sa taille, son opacité, premier plan.
 - **Vidéo** : enregistrement vidéo du casque (voir « Vidéo du casque »).
 - **Mesures** : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
@@ -228,6 +229,25 @@ XRPerfSensors peut filmer ce que vous voyez dans le casque, sans OBS : l'image d
 **D'où vient l'image.** Dans un jeu OpenXR (Direct3D 11 ou 12), la layer copie l'image de l'œil au moment où elle part vers le runtime. Si d'autres layers sont placées sous XR Perf Overlay (Pimax NR et son DLSS, OpenXR Toolkit...), **Image enregistrée** choisit laquelle : *Celle du casque* (par défaut), après leur traitement, telle que le runtime la reçoit (la layer ajoute pour cela un maillon tout en bas de la chaîne OpenXR) ; *Celle du jeu*, avant elles (`source=game` dans la section `[video]`). Le choix vaut au prochain lancement du jeu. C'est l'image du jeu, sans ce que le runtime ajoute par-dessus ; l'enregistreur y remet le panneau si vous le demandez (voir plus haut), à partir de son image fournie par la layer. Avec un rendu fovéal (Quad-Views), c'est l'image large de l'œil, moins nette au centre que dans le casque. Dans un jeu SteamVR (OpenVR), XRPerfVR prend l'image miroir de SteamVR, qui contient aussi les calques (le panneau compris). La copie reste dans la carte graphique ; l'enregistreur la recadre, la convertit et l'encode, toujours sur la carte graphique (NVENC chez NVIDIA, AMF chez AMD, Quick Sync chez Intel), puce à part du rendu. Le coût pour le jeu est une copie de l'image de l'œil enregistré par image vidéo (de l'ordre de 0,1 ms sur une carte haut de gamme, quelques dixièmes sur une carte plus modeste), et rien du tout hors enregistrement. Pendant l'enregistrement, la copie et l'enregistreur occupent aussi de la mémoire vidéo : quelques centaines de Mo, davantage en 4K.
 
 **Désactiver.** L'interrupteur « Enregistrement vidéo » de la page Vidéo (ou `capture=0` dans la section `[video]` de `XRPerfOverlay.ini`) libère le raccourci et, au prochain lancement d'un jeu, la layer ne suit plus les images des jeux OpenXR.
+
+## Filtres d'image
+
+La page **Image** de XRPerfSensors règle des filtres appliqués à l'image de chaque œil. Ils sont tous neutres par défaut, et le mode *Désactivés* les coupe tous.
+
+**Où.** *Dans le casque* : dans un jeu OpenXR (Direct3D 11 ou 12), la layer filtre l'image de chaque œil au moment où elle part vers le runtime, après les autres layers (Pimax NR et son DLSS, OpenXR Toolkit...) quand elles sont sous la nôtre ; la vidéo enregistrée est filtrée de la même façon. Dans un jeu SteamVR, l'image du jeu ne passe pas par XR Perf Overlay : pas de filtre dans le casque. *Vidéo seulement* : seule la vidéo enregistrée est filtrée, dans les jeux OpenXR comme SteamVR, et l'image du casque ne change pas.
+
+**Réglages** (appliqués aussitôt, même en jeu) :
+
+- **Netteté** : *CAS* (Contrast Adaptive Sharpening d'AMD FidelityFX : accentue surtout les détails peu contrastés, sans halo), *RCAS* (celle de FSR 1 : plus marquée, limitée pour ne créer ni halo ni écrêtage) ou *LumaSharpen* (n'accentue que la luminosité, les couleurs ne bougent pas), avec sa **force**. Utile après un suréchantillonnage, un DLSS ou un FSR qui adoucissent l'image.
+- **Couleurs** : luminosité, contraste, saturation, **vibrance** (ravive les couleurs ternes sans pousser celles déjà vives), gamma, **ombres** (éclaircit les zones sombres, le noir reste noir) et **température** (plus froid ou plus chaud).
+- **Débandage** : adoucit les marches visibles dans les dégradés (ciels, brouillard), avec un léger tramage.
+- **Mode daltonien** : protanopie, deutéranopie ou tritanopie. Les couleurs sont décalées pour garder visibles les différences difficiles à percevoir.
+
+**Comparer.** `Ctrl+Alt+I` coupe tous les filtres d'un coup, puis les rétablit, le temps de la session (rien n'est enregistré). La touche se change avec `image=` dans la section `[hotkeys]`.
+
+**Coût.** Une copie de la zone de l'œil et un passage sur ses pixels par la carte graphique, dans la file de travail du jeu : de l'ordre de quelques dixièmes de milliseconde par image pour deux yeux à haute résolution, rien quand aucun filtre ne change l'image. Les formats d'image 8 et 10 bits sont pris en charge ; une image en virgule flottante (HDR) est laissée telle quelle (le journal le dit).
+
+**Désactiver.** Mode *Désactivés*, ou, pour que la layer ne s'intercale jamais entre le jeu et le runtime pour ses images, l'interrupteur « Filtres du casque possibles » de la page Image (`enabled=0` dans la section `[image]` du `.ini`), valable au prochain lancement d'un jeu. Le journal de la layer indique « Filtres d'image : prets » à la première image filtrée, ou la raison d'un échec (les filtres sont alors coupés pour la session, le jeu n'est pas touché) ; celui de l'enregistreur (`XRPerfRecord.log`) fait de même pour la vidéo.
 
 ## Rapports de session
 

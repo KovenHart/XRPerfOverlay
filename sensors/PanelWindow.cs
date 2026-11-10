@@ -556,7 +556,7 @@ namespace XRPerfSensors
         // (code de touche virtuelle). Ctrl+Alt avec une touche des raccourcis du casque est refusé (voir
         // [hotkeys] dans XRPerfOverlay.ini : O, P, R, F, G, S, Pg.Préc, Pg.Suiv, Début, Fin).
         public const int ModAlt = 1, ModCtrl = 2, ModShift = 4, ModWin = 8;
-        private static readonly int[] HeadsetKeys = { 0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24 };
+        private static readonly int[] HeadsetKeys = { 0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24, 0x49 };
         public const int MinVideoBitrate = 2, MaxVideoBitrate = 150, MinVideoField = 40; // Mbit/s ; % de l'image de l'œil
         public string VideoCodec = "h264";
         public int VideoHeight = 1440;

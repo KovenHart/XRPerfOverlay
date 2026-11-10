@@ -485,7 +485,7 @@ namespace XRPerfSensors
             if (_video == null) return Loc.T("Enregistrement vidéo indisponible.", "Video recording unavailable.");
             if (!VideoEnabled)
                 return Loc.T("L'enregistrement vidéo est désactivé (page Vidéo).", "Video recording is turned off (Video page).");
-            string refused = _video.Start(_settings);
+            string refused = _video.Start(_settings, _overlay);
             if (_main != null && !_main.IsDisposed) _main.PostVideo();
             if (refused != null && (_main == null || _main.IsDisposed || !_main.Visible))
                 _icon.ShowBalloonTip(6000, "XRPerfSensors", refused, ToolTipIcon.Warning);
@@ -718,6 +718,19 @@ namespace XRPerfSensors
             o.Layout = fresh.Layout; o.Theme = fresh.Theme;
             o.CustomBackground = fresh.CustomBackground; o.CustomText = fresh.CustomText; o.CustomAccent = fresh.CustomAccent;
             o.Anchor = fresh.Anchor; o.HandPlacement = fresh.HandPlacement; o.GazeOnly = fresh.GazeOnly; o.HandAlong = fresh.HandAlong; o.HandLift = fresh.HandLift;
+            OverlayChanged();
+        }
+
+        /// <summary>Filtres d'image remis à zéro (aucun effet ; le mode et l'autorisation ne changent pas).</summary>
+        public void ResetImageDefaults()
+        {
+            if (_settingsUnavailable != null) return;
+            var fresh = new OverlaySettings();
+            OverlaySettings o = _overlay;
+            o.ImageSharpen = fresh.ImageSharpen; o.ImageSharpness = fresh.ImageSharpness;
+            o.ImageBrightness = fresh.ImageBrightness; o.ImageContrast = fresh.ImageContrast; o.ImageSaturation = fresh.ImageSaturation;
+            o.ImageVibrance = fresh.ImageVibrance; o.ImageGamma = fresh.ImageGamma; o.ImageShadows = fresh.ImageShadows;
+            o.ImageTemperature = fresh.ImageTemperature; o.ImageDeband = fresh.ImageDeband; o.ImageColorblind = fresh.ImageColorblind;
             OverlayChanged();
         }
 

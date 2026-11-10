@@ -260,6 +260,7 @@ namespace XRPerfSensors
                             break;
                         case "set": OnSet(Str(m, "scope"), Str(m, "key"), m.TryGetProperty("value", out JsonElement value) ? value : default(JsonElement)); break;
                         case "resetDefaults": _app.ResetOverlayDefaults(); PostOverlay(); break;
+                        case "resetImage": _app.ResetImageDefaults(); PostOverlay(); break;
                         case "setLayer": _app.SetLayerEnabled(m.TryGetProperty("on", out JsonElement layerOn) && layerOn.ValueKind == JsonValueKind.True); break;
                         case "fullscreen": SetFullscreen(m.TryGetProperty("on", out JsonElement on) && on.ValueKind == JsonValueKind.True); break;
                         case "chrome": ApplyChrome(Str(m, "background"), m.TryGetProperty("light", out JsonElement light) && light.ValueKind == JsonValueKind.True); break;

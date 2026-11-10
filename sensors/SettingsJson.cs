@@ -64,6 +64,19 @@ namespace XRPerfSensors
             w.WriteBoolean("OpenVR", o.OpenVR);
             w.WriteBoolean("VideoCapture", o.VideoCapture);
             w.WriteString("VideoSource", o.VideoFinal ? "final" : "game");
+            w.WriteBoolean("ImageAllowed", o.ImageAllowed);
+            w.WriteString("ImageMode", o.ImageMode);
+            w.WriteString("ImageSharpen", o.ImageSharpen);
+            w.WriteNumber("ImageSharpness", o.ImageSharpness);
+            w.WriteNumber("ImageBrightness", o.ImageBrightness);
+            w.WriteNumber("ImageContrast", o.ImageContrast);
+            w.WriteNumber("ImageSaturation", o.ImageSaturation);
+            w.WriteNumber("ImageVibrance", o.ImageVibrance);
+            w.WriteNumber("ImageGamma", o.ImageGamma);
+            w.WriteNumber("ImageShadows", o.ImageShadows);
+            w.WriteNumber("ImageTemperature", o.ImageTemperature);
+            w.WriteNumber("ImageDeband", o.ImageDeband);
+            w.WriteString("ImageColorblind", o.ImageColorblind);
             w.WriteEndObject();
         }
 
@@ -217,6 +230,34 @@ namespace XRPerfSensors
                     if (source != "final" && source != "game") return false;
                     o.VideoFinal = source == "final";
                     return true;
+                case "ImageAllowed": if (!Bool(v, out b)) return false; o.ImageAllowed = b; return true;
+                case "ImageMode": case "ImageSharpen": case "ImageColorblind":
+                {
+                    string choice = v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+                    string[] names = key == "ImageMode" ? OverlaySettings.ImageModes : key == "ImageSharpen" ? OverlaySettings.ImageSharpens : OverlaySettings.ImageColorblinds;
+                    if (choice == null || Array.IndexOf(names, choice) < 0) return false;
+                    if (key == "ImageMode") o.ImageMode = choice; else if (key == "ImageSharpen") o.ImageSharpen = choice; else o.ImageColorblind = choice;
+                    return true;
+                }
+                case "ImageSharpness": case "ImageBrightness": case "ImageContrast": case "ImageSaturation": case "ImageVibrance":
+                case "ImageGamma": case "ImageShadows": case "ImageTemperature": case "ImageDeband":
+                {
+                    OverlaySettings.ImageRange(key, out int min, out int max);
+                    if (!Int(v, min, max, out i)) return false;
+                    switch (key)
+                    {
+                        case "ImageSharpness": o.ImageSharpness = i; break;
+                        case "ImageBrightness": o.ImageBrightness = i; break;
+                        case "ImageContrast": o.ImageContrast = i; break;
+                        case "ImageSaturation": o.ImageSaturation = i; break;
+                        case "ImageVibrance": o.ImageVibrance = i; break;
+                        case "ImageGamma": o.ImageGamma = i; break;
+                        case "ImageShadows": o.ImageShadows = i; break;
+                        case "ImageTemperature": o.ImageTemperature = i; break;
+                        default: o.ImageDeband = i; break;
+                    }
+                    return true;
+                }
             }
             return false;
         }

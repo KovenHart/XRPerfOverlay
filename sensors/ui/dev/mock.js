@@ -9,7 +9,9 @@
 
   const overlay = {
     Visible: true, Position: 5, Distance: 1.0, OffsetX: 0.34, OffsetY: 0.26, Width: 0.36, Opacity: 0.82, GlobalOpacity: 1.0, FaceViewer: true,
-    Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: false, PowerColumn: false, VideoSource: "final", Layout: Number(params.get("layout") || 0), Theme: Number(params.get("ptheme") || 0),
+    Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: false, PowerColumn: false, VideoSource: "final",
+    ImageAllowed: true, ImageMode: "off", ImageSharpen: "none", ImageSharpness: 50, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
+    ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none", Layout: Number(params.get("layout") || 0), Theme: Number(params.get("ptheme") || 0),
     CustomBackground: "#101820", CustomText: "#f0f3f8", CustomAccent: "#7fd1c7", HeadsetName: "Pimax Dream Air",
     Anchor: 0, HandPlacement: 2, GazeOnly: false, HandAlong: 0, HandLift: 0,
     WatchEnabled: true, WatchAnchor: 1, WatchPlacement: 0, WatchStyle: 0, WatchSession: true, WatchBattery: true, WatchFps: true, WatchGazeOnly: true,
@@ -192,6 +194,11 @@
           break;
         case "resetDefaults":
           Object.assign(overlay, { Position: 5, Distance: 1, OffsetX: 0.34, OffsetY: 0.26, Width: 0.36, Opacity: 0.82, GlobalOpacity: 1, Layout: 0, Theme: 0 });
+          reply({ type: "overlay", overlay });
+          break;
+        case "resetImage":
+          Object.assign(overlay, { ImageSharpen: "none", ImageSharpness: 50, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
+            ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none" });
           reply({ type: "overlay", overlay });
           break;
         case "diagnose":

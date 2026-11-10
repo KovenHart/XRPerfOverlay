@@ -97,6 +97,63 @@ namespace XRPerfSensors
         public bool VideoCapture = true;   // [video] capture : enregistrement vidéo du casque possible (layer et XRPerfVR)
         public bool VideoFinal = true;     // [video] source : image envoyée au casque (après les autres layers) ou celle du jeu
 
+        // [image] : filtres d'image (layer/src/image_params.h, mêmes bornes). Désactivés par défaut.
+        public static readonly string[] ImageModes = { "off", "headset", "video" };
+        public static readonly string[] ImageSharpens = { "none", "cas", "rcas", "luma" };
+        public static readonly string[] ImageColorblinds = { "none", "protan", "deutan", "tritan" };
+        public bool ImageAllowed = true;   // [image] enabled : filtres possibles dans les jeux OpenXR
+        public string ImageMode = "off";
+        public string ImageSharpen = "none";
+        public int ImageSharpness = 50;    // 0 à 100
+        public int ImageBrightness;        // -50 à 50
+        public int ImageContrast;          // -50 à 50
+        public int ImageSaturation;        // -100 à 100
+        public int ImageVibrance;          // 0 à 100
+        public int ImageGamma = 100;       // 50 à 200
+        public int ImageShadows;           // 0 à 100
+        public int ImageTemperature;       // -50 à 50
+        public int ImageDeband;            // 0 à 100
+        public string ImageColorblind = "none";
+
+        /// <summary>
+        /// Réglages d'image dans l'ordre du bloc partagé et de XrprOptions : mode, netteté, force, luminosité,
+        /// contraste, saturation, vibrance, gamma, ombres, température, débandage, daltonisme.
+        /// </summary>
+        public int[] ImageValues()
+        {
+            return new[]
+            {
+                Math.Max(0, Array.IndexOf(ImageModes, ImageMode)), Math.Max(0, Array.IndexOf(ImageSharpens, ImageSharpen)), ImageSharpness, ImageBrightness,
+                ImageContrast, ImageSaturation, ImageVibrance, ImageGamma, ImageShadows, ImageTemperature, ImageDeband,
+                Math.Max(0, Array.IndexOf(ImageColorblinds, ImageColorblind)),
+            };
+        }
+
+        /// <summary>Bornes d'un réglage d'image (nom JSON), ou false s'il n'existe pas.</summary>
+        public static bool ImageRange(string key, out int min, out int max)
+        {
+            min = 0; max = 100;
+            switch (key)
+            {
+                case "ImageSharpness": case "ImageVibrance": case "ImageShadows": case "ImageDeband": return true;
+                case "ImageBrightness": case "ImageContrast": case "ImageTemperature": min = -50; max = 50; return true;
+                case "ImageSaturation": min = -100; max = 100; return true;
+                case "ImageGamma": min = 50; max = 200; return true;
+            }
+            return false;
+        }
+
+        private static string ImageChoice(string path, string key, string[] names)
+        {
+            string text = ReadText(path, "image", key).Trim().ToLowerInvariant();
+            return Array.IndexOf(names, text) >= 0 ? text : names[0];
+        }
+
+        private static int ImageInt(string path, string key, int fallback, int min, int max)
+        {
+            return int.TryParse(ReadText(path, "image", key), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? Math.Min(max, Math.Max(min, v)) : fallback;
+        }
+
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetPrivateProfileStringW(string section, string key, string defaultValue, StringBuilder result, uint size, string path);
 
@@ -196,6 +253,19 @@ namespace XRPerfSensors
             s.OpenVR = ReadBool(path, "openvr", "enabled", s.OpenVR);
             s.VideoCapture = ReadBool(path, "video", "capture", s.VideoCapture);
             s.VideoFinal = ReadText(path, "video", "source").Trim().ToLowerInvariant() != "game";
+            s.ImageAllowed = ReadBool(path, "image", "enabled", s.ImageAllowed);
+            s.ImageMode = ImageChoice(path, "mode", ImageModes);
+            s.ImageSharpen = ImageChoice(path, "sharpen", ImageSharpens);
+            s.ImageSharpness = ImageInt(path, "sharpness", 50, 0, 100);
+            s.ImageBrightness = ImageInt(path, "brightness", 0, -50, 50);
+            s.ImageContrast = ImageInt(path, "contrast", 0, -50, 50);
+            s.ImageSaturation = ImageInt(path, "saturation", 0, -100, 100);
+            s.ImageVibrance = ImageInt(path, "vibrance", 0, 0, 100);
+            s.ImageGamma = ImageInt(path, "gamma", 100, 50, 200);
+            s.ImageShadows = ImageInt(path, "shadows", 0, 0, 100);
+            s.ImageTemperature = ImageInt(path, "temperature", 0, -50, 50);
+            s.ImageDeband = ImageInt(path, "deband", 0, 0, 100);
+            s.ImageColorblind = ImageChoice(path, "colorblind", ImageColorblinds);
 
             s.Anchor = ReadName(path, "anchor", AnchorNames, s.Anchor);
             s.HandPlacement = ReadName(path, "hand_position", PlacementNames, s.HandPlacement);
@@ -293,6 +363,14 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW("openvr", "enabled", OpenVR ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("video", "capture", VideoCapture ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("video", "source", VideoFinal ? "final" : "game", path);
+            ok &= WritePrivateProfileStringW("image", "enabled", ImageAllowed ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW("image", "mode", ImageMode, path);
+            ok &= WritePrivateProfileStringW("image", "sharpen", ImageSharpen, path);
+            foreach (var pair in new[] { ("sharpness", ImageSharpness), ("brightness", ImageBrightness), ("contrast", ImageContrast), ("saturation", ImageSaturation),
+                                         ("vibrance", ImageVibrance), ("gamma", ImageGamma), ("shadows", ImageShadows), ("temperature", ImageTemperature),
+                                         ("deband", ImageDeband) })
+                ok &= WritePrivateProfileStringW("image", pair.Item1, pair.Item2.ToString(CultureInfo.InvariantCulture), path);
+            ok &= WritePrivateProfileStringW("image", "colorblind", ImageColorblind, path);
             ok &= WritePrivateProfileStringW(Section, "anchor", AnchorNames[Anchor], path);
             ok &= WritePrivateProfileStringW(Section, "hand_position", PlacementNames[HandPlacement], path);
             ok &= WritePrivateProfileStringW(Section, "gaze_only", GazeOnly ? "1" : "0", path);
@@ -396,6 +474,9 @@ namespace XRPerfSensors
             // Mode des rapports : 1 = automatique, 2 = manuel, 3 = aucun (0 laisserait celui du .ini).
             Put(block, 188, (uint)(Math.Min(ReportOff, Math.Max(ReportAuto, ReportMode)) + 1));
             Put(block, 192, PowerColumn ? 1u : 0u);
+            // Filtres d'image (version 7).
+            int[] image = ImageValues();
+            for (int i = 0; i < image.Length; i++) Put(block, 200 + 4 * i, unchecked((uint)image[i]));
             return block;
         }
     }
@@ -406,9 +487,9 @@ namespace XRPerfSensors
     /// </summary>
     internal sealed class SettingsShare : IDisposable
     {
-        public const int Size = 200;
+        public const int Size = 248;
         public const uint Magic = 0x53505258; // "XRPS"
-        public const uint Version = 6;
+        public const uint Version = 7;
 
         private const string Name = @"Local\XRPerfOverlay.Settings";
         private const int OffsetSequence = 8;

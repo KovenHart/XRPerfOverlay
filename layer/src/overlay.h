@@ -26,6 +26,7 @@
 #include "report_control.h"
 #include "summary_file.h"
 #include "swapchain_registry.h"
+#include "image_filter.h"
 #include "video_producer.h"
 #include "window_share.h"
 #include "xr.h"
@@ -72,6 +73,13 @@ class Overlay {
     // chaîne ; en bas de la chaîne, celui du runtime).
     void captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains, PFN_xrEnumerateSwapchainImages enumerate);
     void videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains);
+    // Filtres d'image (option) : zones des yeux vues à xrEndFrame, traitées quand le jeu rend l'image
+    // suivante au runtime (xrReleaseSwapchainImage), au même niveau de la chaîne.
+    void imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains, PFN_xrEnumerateSwapchainImages enumerate);
+    void imageRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains);
+    // Les filtres passent plus bas dans la chaîne que la copie vidéo (vidéo de l'image du jeu, filtres en
+    // sortie) : la vidéo copiée n'est pas encore filtrée, l'enregistreur s'en charge.
+    void setImageBelowVideo(bool below) { m_imageBelowVideo.store(below, std::memory_order_relaxed); }
 
     // Le runtime a refusé une image contenant notre calque.
     void onLayerRejected(XrResult result);
@@ -258,6 +266,33 @@ class Overlay {
     // Fil de xrEndFrame : en Direct3D 11, le contexte du jeu n'est utilisé que depuis ce fil.
     std::atomic<DWORD> m_videoEndFrameThread{0};
     double m_videoSeconds = -1.0;  // dernière durée lue (témoin du panneau)
+    bool m_videoCopiedFiltered = false;  // la copie en attente a été faite après les filtres d'image
+
+    // Filtres d'image : périphérique du jeu (lié à la session), filtre créé au premier besoin.
+    bool readImages(SwapchainRegistry& swapchains, XrSwapchain swapchain, SwapchainRegistry::Info& info, PFN_xrEnumerateSwapchainImages enumerate);
+    bool m_bindingD3D12 = false;
+    ID3D11Device* m_bindingDevice11 = nullptr;
+    ID3D12Device* m_bindingDevice12 = nullptr;
+    ID3D12CommandQueue* m_bindingQueue = nullptr;
+    std::mutex m_imageMutex;
+    std::unique_ptr<ImageFilter> m_imageFilter;
+    bool m_imageTried = false;          // création tentée (une fois par session)
+    ImageSettings m_imageSettings;      // copiés depuis la configuration à chaque image
+    bool m_imageActive = false;         // filtres à appliquer dans le casque
+    std::atomic<bool> m_imageBelowVideo{false};
+    struct ImageZone {
+        XrSwapchain swapchain = XR_NULL_HANDLE;
+        uint32_t slice = 0, x = 0, y = 0, width = 0, height = 0;
+        int64_t format = 0;
+        uint32_t mipCount = 1;
+        double since = 0.0;  // début de la zone (elle s'agrandit avec une résolution dynamique, puis repart)
+    };
+    std::vector<ImageZone> m_imageZones;
+    std::atomic<DWORD> m_imageThread{0};  // fil de xrEndFrame (Direct3D 11 : seul fil où filtrer)
+    uint32_t m_imageFrame = 0;
+    XrSwapchain m_imageLastSwapchain = XR_NULL_HANDLE;  // dernière image filtrée (pour la vidéo)
+    uint32_t m_imageLastIndex = 0;
+    bool m_imageFormatLogged = false;
     // Panneau dans la vidéo (jeu OpenXR : le runtime l'ajoute après l'image du jeu, l'enregistreur le dessine).
     std::unique_ptr<Panel> m_videoPanel;  // même dessin que dans le casque, préparé au relevé
     struct VideoQuad {

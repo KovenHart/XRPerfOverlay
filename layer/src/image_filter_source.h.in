@@ -1,0 +1,12 @@
+// Fichier produit par CMake (configure_file) à partir de src/image_filter_core.hlsli et
+// src/image_filter_entry.hlsli : source HLSL des filtres d'image, compilée à l'exécution.
+#pragma once
+
+namespace xrpo {
+
+// Calcul des filtres (HLSL et C++ : voir image_filter_core.hlsli).
+static const char kImageFilterCore[] = R"XRPO(@XRPO_IMAGE_FILTER_CORE@)XRPO";
+// Passe de rendu (HLSL) : VsFilter, PsFilter.
+static const char kImageFilterEntry[] = R"XRPO(@XRPO_IMAGE_FILTER_ENTRY@)XRPO";
+
+}  // namespace xrpo

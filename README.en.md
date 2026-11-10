@@ -8,7 +8,7 @@ A performance panel shown in the headset for every OpenXR game (including games 
 - **CPU**: load, frame time, temperature, clock
 - **GPU**: load, frame time, temperature, clock, VRAM
 
-Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves. The Video page records what you see in the headset (H.264, H.265 or AV1 on the graphics card, with game sound and microphone, optional panel and stabilization), without OBS. The Configuration page diagnoses the PC for VR: OpenXR runtime, installed layers (to turn on, off or reorder), hardware, Windows settings.
+Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves. The Video page records what you see in the headset (H.264, H.265 or AV1 on the graphics card, with game sound and microphone, optional panel and stabilization), without OBS. The Image page adds optional sharpening (CAS, RCAS, LumaSharpen), color adjustments, debanding and a colorblind mode, in the headset or in the video. The Configuration page diagnoses the PC for VR: OpenXR runtime, installed layers (to turn on, off or reorder), hardware, Windows settings.
 
 ![Panel preview](docs/apercu.png)
 

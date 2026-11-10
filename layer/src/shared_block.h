@@ -55,7 +55,8 @@ static_assert(sizeof(PanelShareHeader) == 32, "la disposition doit rester identi
 //    par XRPerfSensors dans XRPerfOverlay.ini, que la layer lit au lancement d'un jeu.
 constexpr wchar_t kSettingsBlockName[] = L"Local\\XRPerfOverlay.Settings";
 constexpr uint32_t kSettingsBlockMagic = 0x53505258;  // "XRPS"
-constexpr uint32_t kSettingsBlockVersion = 6;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
+constexpr uint32_t kSettingsBlockVersion = 7;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
+                                               // 7 : filtres d'image
                                                // 6 : puissance à la place de la fréquence
 
 struct SettingsBlock {
@@ -113,9 +114,22 @@ struct SettingsBlock {
     // Dernière colonne du tableau CPU / GPU (version 6).
     uint32_t power;             // 192 : 0 = fréquence (MHz), 1 = puissance (W)
     uint32_t reserved6;         // 196
-};                              // 200 octets
+    // Filtres d'image (version 7), mêmes valeurs que ImageSettings (image_params.h).
+    int32_t imageMode;          // 200 : 0 aucun, 1 casque, 2 vidéo seulement
+    int32_t imageSharpen;       // 204 : 0 aucune, 1 CAS, 2 RCAS, 3 LumaSharpen
+    int32_t imageSharpness;     // 208 : 0 à 100
+    int32_t imageBrightness;    // 212 : -50 à 50
+    int32_t imageContrast;      // 216 : -50 à 50
+    int32_t imageSaturation;    // 220 : -100 à 100
+    int32_t imageVibrance;      // 224 : 0 à 100
+    int32_t imageGamma;         // 228 : 50 à 200
+    int32_t imageShadows;       // 232 : 0 à 100
+    int32_t imageTemperature;   // 236 : -50 à 50
+    int32_t imageDeband;        // 240 : 0 à 100
+    int32_t imageColorblind;    // 244 : 0 aucun, 1 protanopie, 2 deutéranopie, 3 tritanopie
+};                              // 248 octets
 
-static_assert(sizeof(SettingsBlock) == 200, "la disposition doit rester identique a celle de OverlaySettings.cs");
+static_assert(sizeof(SettingsBlock) == 248, "la disposition doit rester identique a celle de OverlaySettings.cs");
 
 // 4. Image d'une fenêtre du bureau (un chat, par exemple), capturée par XRPerfSensors.exe (bibliothèque
 //    XRPerfCapture.dll) et affichée dans le casque par la layer ou par XRPerfVR. La mémoire est créée par
@@ -167,6 +181,11 @@ constexpr size_t kVideoPanelOffset = 4096;
 // panelFlags (par image) : le panneau est affiché dans le casque ; ses coins sont connus (mode « à sa place »).
 constexpr uint32_t kVideoPanelShown = 1, kVideoPanelPlaced = 2;
 
+// Filtres d'image du casque (imageState, par image) : pas de filtres dans le casque pour cette image (la
+// vidéo n'en reçoit que si l'enregistreur les applique lui-même, mode « vidéo seulement ») ; image déjà
+// filtrée ; filtres appliqués plus bas dans la chaîne que la copie (l'enregistreur les applique).
+enum VideoImageState : uint32_t { kVideoImageNone = 0, kVideoImageFiltered = 1, kVideoImageLater = 2 };
+
 // Qui fournit les images (producerKind).
 enum VideoProducerKind : uint32_t { kVideoNone = 0, kVideoOpenXrD3D11 = 1, kVideoOpenXrD3D12 = 2, kVideoSteamVr = 3 };
 
@@ -188,7 +207,8 @@ struct VideoSlotInfo {
     float eyeOrientation[4];
     float headOrientation[4];    // 112
     uint32_t poseValid;          // 128
-    uint32_t reserved[3];        // 132
+    uint32_t imageState;         // 132 : filtres d'image du casque et cette image (VideoImageState)
+    uint32_t reserved[2];        // 136
 };                               // 144 octets
 
 static_assert(sizeof(VideoSlotInfo) == 144, "disposition fixe");

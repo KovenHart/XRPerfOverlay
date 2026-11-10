@@ -96,6 +96,7 @@ window.App = (function () {
     watch: '<circle cx="12" cy="12" r="6"/><path d="M12 9.5V12l1.6 1.2M9 6.5 9.6 3h4.8l.6 3.5M9 17.5l.6 3.5h4.8l.6-3.5"/>',
     window: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 8.5h18M6.5 6.3h.01M9 6.3h.01"/><path d="M8 13h8M8 16h5"/>',
     mirror: '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 21h6M12 17v4"/><rect x="6" y="7.5" width="7" height="4.5" rx="1"/>',
+    image: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m3.5 17.5 5-4.5 3.5 3 3-2.5 5.5 4.5"/>',
     video: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="m15.5 10.2 6-3.2v10l-6-3.2"/>',
     measures: '<path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/><path d="M4 18h2M18 18h2M12 10V8"/>',
     reports: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 17v-3M13 17v-5M16 17v-2"/>',
@@ -410,6 +411,7 @@ window.App = (function () {
     { id: "appearance", icon: "appearance" },
     { id: "watch", icon: "watch" },
     { id: "window", icon: "window" },
+    { id: "image", icon: "image" },
     { group: "nav.group.pc" },
     { id: "desktop", icon: "mirror" },
     { id: "video", icon: "video" },
@@ -518,7 +520,7 @@ window.App = (function () {
     page.className = "page";
     const builder = {
       dashboard: renderDashboard, panel: renderPanelPage, appearance: renderAppearancePage, watch: renderWatchPage,
-      window: renderWindowPage, desktop: renderDesktopPage, video: renderVideoPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage,
+      window: renderWindowPage, image: renderImagePage, desktop: renderDesktopPage, video: renderVideoPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage,
       interface: renderInterfacePage,
     }[state.page];
     page.replaceChildren();
@@ -741,6 +743,7 @@ window.App = (function () {
         k("F"), h("span", { text: t("key.window") }),
         k("G"), h("span", { text: t("key.place") }),
         k("S"), h("span", { text: t("key.record") }),
+        k("I"), h("span", { text: t("key.image") }),
         videoEnabled() && get("desktop", "VideoHotkey") ? [h("span", { class: "combo" }, hotkeyParts(get("desktop", "VideoHotkey")).map(x => h("kbd", { text: x }))),
           h("span", { text: t("key.video") })] : null)));
     page.appendChild(dash);
@@ -1051,7 +1054,7 @@ window.App = (function () {
   // Raccourci de la vidéo : modificateurs << 16 | touche (code de touche virtuelle Windows). Modificateurs comme
   // RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows. Mêmes règles que Settings.ValidVideoHotkey (XRPerfSensors).
   const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
-  const HEADSET_KEYS = [0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24];
+  const HEADSET_KEYS = [0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24, 0x49];
   const MODIFIER_KEYS = [0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
   function keyName(vk) {
     if (vk >= 0x70 && vk <= 0x87) return "F" + (vk - 0x6F);
@@ -1315,6 +1318,49 @@ window.App = (function () {
         detail.length ? h("div", { class: "row-help", text: detail.join(" · ") }) : null,
         notes.map(n => h("div", { class: "video-note", text: n })))),
       button);
+  }
+
+  // --- Image -----------------------------------------------------------------------------------
+
+  // Filtres d'image : dans le casque (jeux OpenXR, au bas de la chaîne, après Pimax NR ou DLSS) ou
+  // seulement dans la vidéo (aussi les jeux SteamVR). Tout est neutre par défaut.
+  function renderImagePage(page) {
+    refreshers = [];
+    const mode = () => get("overlay", "ImageMode") || "off";
+    const on = () => mode() !== "off";
+    const sharpening = () => on() && (get("overlay", "ImageSharpen") || "none") !== "none";
+    const signed = v => (v > 0 ? "+" : "") + num(v);
+    const form = [
+      group(t("nav.image"), t("img.help"), [
+        liveHelp(segRow("overlay", "ImageMode", t("img.mode"), " ", ["off", "headset", "video"].map(m => ({ value: m, label: t("img.mode." + m) }))),
+          () => t("img.mode.help." + mode())),
+        row(t("img.compare"), t("img.compare.help"), h("span", { class: "combo" }, ["Ctrl", "Alt", "I"].map(x => h("kbd", { text: x }))), { enabled: on }),
+        row(t("img.reset"), t("img.reset.help"), h("button", { class: "btn", type: "button", disabled: locked("overlay"), onclick: () => send("resetImage") }, t("img.reset.button")),
+          { enabled: on }),
+      ]),
+      group(t("img.sharpen"), t("img.sharpen.help"), [
+        liveHelp(selectRow("overlay", "ImageSharpen", t("img.sharpen.method"), " ", ["none", "cas", "rcas", "luma"].map(m => ({ value: m, label: t("img.sharpen." + m) }))),
+          () => t("img.sharpen.help." + (get("overlay", "ImageSharpen") || "none"))),
+        sliderRow("overlay", "ImageSharpness", t("img.sharpness"), null, 0, 100, pct, { enabled: sharpening }),
+      ], on),
+      group(t("img.colors"), t("img.colors.help"), [
+        sliderRow("overlay", "ImageBrightness", t("img.brightness"), null, -50, 50, signed),
+        sliderRow("overlay", "ImageContrast", t("img.contrast"), null, -50, 50, signed),
+        sliderRow("overlay", "ImageSaturation", t("img.saturation"), null, -100, 100, signed),
+        sliderRow("overlay", "ImageVibrance", t("img.vibrance"), t("img.vibrance.help"), 0, 100, num),
+        sliderRow("overlay", "ImageGamma", t("img.gamma"), t("img.gamma.help"), 50, 200, v => num(v / 100, 2)),
+        sliderRow("overlay", "ImageShadows", t("img.shadows"), t("img.shadows.help"), 0, 100, num),
+        sliderRow("overlay", "ImageTemperature", t("img.temperature"), t("img.temperature.help"), -50, 50, signed),
+      ], on),
+      group(t("img.comfort"), null, [
+        sliderRow("overlay", "ImageDeband", t("img.deband"), t("img.deband.help"), 0, 100, num),
+        selectRow("overlay", "ImageColorblind", t("img.colorblind"), t("img.colorblind.help"), ["none", "protan", "deutan", "tritan"].map(m => ({ value: m, label: t("img.colorblind." + m) }))),
+      ], on),
+      group(t("img.advanced"), null, [
+        switchCtl("overlay", "ImageAllowed", t("img.allowed"), t("img.allowed.help")),
+      ]),
+    ];
+    settingsLayout(page, form, null);
   }
 
   // --- Mesures --------------------------------------------------------------------------------

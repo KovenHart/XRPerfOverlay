@@ -11,7 +11,7 @@ namespace xrpo {
 
 class Hotkeys {
   public:
-    static constexpr int kCount = 9;
+    static constexpr int kCount = 10;
     // Ce qu'a changé un appel de poll().
     enum Change : unsigned {
         None = 0,
@@ -19,6 +19,7 @@ class Hotkeys {
         Placement = 2,
         ResetStats = 4,
         Size = 8,
+        ImageBypass = 128,      // filtres d'image coupés ou remis
         Opacity = 16,
         WindowVisibility = 32,  // fenêtre capturée affichée ou masquée
         WindowPlace = 64,       // fenêtre capturée à poser devant soi : l'appelant calcule sa pose
@@ -32,7 +33,7 @@ class Hotkeys {
         // fenêtre capturée affichée/masquée, fenêtre posée devant soi.
         const bool modifiers = pressed(VK_CONTROL) && pressed(VK_MENU);
         const int keys[kCount] = {config.keyToggle,    config.keyPosition,    config.keyReset,        config.keySizeUp,      config.keySizeDown,
-                                  config.keyOpacityUp, config.keyOpacityDown, config.keyWindowToggle, config.keyWindowPlace};
+                                  config.keyOpacityUp, config.keyOpacityDown, config.keyWindowToggle, config.keyWindowPlace, config.keyImage};
         for (int i = 0; i < kCount; ++i) {
             const bool down = modifiers && pressed(keys[i]);
             bool trigger = down && !m_keyDown[i];
@@ -69,6 +70,11 @@ class Hotkeys {
                     config.window.enabled = !config.window.enabled;
                     changes |= WindowVisibility;
                     break;
+                case 9:
+                    // Filtres d'image coupés le temps de comparer : rien à écrire dans le .ini.
+                    config.imageBypass = !config.imageBypass;
+                    changes |= ImageBypass;
+                    continue;
                 case 8:
                     // Posée dans l'espace, affichée : la pose elle-même est calculée par l'appelant.
                     config.window.anchor = WindowAnchor::World;

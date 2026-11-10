@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "image_params.h"
 #include "panel.h"
 #include "pose_math.h"
 
@@ -92,6 +93,7 @@ struct Config {
     int keyWindowToggle = 'F';  // fenêtre capturée : afficher / masquer
     int keyWindowPlace = 'G';   // fenêtre capturée : la poser devant soi
     int keyRecord = 'S';        // rapport en mode manuel : démarrer / arrêter l'enregistrement
+    int keyImage = 'I';         // filtres d'image : couper / remettre (comparaison en jeu)
     std::vector<std::wstring> exclude;  // noms d'exécutables à ignorer (en minuscules)
     bool clock = true;                  // afficher l'heure dans le panneau
     bool headsetInfo = true;            // ligne "casque et résolution de rendu" en bas du panneau
@@ -118,6 +120,11 @@ struct Config {
     // Image enregistrée quand d'autres layers sont sous la nôtre : true = celle envoyée au casque, après
     // leur traitement (Pimax NR, OpenXR Toolkit...) ; false = celle du jeu.
     bool videoFinal = true;
+    // Filtres d'image possibles dans ce jeu ([image] enabled) : la layer suit alors les swapchains du jeu
+    // pour pouvoir filtrer ses images. Les filtres eux-mêmes (image) sont désactivés par défaut.
+    bool imageAllowed = true;
+    ImageSettings image;
+    bool imageBypass = false;           // filtres coupés au raccourci (le temps de la session)
     std::wstring summaryFolder;         // dossier des résumés (par défaut : "sessions" à côté de la DLL)
     std::wstring iniPath;
 };

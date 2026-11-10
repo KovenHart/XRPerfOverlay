@@ -858,7 +858,15 @@ static void testReportControl(const std::string& dir) {
     b.reportMode = 3; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
     b.reportMode = 9; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
     b.reportMode = 0; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
-    assert(offsetof(SettingsBlock, reportMode) == 188 && offsetof(SettingsBlock, power) == 192 && sizeof(SettingsBlock) == 200);
+    assert(offsetof(SettingsBlock, reportMode) == 188 && offsetof(SettingsBlock, power) == 192);
+    // Filtres d'image (version 7) : mêmes positions que OverlaySettings.ToBlock (XRPerfSensors).
+    assert(offsetof(SettingsBlock, imageMode) == 200 && offsetof(SettingsBlock, imageColorblind) == 244 && sizeof(SettingsBlock) == 248);
+    b.imageMode = 1; b.imageSharpen = 2; b.imageSharpness = 140; b.imageGamma = 10; b.imageTemperature = -30; b.imageColorblind = 3;
+    ApplySettings(cfg, b);
+    assert(cfg.image.mode == 1 && cfg.image.sharpen == 2 && cfg.image.sharpness == 100 && cfg.image.gamma == 50 && cfg.image.temperature == -30 &&
+           cfg.image.colorblind == 3 && cfg.image.changesImage());
+    b.imageMode = 7; ApplySettings(cfg, b); assert(cfg.image.mode == 0);
+    b.imageMode = 0;
 
     // Automatique : enregistre dès le début, le raccourci ne fait rien.
     ReportControl rc;
@@ -957,6 +965,84 @@ static void testReportControl(const std::string& dir) {
 
 
 // Enregistrement vidéo : images copiées, cadrage, son mis bout à bout, noms des textures partagées.
+// --- Filtres d'image ---------------------------------------------------------------------------------
+// Le calcul des filtres est écrit dans le sous-ensemble commun au HLSL et au C++ : compilé ici avec les
+// équivalents C++ des fonctions HLSL, il se teste comme du code ordinaire.
+#include "shader_shim.h"
+namespace shader {
+#include "image_filter_core.hlsli"
+}
+
+static void testImageFilters() {
+    using namespace shader;
+    const auto near = [](float3 a, float3 b, float tolerance) {
+        return std::fabs(a.x - b.x) <= tolerance && std::fabs(a.y - b.y) <= tolerance && std::fabs(a.z - b.z) <= tolerance;
+    };
+    const auto identity = [](float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float sharpen, float amount) {
+        return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, sharpen, amount, 0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
+    };
+    // Réglages neutres : image inchangée (y compris des couleurs extrêmes).
+    const float3 samples[] = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {0.2f, 0.5f, 0.9f}, {0.73f, 0.11f, 0.04f}, {0.5f, 0.5f, 0.5f}};
+    for (const float3& s : samples) {
+        const float3 n(0.3f, 0.6f, 0.1f);
+        assert(near(identity(n, n, n, n, s, n, n, n, n, 0.f, 1.f), s, 1e-6f));
+        // Zone unie : la netteté n'y change rien, quel que soit le filtre.
+        for (float mode = 1.f; mode <= 3.f; mode += 1.f) assert(near(identity(s, s, s, s, s, s, s, s, s, mode, 1.f), s, 1e-4f));
+    }
+    // sRGB : aller-retour.
+    for (float v = 0.f; v <= 1.f; v += 0.05f) assert(near(ToGamma(ToLinear(float3(v, v, v))), float3(v, v, v), 1e-4f));
+    // Point plus clair que ses voisins : chaque netteté l'accentue, RCAS sans sortir des valeurs voisines.
+    const float3 dark(0.4f, 0.4f, 0.4f), bright(0.6f, 0.6f, 0.6f);
+    const float3 cas = identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 0.5f);
+    const float3 rcas = identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 2.f, 1.f);
+    const float3 luma = identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 3.f, 1.f);
+    assert(cas.x > 0.6f && rcas.x > 0.6f && luma.x > 0.6f);
+    assert(rcas.x <= 1.f && luma.x <= 0.6f + 0.035f + 1e-6f);  // LumaSharpen : écart borné
+    // Plus de force, plus d'effet ; force nulle de RCAS : rien.
+    assert(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 1.f).x > cas.x);
+    assert(near(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 2.f, 0.f), bright, 1e-6f));
+    // LumaSharpen ne change pas la teinte : les trois composantes bougent ensemble.
+    const float3 tinted(0.5f, 0.3f, 0.2f), around(0.4f, 0.2f, 0.1f);
+    const float3 lumaTint = identity(around, around, around, around, tinted, around, around, around, around, 3.f, 1.f);
+    assert(std::fabs((lumaTint.x - tinted.x) - (lumaTint.z - tinted.z)) < 1e-6f);
+    // Débandage : zone presque unie, le pixel prend la moyenne ; vrai bord, il reste.
+    const float3 flat(0.500f, 0.500f, 0.500f), step(0.504f, 0.504f, 0.504f), edge(0.8f, 0.8f, 0.8f);
+    assert(near(Deband(flat, flat, step, step, flat, flat, 0.5f), float3(0.502f, 0.502f, 0.502f), 1e-5f));
+    assert(near(Deband(flat, flat, edge, step, flat, flat, 0.5f), flat, 1e-6f));
+    // Ombres : le noir et le blanc restent, les tons sombres remontent, sans inversion de l'ordre.
+    const auto color = [](float v, float brightness, float contrast, float saturation, float vibrance, float gamma, float shadows, float temperature) {
+        return AdjustColor(float3(v, v, v), brightness, contrast, saturation, vibrance, 1.f / gamma, shadows, temperature);
+    };
+    assert(near(color(0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f), float3(0.f, 0.f, 0.f), 1e-6f));
+    assert(near(color(1.f, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f), float3(1.f, 1.f, 1.f), 1e-6f));
+    assert(color(0.2f, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f).x > 0.3f);
+    float last = -1.f;
+    for (float v = 0.f; v <= 1.f; v += 0.01f) {
+        const float out = color(v, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f).x;
+        assert(out >= last);
+        last = out;
+    }
+    // Luminosité, contraste, gamma : dans le bon sens.
+    assert(color(0.5f, 0.1f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f).x > 0.55f);
+    assert(color(0.7f, 0.f, 0.3f, 0.f, 0.f, 1.f, 0.f, 0.f).x > 0.75f && color(0.3f, 0.f, 0.3f, 0.f, 0.f, 1.f, 0.f, 0.f).x < 0.25f);
+    assert(color(0.5f, 0.f, 0.f, 0.f, 0.f, 1.5f, 0.f, 0.f).x > 0.55f);
+    // Saturation, vibrance : un gris reste gris ; une couleur terne s'écarte du gris, -100 % donne du gris.
+    assert(near(color(0.5f, 0.f, 0.f, 0.8f, 1.f, 1.f, 0.f, 0.f), float3(0.5f, 0.5f, 0.5f), 1e-6f));
+    const float3 dull(0.5f, 0.45f, 0.4f);
+    const float3 vivid = AdjustColor(dull, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f);
+    assert(vivid.x - vivid.z > dull.x - dull.z);
+    const float3 gray = AdjustColor(dull, 0.f, 0.f, -1.f, 0.f, 1.f, 0.f, 0.f);
+    assert(std::fabs(gray.x - gray.z) < 1e-6f);
+    // Température : plus chaud = plus de rouge, moins de bleu.
+    const float3 warm = AdjustColor(float3(0.5f, 0.5f, 0.5f), 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 1.f);
+    assert(warm.x > 0.5f && warm.z < 0.5f);
+    // Mode daltonien : un gris bouge à peine ; rouge et vert, confondus en deutéranopie, s'écartent.
+    for (float mode = 1.f; mode <= 3.f; mode += 1.f) assert(near(Daltonize(float3(0.5f, 0.5f, 0.5f), mode), float3(0.5f, 0.5f, 0.5f), 0.03f));
+    const float3 red = Daltonize(float3(0.8f, 0.2f, 0.2f), 2.f), green = Daltonize(float3(0.2f, 0.6f, 0.2f), 2.f);
+    assert(std::fabs(red.z - green.z) > 0.1f);
+    std::printf("Filtres d'image : OK\n");
+}
+
 static void testVideo() {
     // Cadence : jeu à 90 Hz, vidéo à 60 puis 30 images par seconde ; jeu à 72 Hz, vidéo à 30.
     auto copies = [](double gameHz, double fps, double seconds) {
@@ -1229,6 +1315,7 @@ static void testVideo() {
 }
 
 int main(int argc, char** argv) {
+    testImageFilters();
     testVideo();
     testStats();
     testAsciiText();

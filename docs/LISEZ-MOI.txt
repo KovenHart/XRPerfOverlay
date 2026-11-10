@@ -81,6 +81,11 @@ d'autres layers (Pimax NR, OpenXR Toolkit...), l'image enregistrée est celle qu
 Fichiers dans Vidéos\XR Perf Overlay. « VID » et la durée s'affichent en haut du panneau pendant
 l'enregistrement. Jeux OpenXR (Direct3D 11 et 12) et jeux SteamVR.
 
+Filtres d'image (page Image, désactivés par défaut) : netteté CAS, RCAS ou LumaSharpen, couleurs
+(luminosité, contraste, saturation, vibrance, gamma, ombres, température), débandage et mode
+daltonien. Dans le casque pour les jeux OpenXR (après Pimax NR ou DLSS), ou dans la vidéo seulement
+(aussi les jeux SteamVR). Ctrl+Alt+I coupe et rétablit tous les filtres pour comparer.
+
 Langue : français ou anglais pour tout (fenêtre, menu de l'icône, panneau et montre dans le casque,
 rapports). Par défaut, celle de Windows. À changer dans la page Interface.
 

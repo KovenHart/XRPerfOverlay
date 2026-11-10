@@ -7,7 +7,7 @@ Everything XR Perf Overlay does, page by page, and what to know when something g
 ## Why it doesn't get in the way of mods
 
 - The layer uses OpenXR's official mechanism (a DLL declared in the registry, inserted by the loader between the game and the runtime). It injects nothing, hooks no Direct3D or DXGI function and creates no window. By default it doesn't touch the controllers; only attaching to a hand (wrist watch, panel on a hand), if you choose it, adds the hand positions (see "Watch and attaching to the controllers").
-- It intercepts only six OpenXR functions and changes only one: at `xrEndFrame`, it adds **one quad layer at the end** of the list sent by the game (two if the watch is shown). The game's or UEVR's images, poses and settings pass through unchanged. A frame the game submits empty (loading) stays empty.
+- It intercepts only six OpenXR functions and changes only one: at `xrEndFrame`, it adds **one quad layer at the end** of the list sent by the game (two if the watch is shown). The game's or UEVR's images, poses and settings pass through unchanged (one exception, if you turn it on: the image filters, see "Image filters"). A frame the game submits empty (loading) stays empty.
 - The only graphics call is a copy of the panel (640 × 320 pixels at most, four times per second) to a texture owned by the layer. No game rendering state is read or changed. The panel is drawn in memory and costs about a tenth of a millisecond per update. The only exception, and only if you turn it on: real GPU time measurement adds two timestamps per frame to the game's GPU work (see "GPU time: estimate or measurement").
 - If the runtime rejects a frame because of our layer, the layer resubmits it right away without it; on the third rejection it disables itself for the session. At the slightest problem on its side, it steps aside.
 - Sensors are read in a separate program: nothing risky (driver, hardware access) runs inside the game.
@@ -53,6 +53,7 @@ Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open 
 - **Appearance** (headset, watch and mirror): layout, colors (thumbnails of the nine sets), clock, headset / resolution line, session / battery line.
 - **Watch**: show the watch, attachment, position on the hand, style, elements, show on gaze, size, opacity, position adjustments, with its preview (see "Watch and attaching to the controllers").
 - **Window**: the desktop window shown in the headset (see "Desktop window in the headset").
+- **Image**: sharpening filters, colors, debanding and colorblind mode, in the headset or in the video (see "Image filters").
 - **Desktop mirror**: the mirror window for OBS, its position, size, opacity, keep on top.
 - **Video**: headset video recording (see "Headset video").
 - **Measurements**: real GPU time measurement (otherwise an estimate), writing reports (every session, on the `Ctrl+Alt+S` hotkey or never: applies immediately, even in game), processor and graphics card models in the reports, reports folder. GPU measurement and models apply the next time a game starts.
@@ -228,6 +229,25 @@ XRPerfSensors can record what you see in the headset, without OBS: one eye's ima
 **Where the image comes from.** In an OpenXR game (Direct3D 11 or 12), the layer copies the eye's image when it leaves for the runtime. If other layers sit below XR Perf Overlay (Pimax NR and its DLSS, OpenXR Toolkit...), **Recorded image** picks which one: *The headset's* (default), after their processing, as the runtime receives it (the layer adds a link at the very bottom of the OpenXR chain for this); *The game's*, before them (`source=game` in the `[video]` section). The choice applies from the next game launch. It is the game's image, without what the runtime adds on top; the recorder puts the panel back if you ask for it (see above), from its image provided by the layer. With foveated rendering (Quad-Views), it is the eye's wide image, less sharp in the center than in the headset. In a SteamVR (OpenVR) game, XRPerfVR takes SteamVR's mirror image, which also contains overlays (the panel included). The copy stays on the graphics card; the recorder crops, converts and encodes it, still on the graphics card (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel), a chip separate from rendering. The cost for the game is one copy of the recorded eye's image per video frame (around 0.1 ms on a high-end card, a few tenths on a more modest one), and nothing at all when not recording. While recording, the copy and the recorder also use video memory: a few hundred MB, more in 4K.
 
 **Turning it off.** The "Video recording" switch on the Video page (or `capture=0` in the `[video]` section of `XRPerfOverlay.ini`) releases the hotkey and, from the next game launch, the layer no longer follows the images of OpenXR games.
+
+## Image filters
+
+The **Image** page of XRPerfSensors sets filters applied to each eye's image. They are all neutral by default, and the *Off* mode turns them all off.
+
+**Where.** *In the headset*: in an OpenXR game (Direct3D 11 or 12), the layer filters each eye's image when it leaves for the runtime, after the other layers (Pimax NR and its DLSS, OpenXR Toolkit...) when they sit below ours; the recorded video is filtered the same way. In a SteamVR game, the game's image doesn't go through XR Perf Overlay: no filter in the headset. *Video only*: only the recorded video is filtered, in OpenXR and SteamVR games alike, and the headset image doesn't change.
+
+**Settings** (applied immediately, even in game):
+
+- **Sharpening**: *CAS* (AMD FidelityFX Contrast Adaptive Sharpening: mostly sharpens low-contrast detail, without halos), *RCAS* (FSR 1's: stronger, limited so it creates neither halos nor clipping) or *LumaSharpen* (sharpens brightness only, colors don't shift), with its **strength**. Useful after supersampling, DLSS or FSR that soften the image.
+- **Colors**: brightness, contrast, saturation, **vibrance** (boosts dull colors without pushing vivid ones), gamma, **shadows** (lifts dark areas while black stays black) and **temperature** (cooler or warmer).
+- **Debanding**: smooths visible steps in gradients (skies, fog), with light dithering.
+- **Colorblind mode**: protanopia, deuteranopia or tritanopia. Colors are shifted to keep hard-to-see differences visible.
+
+**Comparing.** `Ctrl+Alt+I` turns every filter off at once, then back on, for the session (nothing is saved). The key is changed with `image=` in the `[hotkeys]` section.
+
+**Cost.** A copy of the eye's area and one pass over its pixels on the graphics card, in the game's work queue: a few tenths of a millisecond per frame for two high-resolution eyes, nothing when no filter changes the image. 8- and 10-bit image formats are supported; a floating-point (HDR) image is left as it is (the log says so).
+
+**Turning off.** *Off* mode, or, so that the layer never sits between the game and the runtime for its images, the "Headset filters possible" switch on the Image page (`enabled=0` in the `[image]` section of the `.ini`), from the next game launch. The layer's log shows "Filtres d'image : prets" at the first filtered frame, or the reason for a failure (the filters are then off for the session, the game is untouched); the recorder's log (`XRPerfRecord.log`) does the same for the video.
 
 ## Session reports
 

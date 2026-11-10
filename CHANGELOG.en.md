@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.10.0
+
+- **Image filters** (new **Image** page): **sharpening** with *CAS* (AMD FidelityFX), *RCAS* (FSR 1) or *LumaSharpen*, with its strength; **colors**: brightness, contrast, saturation, vibrance, gamma, shadows (lifts dark areas while black stays black) and temperature; gradient **debanding**; **colorblind mode** (protanopia, deuteranopia, tritanopia). Three modes: *Off* (default), *In the headset* or *Video only*. In the headset (OpenXR games, Direct3D 11 and 12), the filters are applied last, after Pimax NR, OpenXR Toolkit or DLSS, and the recorded video gets them too. In a SteamVR game, they only apply to the video (*Video only* mode): SteamVR doesn't allow changing the game's image. `Ctrl+Alt+I` turns every filter off and back on at once, for the session, to compare. Settings apply immediately, even in game; a switch (Image page, "Headset filters possible") keeps the layer from ever touching the game's image.
+
 ## 1.9.1
 
 - Video: only the recorded eye's image is copied, instead of the whole image sent by the game. When the game puts both eyes in the same image (Metro Awakening, SteamVR's mirror image...), the copy takes half the work and video memory while recording. Dynamic resolution is still supported.

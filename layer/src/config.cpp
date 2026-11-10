@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
+#include <initializer_list>
 
 #include "ascii.h"
 #include "settings_apply.h"
@@ -160,8 +161,35 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
     c.keyWindowToggle = readInt(c, L"hotkeys", L"window_toggle", c.keyWindowToggle, 0, 255);
     c.keyWindowPlace = readInt(c, L"hotkeys", L"window_place", c.keyWindowPlace, 0, 255);
     c.keyRecord = readInt(c, L"hotkeys", L"record", c.keyRecord, 0, 255);
+    c.keyImage = readInt(c, L"hotkeys", L"image", c.keyImage, 0, 255);
     c.videoCapture = readInt(c, L"video", L"capture", 1, 0, 1) != 0;
     c.videoFinal = lower(readString(c, L"video", L"source")) != L"game";
+
+    // Filtres d'image : un nom inconnu vaut « aucun ».
+    c.imageAllowed = readInt(c, L"image", L"enabled", 1, 0, 1) != 0;
+    {
+        const auto pick = [](const std::wstring& v, std::initializer_list<const wchar_t*> names) {
+            int i = 0;
+            for (const wchar_t* n : names) {
+                if (v == n) return i;
+                ++i;
+            }
+            return 0;
+        };
+        ImageSettings& im = c.image;
+        im.mode = pick(lower(readString(c, L"image", L"mode")), {L"off", L"headset", L"video"});
+        im.sharpen = pick(lower(readString(c, L"image", L"sharpen")), {L"none", L"cas", L"rcas", L"luma"});
+        im.sharpness = readInt(c, L"image", L"sharpness", im.sharpness, 0, 100);
+        im.brightness = readInt(c, L"image", L"brightness", 0, -50, 50);
+        im.contrast = readInt(c, L"image", L"contrast", 0, -50, 50);
+        im.saturation = readInt(c, L"image", L"saturation", 0, -100, 100);
+        im.vibrance = readInt(c, L"image", L"vibrance", 0, 0, 100);
+        im.gamma = readInt(c, L"image", L"gamma", 100, 50, 200);
+        im.shadows = readInt(c, L"image", L"shadows", 0, 0, 100);
+        im.temperature = readInt(c, L"image", L"temperature", 0, -50, 50);
+        im.deband = readInt(c, L"image", L"deband", 0, 0, 100);
+        im.colorblind = pick(lower(readString(c, L"image", L"colorblind")), {L"none", L"protan", L"deutan", L"tritan"});
+    }
 
     c.clock = readInt(c, L"overlay", L"clock", 1, 0, 1) != 0;
     c.headsetInfo = readInt(c, L"overlay", L"headset_info", 1, 0, 1) != 0;

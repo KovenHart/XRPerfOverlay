@@ -46,6 +46,9 @@ namespace XRPerfSensors
             public float OverlaySize;   // largeur du panneau dans un coin, part de la largeur de la vidéo
             public float StabilizeSeconds; // stabilisation : temps de retard de la caméra (0 : aucune)
             public uint Level;          // 1 : horizon droit
+            // Filtres d'image, même ordre que OverlaySettings.ImageValues() (mode 0 aucun, 1 ceux du casque, 2 vidéo seulement).
+            public int ImageMode, ImageSharpen, ImageSharpness, ImageBrightness, ImageContrast, ImageSaturation;
+            public int ImageVibrance, ImageGamma, ImageShadows, ImageTemperature, ImageDeband, ImageColorblind;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Folder;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string RenderDevice;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string CaptureDevice;
@@ -257,7 +260,7 @@ namespace XRPerfSensors
         public bool Busy { get { int s = Current().State; return s != StateStopped; } }
 
         /// <summary>Démarre un enregistrement. Retourne null, ou la raison du refus (texte pour l'interface).</summary>
-        public string Start(Settings s)
+        public string Start(Settings s, OverlaySettings image)
         {
             _message = "";
             if (!Available)
@@ -293,6 +296,10 @@ namespace XRPerfSensors
                 RenderDevice = s.VideoRenderDevice ?? "",
                 CaptureDevice = s.VideoCaptureDevice ?? "",
             };
+            int[] values = image.ImageValues();
+            options.ImageMode = values[0]; options.ImageSharpen = values[1]; options.ImageSharpness = values[2]; options.ImageBrightness = values[3];
+            options.ImageContrast = values[4]; options.ImageSaturation = values[5]; options.ImageVibrance = values[6]; options.ImageGamma = values[7];
+            options.ImageShadows = values[8]; options.ImageTemperature = values[9]; options.ImageDeband = values[10]; options.ImageColorblind = values[11];
             int result;
             try
             {

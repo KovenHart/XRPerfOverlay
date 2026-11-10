@@ -292,6 +292,7 @@ void VideoProducer::publish(const VideoFrameInfo& info) {
         s.headOrientation[i] = head[i];
     }
     s.poseValid = info.poseValid ? 1u : 0u;
+    s.imageState = info.imageState;
     LARGE_INTEGER qpc;
     QueryPerformanceCounter(&qpc);
     b->latestQpc = static_cast<uint64_t>(qpc.QuadPart);

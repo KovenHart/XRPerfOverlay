@@ -120,6 +120,32 @@ void Overlay::onSessionCreated(XrSession session, const XrSessionCreateInfo* cre
         m_failed = true;
         Log("Session creee avec une API graphique non geree (Vulkan, OpenGL...) : pas d'overlay, le jeu n'est pas modifie.");
     }
+    // Filtres d'image : périphérique du jeu, filtre créé au premier besoin (compilation du shader).
+    {
+        std::lock_guard<std::mutex> imageLock(m_imageMutex);
+        m_imageFilter.reset();
+        m_imageTried = false;
+        m_imageZones.clear();
+        m_imageActive = false;
+        m_imageFormatLogged = false;
+        m_bindingD3D12 = false;
+        m_bindingDevice11 = nullptr;
+        m_bindingDevice12 = nullptr;
+        m_bindingQueue = nullptr;
+        for (auto* entry = static_cast<const XrBaseInStructure*>(createInfo ? createInfo->next : nullptr); m_gfx && entry; entry = entry->next) {
+            if (entry->type == XR_TYPE_GRAPHICS_BINDING_D3D11_KHR) {
+                m_bindingDevice11 = reinterpret_cast<const XrGraphicsBindingD3D11KHR*>(entry)->device;
+                break;
+            }
+            if (entry->type == XR_TYPE_GRAPHICS_BINDING_D3D12_KHR) {
+                const auto* binding = reinterpret_cast<const XrGraphicsBindingD3D12KHR*>(entry);
+                m_bindingD3D12 = true;
+                m_bindingDevice12 = binding->device;
+                m_bindingQueue = binding->queue;
+                break;
+            }
+        }
+    }
     // Enregistrement vidéo : même périphérique que le jeu.
     {
         std::lock_guard<std::mutex> videoLock(m_videoMutex);
@@ -269,22 +295,7 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
         m_video->dropPending();
         return;
     }
-    if (!info.imagesRead) {
-        std::vector<void*> images;
-        uint32_t count = 0;
-        if (XR_SUCCEEDED(enumerate(swapchain, 0, &count, nullptr)) && count > 0 && count <= 64) {
-            if (m_videoD3D12) {
-                std::vector<XrSwapchainImageD3D12KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR, nullptr, nullptr});
-                if (XR_SUCCEEDED(enumerate(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
-                    for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
-            } else {
-                std::vector<XrSwapchainImageD3D11KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR, nullptr, nullptr});
-                if (XR_SUCCEEDED(enumerate(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
-                    for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
-            }
-        }
-        swapchains.setImages(swapchain, images);
-    }
+    if (!info.imagesRead) readImages(swapchains, swapchain, info, enumerate);
     const uint32_t slice = view.subImage.imageArrayIndex < info.arraySize ? view.subImage.imageArrayIndex : 0;
 
     // Rectangle de l'œil dans la texture, borné à sa taille : la zone copiée à la prochaine image.
@@ -320,6 +331,14 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
                     frame.headOrientation = MidOrientation(left, right);
                 }
                 frame.poseValid = true;  // dans le repère de la scène du jeu (celui de la couche projetée)
+                // Filtres d'image : déjà dans la copie, à faire par l'enregistreur (appliqués plus bas dans la
+                // chaîne), ou pas de filtres dans le casque.
+                bool imageLater = false;
+                {
+                    std::lock_guard<std::mutex> imageLock(m_imageMutex);
+                    imageLater = m_imageActive && m_imageFilter && !m_imageFilter->failed() && m_imageBelowVideo.load(std::memory_order_relaxed);
+                }
+                frame.imageState = m_videoCopiedFiltered ? kVideoImageFiltered : (imageLater ? kVideoImageLater : kVideoImageNone);
                 videoPanelPlacement(*projection, view, frameEndInfo.displayTime, frame);
                 m_video->publish(frame);
             }
@@ -382,6 +401,136 @@ void Overlay::videoPanelPlacement(const XrCompositionLayerProjection& projection
     frame.panelFlags |= kVideoPanelPlaced;
 }
 
+// Textures d'une swapchain (lues une fois) : structures Direct3D 11 ou 12 selon la session.
+bool Overlay::readImages(SwapchainRegistry& swapchains, XrSwapchain swapchain, SwapchainRegistry::Info& info, PFN_xrEnumerateSwapchainImages enumerate) {
+    if (info.imagesRead) return !info.images.empty();
+    if (!enumerate) enumerate = m_next.EnumerateSwapchainImages;
+    std::vector<void*> images;
+    uint32_t count = 0;
+    if (enumerate && XR_SUCCEEDED(enumerate(swapchain, 0, &count, nullptr)) && count > 0 && count <= 64) {
+        if (m_bindingD3D12 || m_videoD3D12) {
+            std::vector<XrSwapchainImageD3D12KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR, nullptr, nullptr});
+            if (XR_SUCCEEDED(enumerate(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
+                for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
+        } else {
+            std::vector<XrSwapchainImageD3D11KHR> list(count, {XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR, nullptr, nullptr});
+            if (XR_SUCCEEDED(enumerate(swapchain, count, &count, reinterpret_cast<XrSwapchainImageBaseHeader*>(list.data()))))
+                for (uint32_t i = 0; i < count; ++i) images.push_back(list[i].texture);
+        }
+    }
+    swapchains.setImages(swapchain, images);
+    info.images = images;
+    info.imagesRead = true;
+    return !images.empty();
+}
+
+void Overlay::imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry& swapchains, PFN_xrEnumerateSwapchainImages enumerate) {
+    m_imageThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(m_imageMutex);
+    if (!m_imageActive || (!m_bindingDevice11 && !m_bindingDevice12) || !frameEndInfo.layers) {
+        m_imageZones.clear();
+        return;
+    }
+    if (!m_imageFilter && !m_imageTried) {
+        m_imageTried = true;  // une fois par session : la compilation du shader prend un instant
+        m_imageFilter = m_bindingD3D12 ? ImageFilter::CreateD3D12(m_bindingDevice12, m_bindingQueue) : ImageFilter::CreateD3D11(m_bindingDevice11);
+    }
+    if (!m_imageFilter || m_imageFilter->failed()) {
+        m_imageZones.clear();
+        return;
+    }
+    // Zones de toutes les vues des scènes 3D de l'image (deux yeux ; quatre vues avec un rendu fovéal).
+    const double now = nowSeconds();
+    std::vector<ImageZone> zones;
+    for (uint32_t l = 0; l < frameEndInfo.layerCount && l < 64; ++l) {
+        const XrCompositionLayerBaseHeader* layer = frameEndInfo.layers[l];
+        if (!layer || layer->type != XR_TYPE_COMPOSITION_LAYER_PROJECTION) continue;
+        const auto* projection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
+        for (uint32_t v = 0; projection->views && v < projection->viewCount && v < 8; ++v) {
+            const XrSwapchainSubImage& sub = projection->views[v].subImage;
+            SwapchainRegistry::Info info;
+            if (!swapchains.lookup(sub.swapchain, info) || info.sampleCount > 1) continue;
+            if (!ImageFilter::Supported(info.format)) {
+                if (!m_imageFormatLogged) Log("Filtres d'image : format d'image %lld non gere (flottant ?), image laissee telle quelle.", static_cast<long long>(info.format));
+                m_imageFormatLogged = true;
+                continue;
+            }
+            if (!readImages(swapchains, sub.swapchain, info, enumerate)) continue;
+            ImageZone z;
+            z.swapchain = sub.swapchain;
+            z.slice = sub.imageArrayIndex < info.arraySize ? sub.imageArrayIndex : 0;
+            const int64_t x0 = std::max<int64_t>(0, sub.imageRect.offset.x), y0 = std::max<int64_t>(0, sub.imageRect.offset.y);
+            const int64_t x1 = std::min<int64_t>(info.width, static_cast<int64_t>(sub.imageRect.offset.x) + sub.imageRect.extent.width);
+            const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(sub.imageRect.offset.y) + sub.imageRect.extent.height);
+            if (x1 - x0 < 16 || y1 - y0 < 16) continue;
+            z.x = static_cast<uint32_t>(x0);
+            z.y = static_cast<uint32_t>(y0);
+            z.width = static_cast<uint32_t>(x1 - x0);
+            z.height = static_cast<uint32_t>(y1 - y0);
+            z.format = info.format;
+            z.mipCount = info.mipCount;
+            z.since = now;
+            // Résolution dynamique : la zone de l'image suivante peut être plus grande ; on garde la réunion
+            // des zones de deux secondes (filtrer quelques pixels inutilisés ne change rien).
+            for (const ImageZone& old : m_imageZones) {
+                if (old.swapchain != z.swapchain || old.slice != z.slice || now - old.since >= 2.0) continue;
+                const uint32_t ox1 = old.x + old.width, oy1 = old.y + old.height;
+                const uint32_t nx0 = std::min(z.x, old.x), ny0 = std::min(z.y, old.y);
+                const uint32_t nx1 = std::max(z.x + z.width, ox1), ny1 = std::max(z.y + z.height, oy1);
+                // Seulement si les deux zones se recouvrent (pas l'autre œil de la même texture).
+                if (old.x < z.x + z.width && z.x < ox1 && old.y < z.y + z.height && z.y < oy1) {
+                    z.x = nx0;
+                    z.y = ny0;
+                    z.width = nx1 - nx0;
+                    z.height = ny1 - ny0;
+                    z.since = old.since;
+                }
+            }
+            bool duplicate = false;
+            for (const ImageZone& other : zones)
+                duplicate = duplicate || (other.swapchain == z.swapchain && other.slice == z.slice && other.x == z.x && other.y == z.y);
+            if (!duplicate && zones.size() < 8) zones.push_back(z);
+        }
+    }
+    m_imageZones.swap(zones);
+}
+
+void Overlay::imageRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains) {
+    // Direct3D 11 : le contexte immédiat du jeu, seulement depuis le fil qui soumet les images.
+    if (!m_bindingD3D12 && GetCurrentThreadId() != m_imageThread.load(std::memory_order_relaxed)) return;
+    std::lock_guard<std::mutex> lock(m_imageMutex);
+    if (!m_imageActive || !m_imageFilter || m_imageFilter->failed() || m_imageZones.empty()) return;
+    ImageFilterTarget targets[4];
+    int count = 0;
+    int64_t format = 0;
+    uint32_t mipCount = 1;
+    uint32_t index = 0;
+    SwapchainRegistry::Info info;
+    for (const ImageZone& z : m_imageZones) {
+        if (z.swapchain != swapchain || count >= 4) continue;
+        if (count == 0) {
+            if (!swapchains.releasing(swapchain, index) || !swapchains.lookup(swapchain, info) || index >= info.images.size() || !info.images[index]) return;
+            format = z.format;
+            mipCount = z.mipCount;
+        }
+        ImageFilterTarget& t = targets[count++];
+        t.texture = info.images[index];
+        t.slice = z.slice;
+        t.x = z.x;
+        t.y = z.y;
+        t.width = std::min(z.width, info.width > z.x ? info.width - z.x : 0u);
+        t.height = std::min(z.height, info.height > z.y ? info.height - z.y : 0u);
+        if (t.width == 0 || t.height == 0) --count;
+    }
+    if (count == 0) return;
+    ImageFilterParams params = ImageParamsFrom(m_imageSettings);
+    params.seed = static_cast<float>((m_imageFrame++ % 997u) * 7u % 997u);  // tramage qui change à chaque image
+    if (m_imageFilter->apply(targets, count, format, mipCount, params)) {
+        m_imageLastSwapchain = swapchain;
+        m_imageLastIndex = index;
+    }
+}
+
 void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains) {
     // Direct3D 11 : le contexte immédiat du jeu n'est pas fait pour deux fils à la fois ; on ne copie que sur
     // le fil qui soumet les images (le cas de presque tous les moteurs). La file Direct3D 12 n'a pas ce souci.
@@ -402,6 +551,8 @@ void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains)
     if (m_video->copy(source)) {
         m_videoCopiedSwapchain = swapchain;
         m_videoCopiedIndex = index;
+        std::lock_guard<std::mutex> imageLock(m_imageMutex);
+        m_videoCopiedFiltered = m_imageLastSwapchain == swapchain && m_imageLastIndex == index;
     }
 }
 
@@ -514,6 +665,14 @@ void Overlay::onSessionDestroying() {
         if (m_video) m_video->shutdown();
         m_video.reset();
         m_videoTarget = VideoTarget();
+    }
+    {
+        std::lock_guard<std::mutex> imageLock(m_imageMutex);
+        m_imageFilter.reset();  // Direct3D 12 : attend la fin de ses commandes
+        m_imageZones.clear();
+        m_bindingDevice11 = nullptr;
+        m_bindingDevice12 = nullptr;
+        m_bindingQueue = nullptr;
     }
     destroyResources();
     m_gfx.reset();
@@ -987,6 +1146,12 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
     {
         std::lock_guard<std::mutex> quadLock(m_videoQuadMutex);
         m_videoQuad = VideoQuad();
+    }
+    {
+        // Filtres d'image : réglages du moment (changés en direct depuis XRPerfSensors ou au raccourci).
+        std::lock_guard<std::mutex> imageLock(m_imageMutex);
+        m_imageSettings = m_config.image;
+        m_imageActive = m_config.imageAllowed && m_config.image.mode == 1 && !m_config.imageBypass && m_config.image.changesImage();
     }
     if (m_session == XR_NULL_HANDLE) return 0;
 
