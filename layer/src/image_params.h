@@ -10,8 +10,8 @@ namespace xrpo {
 struct ImageSettings {
     int mode = 0;         // 0 aucun filtre, 1 dans le casque (et la vidéo), 2 dans la vidéo seulement
     int sharpen = 0;      // 0 aucune netteté, 1 CAS, 2 RCAS, 3 LumaSharpen
-    int sharpness = 50;   // force de la netteté, 0 à 200 (LumaSharpen 100 = force 2 de ReShade)
-    int sharpenLimit = 4; // LumaSharpen : écart maximal ajouté, en % de luminosité, 1 à 50 (« clamp » x 100)
+    int sharpness = 100;  // force de la netteté, 0 à 200 (LumaSharpen 100 = force 2 de ReShade)
+    int sharpenLimit = 10;// LumaSharpen : écart maximal ajouté, en % de luminosité, 1 à 50 (« clamp » x 100)
     int sharpenRadius = 1;// portée de la netteté, 1 à 3 pixels
     int brightness = 0;   // -50 à 50
     int contrast = 0;     // -50 à 50
@@ -68,7 +68,7 @@ struct ImageFilterParams {
     float shadows = 0.f, temperature = 0.f, colorblind = 0.f, seed = 0.f;
     float originX = 0.f, originY = 0.f, inLinear = 1.f, outLinear = 1.f;
     float width = 0.f, height = 0.f, hdr = 0.f, reserved = 0.f;
-    float sharpenLimit = 0.04f, sharpenRadius = 1.f, reserved1 = 0.f, reserved2 = 0.f;
+    float sharpenLimit = 0.1f, sharpenRadius = 1.f, reserved1 = 0.f, reserved2 = 0.f;
 };
 static_assert(sizeof(ImageFilterParams) == 96, "24 valeurs (6 x float4)");
 

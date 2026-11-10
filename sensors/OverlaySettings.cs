@@ -104,8 +104,8 @@ namespace XRPerfSensors
         public bool ImageAllowed = true;   // [image] enabled : filtres possibles dans les jeux OpenXR
         public string ImageMode = "off";
         public string ImageSharpen = "none";
-        public int ImageSharpness = 50;    // 0 à 200 (LumaSharpen 100 = force 2 de ReShade)
-        public int ImageSharpenLimit = 4;  // LumaSharpen : écart maximal, % de luminosité, 1 à 50 (« clamp » x 100)
+        public int ImageSharpness = 100;   // 0 à 200 (LumaSharpen 100 = force 2 de ReShade)
+        public int ImageSharpenLimit = 10; // LumaSharpen : écart maximal, % de luminosité, 1 à 50 (« clamp » x 100)
         public int ImageSharpenRadius = 1; // portée de la netteté, 1 à 3 pixels
         public int ImageBrightness;        // -50 à 50
         public int ImageContrast;          // -50 à 50
@@ -308,8 +308,8 @@ namespace XRPerfSensors
             s.ImageAllowed = ReadBool(path, "image", "enabled", s.ImageAllowed);
             s.ImageMode = ImageChoice(path, "mode", ImageModes);
             s.ImageSharpen = ImageChoice(path, "sharpen", ImageSharpens);
-            s.ImageSharpness = ImageInt(path, "sharpness", 50, 0, 200);
-            s.ImageSharpenLimit = ImageInt(path, "sharpen_limit", 4, 1, 50);
+            s.ImageSharpness = ImageInt(path, "sharpness", 100, 0, 200);
+            s.ImageSharpenLimit = ImageInt(path, "sharpen_limit", 10, 1, 50);
             s.ImageSharpenRadius = ImageInt(path, "sharpen_radius", 1, 1, 3);
             s.ImageBrightness = ImageInt(path, "brightness", 0, -50, 50);
             s.ImageContrast = ImageInt(path, "contrast", 0, -50, 50);

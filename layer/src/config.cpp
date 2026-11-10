@@ -193,7 +193,7 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
         im.deband = readInt(c, L"image", L"deband", 0, 0, 100);
         im.colorblind = pick(lower(readString(c, L"image", L"colorblind")), {L"none", L"protan", L"deutan", L"tritan"});
         im.hdr = readInt(c, L"image", L"hdr", 0, 0, 100);
-        im.sharpenLimit = readInt(c, L"image", L"sharpen_limit", 4, 1, 50);
+        im.sharpenLimit = readInt(c, L"image", L"sharpen_limit", 10, 1, 50);
         im.sharpenRadius = readInt(c, L"image", L"sharpen_radius", 1, 1, 3);
     }
 

@@ -10,7 +10,7 @@
   const overlay = {
     Visible: true, Position: 5, Distance: 1.0, OffsetX: 0.34, OffsetY: 0.26, Width: 0.36, Opacity: 0.82, GlobalOpacity: 1.0, FaceViewer: true,
     Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: false, PowerColumn: false, VideoSource: "final",
-    ImageAllowed: true, ImageMode: "off", ImageSharpen: "none", ImageSharpness: 50, ImageSharpenLimit: 4, ImageSharpenRadius: 1, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
+    ImageAllowed: true, ImageMode: "off", ImageSharpen: "none", ImageSharpness: 100, ImageSharpenLimit: 10, ImageSharpenRadius: 1, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
     ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none", ImageHdr: 0,
     "Hotkey.toggle": 0x3004F, "Hotkey.position": 0x30050, "Hotkey.reset": 0x30052, "Hotkey.size_up": 0x30021, "Hotkey.size_down": 0x30022,
     "Hotkey.opacity_up": 0x30024, "Hotkey.opacity_down": 0x30023, "Hotkey.window_toggle": 0x30046, "Hotkey.window_place": 0x30047,
@@ -26,7 +26,7 @@
   // Presets fournis (mêmes valeurs que ImagePresets.cs).
   const IMAGE_KEYS = ["ImageSharpen", "ImageSharpness", "ImageSharpenLimit", "ImageSharpenRadius", "ImageBrightness", "ImageContrast", "ImageSaturation", "ImageVibrance", "ImageGamma",
     "ImageShadows", "ImageTemperature", "ImageDeband", "ImageColorblind", "ImageHdr"];
-  const NEUTRAL = { ImageSharpen: "none", ImageSharpness: 50, ImageSharpenLimit: 4, ImageSharpenRadius: 1, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0, ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none", ImageHdr: 0 };
+  const NEUTRAL = { ImageSharpen: "none", ImageSharpness: 100, ImageSharpenLimit: 10, ImageSharpenRadius: 1, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0, ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none", ImageHdr: 0 };
   overlay.ImagePresets = [
     ["lowres", { ImageSharpen: "rcas", ImageSharpness: 70 }],
     ["crisp", { ImageSharpen: "luma", ImageSharpness: 60, ImageSharpenLimit: 6 }],
@@ -237,7 +237,7 @@
           reply({ type: "overlay", overlay: JSON.parse(JSON.stringify(overlay)) });
           break;
         case "resetImage":
-          Object.assign(overlay, { ImageSharpen: "none", ImageSharpness: 50, ImageSharpenLimit: 4, ImageSharpenRadius: 1, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
+          Object.assign(overlay, { ImageSharpen: "none", ImageSharpness: 100, ImageSharpenLimit: 10, ImageSharpenRadius: 1, ImageBrightness: 0, ImageContrast: 0, ImageSaturation: 0, ImageVibrance: 0,
             ImageGamma: 100, ImageShadows: 0, ImageTemperature: 0, ImageDeband: 0, ImageColorblind: "none" });
           reply({ type: "overlay", overlay });
           break;
