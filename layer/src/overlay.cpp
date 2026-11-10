@@ -445,7 +445,7 @@ void Overlay::imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistr
     // Zones de toutes les vues des scènes 3D de l'image (deux yeux ; quatre vues avec un rendu fovéal).
     const double now = nowSeconds();
     std::vector<ImageZone> zones;
-    int projections = 0, views = 0, unknown = 0, multisampled = 0, unreadable = 0, small = 0;
+    int projections = 0, views = 0, unknown = 0, multisampled = 0, unreadable = 0, tooSmall = 0;
     for (uint32_t l = 0; l < frameEndInfo.layerCount && l < 64; ++l) {
         const XrCompositionLayerBaseHeader* layer = frameEndInfo.layers[l];
         if (!layer || layer->type != XR_TYPE_COMPOSITION_LAYER_PROJECTION) continue;
@@ -479,7 +479,7 @@ void Overlay::imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistr
             const int64_t x1 = std::min<int64_t>(info.width, static_cast<int64_t>(sub.imageRect.offset.x) + sub.imageRect.extent.width);
             const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(sub.imageRect.offset.y) + sub.imageRect.extent.height);
             if (x1 - x0 < 16 || y1 - y0 < 16) {
-                ++small;
+                ++tooSmall;
                 continue;
             }
             z.x = static_cast<uint32_t>(x0);
@@ -515,7 +515,7 @@ void Overlay::imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistr
         m_imageLoggedNoZone = true;
         Log("Filtres d'image : aucune zone a filtrer (%d scene(s) 3D, %d vue(s) : %d swapchain(s) inconnue(s), %d multi-echantillonnee(s), %d "
             "image(s) illisible(s), %d trop petite(s)).",
-            projections, views, unknown, multisampled, unreadable, small);
+            projections, views, unknown, multisampled, unreadable, tooSmall);
     }
     m_imageZones.swap(zones);
 }
