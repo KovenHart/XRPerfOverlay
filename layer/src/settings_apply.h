@@ -118,7 +118,13 @@ inline void ApplySettings(Config& c, const SettingsBlock& s) {
     im.temperature = s.imageTemperature;
     im.deband = s.imageDeband;
     im.colorblind = s.imageColorblind;
+    im.hdr = s.imageHdr;
     im.clamp();
+    // Raccourcis (un invalide garde le précédent).
+    for (int i = 0; i < Config::kHotkeyCount; ++i) {
+        const int value = NormalizeHotkey(s.hotkeys[i]);
+        if (value >= 0) c.hotkey(i) = value;
+    }
 
     // Fenêtre capturée (la pose dans l'espace ne vient que du .ini et du raccourci Ctrl+Alt+G).
     WindowConfig& w = c.window;

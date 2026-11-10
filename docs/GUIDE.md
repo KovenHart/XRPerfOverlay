@@ -41,6 +41,9 @@ Options, depuis une invite de commandes : `Installer.bat -Target "D:\Outils\XRPe
 | `Ctrl + Alt + F` | Afficher / masquer la fenêtre capturée |
 | `Ctrl + Alt + G` | Poser la fenêtre capturée devant soi, là où l'on regarde |
 | `Ctrl + Alt + S` | Rapports en mode manuel : démarrer / arrêter l'enregistrement (voir « Rapports de session ») |
+| `Ctrl + Alt + I` | Filtres d'image : tout couper / rétablir (voir « Filtres d'image ») |
+
+Ce sont les raccourcis par défaut. Chacun se change dans la page **Raccourcis** de XRPerfSensors : cliquez le raccourci puis appuyez sur la combinaison voulue (Ctrl, Alt, Maj ou Win avec une touche ; une touche F1 à F24 peut servir seule), « Retirer » le désactive, « Par défaut » le remet, et « Tout remettre par défaut » les remet tous. Un raccourci déjà pris par un autre (ou par la vidéo) est refusé. Le changement vaut aussitôt, même en jeu, dans les jeux OpenXR comme SteamVR.
 
 Les raccourcis fonctionnent même si la fenêtre du jeu n'a pas le focus, et les réglages faits en jeu (affichage, emplacement, taille, opacité) sont mémorisés dans `XRPerfOverlay.ini`. Ce fichier commenté permet aussi de régler la fréquence de mise à jour, les touches et la liste de programmes à ignorer.
 
@@ -53,12 +56,13 @@ Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit �
 - **Apparence** (casque, montre et miroir) : présentation, couleurs (vignettes des neuf jeux), heure, ligne casque / résolution, ligne session / batterie.
 - **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
 - **Fenêtre** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
-- **Image** : filtres de netteté, couleurs, débandage et mode daltonien, dans le casque ou dans la vidéo (voir « Filtres d'image »).
+- **Image** : presets, filtres de netteté, couleurs, faux HDR, débandage et mode daltonien, dans le casque ou dans la vidéo (voir « Filtres d'image »).
 - **Miroir du bureau** : la fenêtre miroir pour OBS, son emplacement, sa taille, son opacité, premier plan.
 - **Vidéo** : enregistrement vidéo du casque (voir « Vidéo du casque »).
 - **Mesures** : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
 - **Rapports** : voir « Rapports de session ».
 - **Configuration** : diagnostic du PC pour la VR (voir « Diagnostic de configuration »).
+- **Raccourcis** : tous les raccourcis du casque et celui de la vidéo (voir « Utilisation »).
 - **Interface** : langue (celle de Windows, français ou anglais), couleurs de la fenêtre (« comme le panneau » du casque, l'un des huit thèmes, ou trois couleurs à soi), taille du texte, animations, plein écran et ouverture en plein écran.
 
 Le rapport d'une session, avec l'analyse en phrases à gauche et les courbes minute par minute à droite :
@@ -212,7 +216,7 @@ La fenêtre montre toujours le panneau avec un fond opaque, même s'il est masqu
 
 XRPerfSensors peut filmer ce que vous voyez dans le casque, sans OBS : l'image d'un œil, cadrée en 16:9 (ou 4:3, ou carré), encodée par la carte graphique dans un fichier MP4, avec le son du jeu et, si vous le voulez, le micro.
 
-**Démarrer et arrêter.** `Ctrl+Alt+V` par défaut (n'importe quelle combinaison dans la page Vidéo : cliquez le raccourci puis appuyez sur les touches voulues ; une touche F1 à F24 peut servir seule ; les raccourcis du panneau sont refusés), le bouton de la page Vidéo, ou « Enregistrer la vidéo du casque » dans le menu de l'icône. L'enregistrement commence avec la première image d'un jeu VR : lancé avant le jeu, il attend (« REC en attente »). Pendant l'enregistrement, un carré rouge et la durée (« VID 03:12 ») s'affichent en haut du panneau dans le casque, et « REC 03:12 » en haut de la fenêtre de XRPerfSensors. Le même raccourci arrête et termine le fichier. Si le jeu se ferme, le fichier est terminé tout seul au bout de 10 secondes ; si XRPerfSensors se ferme, il le termine avant de partir.
+**Démarrer et arrêter.** `Ctrl+Alt+V` par défaut (n'importe quelle combinaison dans la page Vidéo ou Raccourcis : cliquez le raccourci puis appuyez sur les touches voulues ; une touche F1 à F24 peut servir seule ; un raccourci du casque est refusé), le bouton de la page Vidéo, ou « Enregistrer la vidéo du casque » dans le menu de l'icône. L'enregistrement commence avec la première image d'un jeu VR : lancé avant le jeu, il attend (« REC en attente »). Pendant l'enregistrement, un carré rouge et la durée (« VID 03:12 ») s'affichent en haut du panneau dans le casque, et « REC 03:12 » en haut de la fenêtre de XRPerfSensors. Le même raccourci arrête et termine le fichier. Si le jeu se ferme, le fichier est terminé tout seul au bout de 10 secondes ; si XRPerfSensors se ferme, il le termine avant de partir.
 
 **Fichiers.** Dans `Vidéos\XR Perf Overlay` par défaut (« Changer... » dans la page Vidéo), nommés d'après le jeu et l'heure : `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. Un fichier MP4 n'est lisible qu'une fois terminé : si le PC s'arrête brutalement pendant l'enregistrement, la vidéo en cours est perdue.
 
@@ -236,16 +240,19 @@ La page **Image** de XRPerfSensors règle des filtres appliqués à l'image de c
 
 **Où.** *Dans le casque* : dans un jeu OpenXR (Direct3D 11 ou 12), la layer filtre l'image de chaque œil au moment où elle part vers le runtime, après les autres layers (Pimax NR et son DLSS, OpenXR Toolkit...) quand elles sont sous la nôtre ; la vidéo enregistrée est filtrée de la même façon. Dans un jeu SteamVR, l'image du jeu ne passe pas par XR Perf Overlay : pas de filtre dans le casque. *Vidéo seulement* : seule la vidéo enregistrée est filtrée, dans les jeux OpenXR comme SteamVR, et l'image du casque ne change pas.
 
+**Presets.** En haut de la page, un preset règle tout d'un coup (sauf le mode), comme point de départ : *Résolution réduite* (RCAS), *Piqué naturel* (LumaSharpen), *Couleurs vives*, *Faux HDR*, *Cinéma*, *Jeu trop sombre* et *OLED*. Choisi alors que les filtres sont désactivés, il les met dans le casque. « Enregistrer les réglages » garde les réglages du moment sous un nom à vous (par exemple celui du jeu) ; ils apparaissent sous « Les miens », et « Supprimer » retire celui qui est choisi. Dès qu'un réglage s'écarte du preset, la liste indique « Personnalisé ». Les vôtres sont dans `%LOCALAPPDATA%\XRPerfOverlay\ImagePresets.json`.
+
 **Réglages** (appliqués aussitôt, même en jeu) :
 
 - **Netteté** : *CAS* (Contrast Adaptive Sharpening d'AMD FidelityFX : accentue surtout les détails peu contrastés, sans halo), *RCAS* (celle de FSR 1 : plus marquée, limitée pour ne créer ni halo ni écrêtage) ou *LumaSharpen* (n'accentue que la luminosité, les couleurs ne bougent pas), avec sa **force**. Utile après un suréchantillonnage, un DLSS ou un FSR qui adoucissent l'image.
+- **Faux HDR** : contraste local, comme le FakeHDR de ReShade. Fait ressortir les détails dans les zones claires et sombres et approfondit les tons moyens, sans changer les teintes. Un peu plus coûteux que la netteté (seize lectures de plus par pixel).
 - **Couleurs** : luminosité, contraste, saturation, **vibrance** (ravive les couleurs ternes sans pousser celles déjà vives), gamma, **ombres** (éclaircit les zones sombres, le noir reste noir) et **température** (plus froid ou plus chaud).
 - **Débandage** : adoucit les marches visibles dans les dégradés (ciels, brouillard), avec un léger tramage.
 - **Mode daltonien** : protanopie, deutéranopie ou tritanopie. Les couleurs sont décalées pour garder visibles les différences difficiles à percevoir.
 
 **Astuce : moins de pixels, autant de piqué.** RCAS a été conçu pour accompagner FSR 1, c'est-à-dire pour rendre du piqué à une image calculée en résolution réduite. Baisser la résolution de rendu (réglages du casque, de SteamVR ou du jeu) et ajouter RCAS ou LumaSharpen fait gagner des images par seconde en perdant peu en netteté : le filtre coûte bien moins que les pixels économisés. RCAS convient à une baisse marquée (il ne crée jamais de halo, on peut monter haut), LumaSharpen à une baisse légère (plus doux, couleurs intactes). Si des détails fins (grillages, câbles, feuillages) se mettent à scintiller, baissez la force plutôt que de changer de filtre.
 
-**Comparer.** `Ctrl+Alt+I` coupe tous les filtres d'un coup, puis les rétablit, le temps de la session (rien n'est enregistré). La touche se change avec `image=` dans la section `[hotkeys]`.
+**Comparer.** `Ctrl+Alt+I` coupe tous les filtres d'un coup, puis les rétablit, le temps de la session (rien n'est enregistré). Le raccourci se change dans la page Raccourcis.
 
 **Coût.** Une copie de la zone de l'œil et un passage sur ses pixels par la carte graphique, dans la file de travail du jeu : de l'ordre de quelques dixièmes de milliseconde par image pour deux yeux à haute résolution, rien quand aucun filtre ne change l'image. Les formats d'image 8 et 10 bits sont pris en charge ; une image en virgule flottante (HDR) est laissée telle quelle (le journal le dit).
 
@@ -269,7 +276,7 @@ Le fichier est réécrit toutes les 15 secondes pendant le jeu, puis une derniè
 **Quand écrire un rapport.** Page Mesures, « Écrire un rapport » (ou `mode=` dans la section `[summary]` du `.ini`) :
 
 - **À chaque session** (`auto`, par défaut) : un rapport du lancement à la fermeture du jeu, comme décrit ci-dessus.
-- **Au raccourci** (`manual`) : rien n'est écrit tant que vous ne le demandez pas. `Ctrl+Alt+S` démarre un enregistrement : un point rouge et la durée (« REC 01:23 ») s'affichent à côté de la cible, en haut du panneau. `Ctrl+Alt+S` de nouveau l'arrête et écrit le rapport, qui ne couvre que ce passage (« OK » en vert quelques secondes) ; moins de 5 secondes ne laissent aucun fichier (« < 5 s » en orange). Pratique pour comparer un même passage avec des réglages différents. Un enregistrement en cours à la fermeture du jeu est terminé et gardé. Le rapport porte la ligne « Enregistrement : manuel », et la page Rapports l'indique. La touche se change avec `record=` dans la section `[hotkeys]`.
+- **Au raccourci** (`manual`) : rien n'est écrit tant que vous ne le demandez pas. `Ctrl+Alt+S` démarre un enregistrement : un point rouge et la durée (« REC 01:23 ») s'affichent à côté de la cible, en haut du panneau. `Ctrl+Alt+S` de nouveau l'arrête et écrit le rapport, qui ne couvre que ce passage (« OK » en vert quelques secondes) ; moins de 5 secondes ne laissent aucun fichier (« < 5 s » en orange). Pratique pour comparer un même passage avec des réglages différents. Un enregistrement en cours à la fermeture du jeu est terminé et gardé. Le rapport porte la ligne « Enregistrement : manuel », et la page Rapports l'indique. Le raccourci se change dans la page Raccourcis.
 - **Jamais** (`off`) : aucun rapport ; le panneau reste mesuré et affiché normalement.
 
 Le mode s'applique aussitôt, même en cours de jeu : passer d'« à chaque session » à un autre mode termine le rapport en cours ; revenir à « à chaque session » en commence un nouveau. Il vaut aussi dans les jeux SteamVR (XRPerfVR), où le raccourci et le témoin fonctionnent de la même façon. Le raccourci est relevé par celui qui écrit le rapport : dans un jeu OpenXR en Vulkan ou OpenGL lancé à travers SteamVR, c'est la layer, qui transmet son témoin au panneau affiché par XRPerfVR. Un passage au mode « jamais » en cours de session garde le rapport déjà commencé s'il couvre au moins 15 secondes.

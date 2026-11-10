@@ -1,4 +1,4 @@
-// Raccourcis clavier (Ctrl+Alt+touche) qui modifient l'overlay en jeu, communs à la layer OpenXR et
+// Raccourcis clavier (Ctrl+Alt+touche par défaut, modifiables) qui modifient l'overlay en jeu, communs à la layer OpenXR et
 // au programme pour les jeux SteamVR. Lus avec GetAsyncKeyState : ils fonctionnent quelle que soit
 // la fenêtre active.
 #pragma once
@@ -31,11 +31,11 @@ class Hotkeys {
         unsigned changes = None;
         // Ordre : afficher/masquer, emplacement, remise à zéro, taille +, taille -, opacité +, opacité -,
         // fenêtre capturée affichée/masquée, fenêtre posée devant soi.
-        const bool modifiers = pressed(VK_CONTROL) && pressed(VK_MENU);
+        const int mods = modifiersDown();
         const int keys[kCount] = {config.keyToggle,    config.keyPosition,    config.keyReset,        config.keySizeUp,      config.keySizeDown,
                                   config.keyOpacityUp, config.keyOpacityDown, config.keyWindowToggle, config.keyWindowPlace, config.keyImage};
         for (int i = 0; i < kCount; ++i) {
-            const bool down = modifiers && pressed(keys[i]);
+            const bool down = keys[i] > 0 && (keys[i] >> 16) == mods && pressed(keys[i] & 0xFFFF);
             bool trigger = down && !m_keyDown[i];
             if (trigger) m_keyRepeat[i] = now + 0.4;  // délai avant répétition
             // Les réglages progressifs (taille, opacité) se répètent tant que la touche reste enfoncée.
@@ -112,7 +112,12 @@ class Hotkeys {
 
     // Ctrl+Alt+`virtualKey` enfoncés en ce moment (0 : raccourci désactivé). Sert au raccourci des
     // rapports en mode manuel, relevé par celui qui écrit le rapport.
-    static bool comboDown(int virtualKey) { return virtualKey > 0 && pressed(VK_CONTROL) && pressed(VK_MENU) && pressed(virtualKey); }
+    // Raccourci (modificateurs << 16 | touche) enfoncé : la touche et exactement ses modificateurs.
+    static bool comboDown(int combo) { return combo > 0 && (combo >> 16) == modifiersDown() && pressed(combo & 0xFFFF); }
+    // Modificateurs enfoncés, comme RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows.
+    static int modifiersDown() {
+        return (pressed(VK_MENU) ? 1 : 0) | (pressed(VK_CONTROL) ? 2 : 0) | (pressed(VK_SHIFT) ? 4 : 0) | (pressed(VK_LWIN) || pressed(VK_RWIN) ? 8 : 0);
+    }
 
   private:
     static bool pressed(int virtualKey) { return virtualKey > 0 && (GetAsyncKeyState(virtualKey) & 0x8000) != 0; }

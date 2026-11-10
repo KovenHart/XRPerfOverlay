@@ -1287,8 +1287,8 @@ namespace XRPerfSensors
                     L("Les passages bloqués à {0} images par seconde viennent du jeu (limite d'images, cinématique ou menu) : vérifiez ses options (limite d'images, V-Sync). Les réglages graphiques n'y changeront rien.",
                       "The stretches locked at {0} frames per second come from the game (frame cap, cutscene or menu): check its options (frame cap, V-Sync). Graphics settings will not change them."),
                     mainCap.Fps));
-                view.Tips.Add(L("Pour un rapport sur un seul type de passage (par exemple les combats seulement), utilisez l'enregistrement manuel : page Mesures, réglez « Écrire un rapport » sur « Au raccourci », puis appuyez sur Ctrl+Alt+S au début et à la fin du passage. Le rapport sera bien plus clair, et deux rapports de ce type se comparent vraiment.",
-                    "For a report on a single kind of stretch (for example fights only), use manual recording: Measurements page, set « Write a report » to « On hotkey », then press Ctrl+Alt+S at the start and end of the stretch. The report will be much clearer, and two such reports truly compare."));
+                view.Tips.Add(L("Pour un rapport sur un seul type de passage (par exemple les combats seulement), utilisez l'enregistrement manuel : page Mesures, réglez « Écrire un rapport » sur « Au raccourci », puis appuyez sur son raccourci (Ctrl+Alt+S par défaut, page Raccourcis) au début et à la fin du passage. Le rapport sera bien plus clair, et deux rapports de ce type se comparent vraiment.",
+                    "For a report on a single kind of stretch (for example fights only), use manual recording: Measurements page, set « Write a report » to « On hotkey », then press its hotkey (Ctrl+Alt+S by default, Hotkeys page) at the start and end of the stretch. The report will be much clearer, and two such reports truly compare."));
             }
             if ((gpuBound || cpuBound) && struggling)
                 view.Tips.Add(L("Choisissez une fréquence plus basse pour le casque (par exemple 72 Hz au lieu de 90) : chaque image a alors plus de temps pour être prête.",

@@ -725,12 +725,35 @@ namespace XRPerfSensors
         public void ResetImageDefaults()
         {
             if (_settingsUnavailable != null) return;
-            var fresh = new OverlaySettings();
-            OverlaySettings o = _overlay;
-            o.ImageSharpen = fresh.ImageSharpen; o.ImageSharpness = fresh.ImageSharpness;
-            o.ImageBrightness = fresh.ImageBrightness; o.ImageContrast = fresh.ImageContrast; o.ImageSaturation = fresh.ImageSaturation;
-            o.ImageVibrance = fresh.ImageVibrance; o.ImageGamma = fresh.ImageGamma; o.ImageShadows = fresh.ImageShadows;
-            o.ImageTemperature = fresh.ImageTemperature; o.ImageDeband = fresh.ImageDeband; o.ImageColorblind = fresh.ImageColorblind;
+            ImagePresets.Neutral(_overlay);
+            OverlayChanged();
+        }
+
+        /// <summary>Preset d'image appliqué (fourni ou de l'utilisateur).</summary>
+        public void ApplyImagePreset(string id)
+        {
+            if (_settingsUnavailable != null || !ImagePresets.Apply(_overlay, id)) return;
+            OverlayChanged();
+        }
+
+        /// <summary>Réglages d'image actuels enregistrés comme preset (false : nom vide, trop de presets, disque).</summary>
+        public bool SaveImagePreset(string name)
+        {
+            return _settingsUnavailable == null && ImagePresets.Save(_overlay, name);
+        }
+
+        public bool DeleteImagePreset(string id)
+        {
+            return ImagePresets.Delete(id);
+        }
+
+        /// <summary>Raccourcis du casque remis par défaut (Ctrl+Alt+touche), sauf ceux pris par la vidéo : désactivés.</summary>
+        public void ResetHotkeys()
+        {
+            if (_settingsUnavailable != null) return;
+            int video = _settings.VideoKey == 0 ? 0 : (_settings.VideoMods << 16) | _settings.VideoKey;
+            for (int i = 0; i < OverlaySettings.DefaultHotkeys.Length; i++)
+                _overlay.Hotkeys[i] = OverlaySettings.DefaultHotkeys[i] == video ? 0 : OverlaySettings.DefaultHotkeys[i];
             OverlayChanged();
         }
 

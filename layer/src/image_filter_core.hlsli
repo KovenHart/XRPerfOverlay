@@ -84,6 +84,20 @@ float3 Deband(float3 original, float3 current, float3 s1, float3 s2, float3 s3, 
     return Max3(diff) < threshold ? average : current;
 }
 
+// --- Faux HDR ------------------------------------------------------------------------------------
+// Contraste local : l'écart du pixel à la luminosité moyenne de son entourage (deux anneaux, proche et
+// lointain) est amplifié, puis les tons moyens sont approfondis, comme le FakeHDR de ReShade. Les couleurs
+// gardent leur teinte (seule la luminosité change). `strength` : 0 à 1.
+float3 FakeHdr(float3 c, float3 nearRing, float3 farRing, float strength) {
+    float s = saturate(strength);
+    float l = Luma(c);
+    float local = 0.5f * (Luma(nearRing) + Luma(farRing));
+    float target = saturate(l + (l - local) * (1.5f * s));
+    target = pow(target, 1.0f + 0.3f * s);
+    float ratio = min(target / max(l, 0.0001f), 4.0f);
+    return saturate(c * ratio);
+}
+
 // --- Couleurs -------------------------------------------------------------------------------------
 // brightness, contrast : -0,5 à 0,5 ; saturation : -1 à 1 ; vibrance, shadows : 0 à 1 ; gammaInverse :
 // 1 / gamma ; temperature : -1 (froid) à 1 (chaud).
@@ -130,10 +144,12 @@ float3 Daltonize(float3 c, float mode) {
 
 // --- Tout, pour un pixel --------------------------------------------------------------------------
 // sharpenMode : 0 aucune, 1 CAS, 2 RCAS, 3 LumaSharpen. far1 à far4 : échantillons lointains (débandage),
-// noise : -0,5 à 0,5 (tramage, avec le débandage). colorblind : 0 à 3.
+// noise : -0,5 à 0,5 (tramage, avec le débandage). nearRing, farRing : moyennes des anneaux (faux HDR).
+// colorblind : 0 à 3.
 float3 FilterPixel(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float3 far1, float3 far2, float3 far3,
-                   float3 far4, float noise, float sharpenMode, float sharpenAmount, float deband, float brightness, float contrast, float saturation,
-                   float vibrance, float gammaInverse, float shadows, float temperature, float colorblind) {
+                   float3 far4, float noise, float3 nearRing, float3 farRing, float sharpenMode, float sharpenAmount, float deband, float hdr,
+                   float brightness, float contrast, float saturation, float vibrance, float gammaInverse, float shadows, float temperature,
+                   float colorblind) {
     float3 color = e;
     if (sharpenMode > 2.5f) {
         color = SharpenLuma(a, b, c, d, e, f, g, h, i, sharpenAmount);
@@ -143,6 +159,7 @@ float3 FilterPixel(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, f
         color = SharpenCas(a, b, c, d, e, f, g, h, i, sharpenAmount);
     }
     if (deband > 0.0f) color = Deband(e, color, far1, far2, far3, far4, deband);
+    if (hdr > 0.0f) color = FakeHdr(color, nearRing, farRing, hdr);
     color = AdjustColor(color, brightness, contrast, saturation, vibrance, gammaInverse, shadows, temperature);
     if (colorblind > 0.5f) color = Daltonize(color, colorblind);
     if (deband > 0.0f) color = saturate(color + float3(noise, noise, noise) / 255.0f);

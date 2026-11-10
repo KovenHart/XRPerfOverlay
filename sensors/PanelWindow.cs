@@ -553,10 +553,9 @@ namespace XRPerfSensors
         public static readonly string[] VideoStabilizations = { "off", "light", "strong" };
         public const int MinVideoOverlaySize = 15, MaxVideoOverlaySize = 50; // largeur du panneau, en % de la largeur de la vidéo
         // Raccourci de la vidéo : modificateurs (comme RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows) et touche
-        // (code de touche virtuelle). Ctrl+Alt avec une touche des raccourcis du casque est refusé (voir
-        // [hotkeys] dans XRPerfOverlay.ini : O, P, R, F, G, S, Pg.Préc, Pg.Suiv, Début, Fin).
+        // (code de touche virtuelle). Un raccourci déjà pris par le casque est refusé là où il est choisi
+        // (SettingsJson.ApplyDesktop, avec les raccourcis du casque du moment).
         public const int ModAlt = 1, ModCtrl = 2, ModShift = 4, ModWin = 8;
-        private static readonly int[] HeadsetKeys = { 0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24, 0x49 };
         public const int MinVideoBitrate = 2, MaxVideoBitrate = 150, MinVideoField = 40; // Mbit/s ; % de l'image de l'œil
         public string VideoCodec = "h264";
         public int VideoHeight = 1440;
@@ -589,7 +588,6 @@ namespace XRPerfSensors
             if (key < 0x08 || key > 0xFE || (mods & ~0xF) != 0) return false;
             if (key == 0x10 || key == 0x11 || key == 0x12 || key == 0x5B || key == 0x5C || (key >= 0xA0 && key <= 0xA5)) return false;
             if (mods == 0 && !(key >= 0x70 && key <= 0x87)) return false;
-            if ((mods & (ModCtrl | ModAlt)) == (ModCtrl | ModAlt) && Array.IndexOf(HeadsetKeys, key) >= 0) return false;
             return true;
         }
 

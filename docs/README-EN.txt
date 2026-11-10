@@ -81,8 +81,11 @@ SteamVR games.
 
 Image filters (Image page, off by default): CAS, RCAS or LumaSharpen sharpening, colors
 (brightness, contrast, saturation, vibrance, gamma, shadows, temperature), debanding and a
-colorblind mode. In the headset for OpenXR games (after Pimax NR or DLSS), or in the video only
-(SteamVR games too). Ctrl+Alt+I turns every filter off and back on to compare.
+colorblind mode, fake HDR, with built-in presets or your own. In the headset for OpenXR games
+(after Pimax NR or DLSS), or in the video only (SteamVR games too). Ctrl+Alt+I turns every filter
+off and back on to compare.
+
+Every hotkey can be changed on the Hotkeys page of XRPerfSensors.
 
 Language: French or English for everything (window, icon menu, panel and watch in the headset,
 reports). By default, the Windows language. Change it on the Interface page.

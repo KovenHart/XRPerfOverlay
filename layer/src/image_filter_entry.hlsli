@@ -8,7 +8,7 @@ cbuffer ImageParams : register(b0) {
     float4 p1;  // contraste, saturation, vibrance, 1 / gamma
     float4 p2;  // ombres, température, daltonisme (0 à 3), graine du bruit
     float4 p3;  // origine de la zone dans la cible (pixels), entrée linéaire, sortie linéaire
-    float4 p4;  // taille de la zone (pixels)
+    float4 p4;  // taille de la zone (pixels), faux HDR, libre
 };
 Texture2D<float4> source : register(t0);
 
@@ -52,8 +52,21 @@ float4 PsFilter(float4 position : SV_Position) : SV_Target {
         far4 = Fetch(at - o2);
         noise = Hash(seed + float2(91.0f, 13.0f)) - 0.5f;
     }
-    float3 color = FilterPixel(a, b, c, d, e, f, g, h, i, far1, far2, far3, far4, noise, p0.x, p0.y, p0.z, p0.w, p1.x, p1.y, p1.z, p1.w, p2.x,
-                               p2.y, p2.z);
+    // Faux HDR : deux anneaux de 8 échantillons, à un 400e et un 120e de la largeur de la zone (13 et 43 pixels
+    // pour un œil de 5 200 pixels), pour garder le même aspect à toutes les résolutions.
+    float3 nearRing = e, farRing = e;
+    if (p4.z > 0.0f) {
+        float r1 = max(2.0f, p4.x / 400.0f), r2 = max(6.0f, p4.x / 120.0f);
+        float d1 = r1 * 0.7071f, d2 = r2 * 0.7071f;
+        nearRing = (Fetch(at + int2(int(r1), 0)) + Fetch(at - int2(int(r1), 0)) + Fetch(at + int2(0, int(r1))) + Fetch(at - int2(0, int(r1))) +
+                    Fetch(at + int2(int(d1), int(d1))) + Fetch(at - int2(int(d1), int(d1))) + Fetch(at + int2(int(d1), -int(d1))) +
+                    Fetch(at + int2(-int(d1), int(d1)))) * 0.125f;
+        farRing = (Fetch(at + int2(int(r2), 0)) + Fetch(at - int2(int(r2), 0)) + Fetch(at + int2(0, int(r2))) + Fetch(at - int2(0, int(r2))) +
+                   Fetch(at + int2(int(d2), int(d2))) + Fetch(at - int2(int(d2), int(d2))) + Fetch(at + int2(int(d2), -int(d2))) +
+                   Fetch(at + int2(-int(d2), int(d2)))) * 0.125f;
+    }
+    float3 color = FilterPixel(a, b, c, d, e, f, g, h, i, far1, far2, far3, far4, noise, nearRing, farRing, p0.x, p0.y, p0.z, p4.z, p0.w, p1.x,
+                               p1.y, p1.z, p1.w, p2.x, p2.y, p2.z);
     if (p3.w > 0.5f) color = ToLinear(color);
     float alpha = source.Load(int3(clamp(at, int2(0, 0), int2(p4.xy) - int2(1, 1)), 0)).a;
     return float4(color, alpha);

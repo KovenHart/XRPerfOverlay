@@ -127,6 +127,7 @@ layer/src/image_filter.cpp    filtres d'image dans le casque : copie de la zone 
 layer/src/image_filter_core.hlsli  calculs des filtres (netteté CAS / RCAS / LumaSharpen, débandage, couleurs, daltonisme), HLSL et C++ à la fois (testés dans preview.cpp)
 layer/src/image_filter_entry.hlsli  passe plein cadre des filtres (HLSL) ; les deux .hlsli sont inclus dans la layer et l'enregistreur par CMake
 layer/src/image_params.h      réglages des filtres, bornes, valeurs passées au shader
+sensors/ImagePresets.cs       presets d'image fournis et ceux de l'utilisateur (ImagePresets.json)
 layer/src/video_record.cpp    XRPerfRecord.dll : textures partagées -> image cadrée + panneau -> NV12 (shaders) -> encodeur matériel, son du PC et micro, MP4
 sensors/VideoRecorder.cs      vidéo : mémoire partagée, pilotage de XRPerfRecord.dll, raccourci global (RegisterHotKey)
 sensors/WindowCapture.cs      choix de la fenêtre, mémoire partagée, pilotage de la capture

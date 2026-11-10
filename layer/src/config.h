@@ -64,6 +64,19 @@ enum class ReportMode { Auto = 0, Manual, Off, Count };
 constexpr float kMinWidth = 0.10f, kMaxWidth = 1.50f;
 constexpr float kMinGlobalOpacity = 0.20f, kMaxGlobalOpacity = 1.0f;
 
+// Raccourci (modificateurs << 16 | touche) lu dans le .ini ou reçu de XRPerfSensors. Retourne 0 pour « sans
+// raccourci », -1 si invalide : touche de modificateur, modificateur inconnu, ou touche sans modificateur
+// autre que F1 à F24 (une lettre seule se déclencherait en tapant du texte).
+inline int NormalizeHotkey(int value) {
+    if (value == 0) return 0;
+    if (value < 0) return -1;
+    const int mods = value >> 16, key = value & 0xFFFF;
+    if (mods > 0xF || key < 0x08 || key > 0xFE) return -1;
+    if (key == 0x10 || key == 0x11 || key == 0x12 || key == 0x5B || key == 0x5C || (key >= 0xA0 && key <= 0xA5)) return -1;
+    if (mods == 0 && !(key >= 0x70 && key <= 0x87)) return -1;
+    return value;
+}
+
 struct Config {
     bool visible = true;
     Corner position = Corner::BottomLeft;
@@ -83,17 +96,29 @@ struct Config {
     WindowConfig window;
     int refreshMs = 250;
     int statsWindowS = 30;
-    int keyToggle = 'O';     // avec Ctrl+Alt ; 0 = désactivé
-    int keyPosition = 'P';
-    int keyReset = 'R';
-    int keySizeUp = 0x21;       // Page précédente
-    int keySizeDown = 0x22;     // Page suivante
-    int keyOpacityUp = 0x24;    // Début (Home)
-    int keyOpacityDown = 0x23;  // Fin (End)
-    int keyWindowToggle = 'F';  // fenêtre capturée : afficher / masquer
-    int keyWindowPlace = 'G';   // fenêtre capturée : la poser devant soi
-    int keyRecord = 'S';        // rapport en mode manuel : démarrer / arrêter l'enregistrement
-    int keyImage = 'I';         // filtres d'image : couper / remettre (comparaison en jeu)
+    // Raccourcis : modificateurs << 16 | touche (code de touche virtuelle) ; modificateurs : 1 Alt, 2 Ctrl,
+    // 4 Maj, 8 Windows (comme RegisterHotKey) ; 0 = désactivé. Par défaut Ctrl+Alt+touche.
+    static constexpr int kCtrlAlt = 3 << 16;
+    int keyToggle = kCtrlAlt | 'O';
+    int keyPosition = kCtrlAlt | 'P';
+    int keyReset = kCtrlAlt | 'R';
+    int keySizeUp = kCtrlAlt | 0x21;       // Page précédente
+    int keySizeDown = kCtrlAlt | 0x22;     // Page suivante
+    int keyOpacityUp = kCtrlAlt | 0x24;    // Début (Home)
+    int keyOpacityDown = kCtrlAlt | 0x23;  // Fin (End)
+    int keyWindowToggle = kCtrlAlt | 'F';  // fenêtre capturée : afficher / masquer
+    int keyWindowPlace = kCtrlAlt | 'G';   // fenêtre capturée : la poser devant soi
+    int keyRecord = kCtrlAlt | 'S';        // rapport en mode manuel : démarrer / arrêter l'enregistrement
+    int keyImage = kCtrlAlt | 'I';         // filtres d'image : couper / remettre (comparaison en jeu)
+    // Raccourci n° i (0 à kHotkeyCount - 1), dans l'ordre du bloc partagé, du .ini et de XRPerfSensors :
+    // toggle, position, reset, size_up, size_down, opacity_up, opacity_down, window_toggle, window_place,
+    // record, image.
+    static constexpr int kHotkeyCount = 11;
+    int& hotkey(int i) {
+        int* const keys[kHotkeyCount] = {&keyToggle,      &keyPosition,     &keyReset,       &keySizeUp, &keySizeDown, &keyOpacityUp,
+                                         &keyOpacityDown, &keyWindowToggle, &keyWindowPlace, &keyRecord, &keyImage};
+        return *keys[i];
+    }
     std::vector<std::wstring> exclude;  // noms d'exécutables à ignorer (en minuscules)
     bool clock = true;                  // afficher l'heure dans le panneau
     bool headsetInfo = true;            // ligne "casque et résolution de rendu" en bas du panneau

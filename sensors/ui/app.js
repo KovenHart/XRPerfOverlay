@@ -96,6 +96,7 @@ window.App = (function () {
     watch: '<circle cx="12" cy="12" r="6"/><path d="M12 9.5V12l1.6 1.2M9 6.5 9.6 3h4.8l.6 3.5M9 17.5l.6 3.5h4.8l.6-3.5"/>',
     window: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 8.5h18M6.5 6.3h.01M9 6.3h.01"/><path d="M8 13h8M8 16h5"/>',
     mirror: '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 21h6M12 17v4"/><rect x="6" y="7.5" width="7" height="4.5" rx="1"/>',
+    hotkeys: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M6.5 14h1M10 14h4.5M17 14h.5"/>',
     image: '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m3.5 17.5 5-4.5 3.5 3 3-2.5 5.5 4.5"/>',
     video: '<rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="m15.5 10.2 6-3.2v10l-6-3.2"/>',
     measures: '<path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/><path d="M4 18h2M18 18h2M12 10V8"/>',
@@ -418,6 +419,7 @@ window.App = (function () {
     { id: "measures", icon: "measures" },
     { id: "reports", icon: "reports" },
     { id: "config", icon: "config" },
+    { id: "hotkeys", icon: "hotkeys" },
     { id: "interface", icon: "interface" },
   ];
 
@@ -520,7 +522,7 @@ window.App = (function () {
     page.className = "page";
     const builder = {
       dashboard: renderDashboard, panel: renderPanelPage, appearance: renderAppearancePage, watch: renderWatchPage,
-      window: renderWindowPage, image: renderImagePage, desktop: renderDesktopPage, video: renderVideoPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage,
+      window: renderWindowPage, image: renderImagePage, desktop: renderDesktopPage, video: renderVideoPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage, hotkeys: renderHotkeysPage,
       interface: renderInterfacePage,
     }[state.page];
     page.replaceChildren();
@@ -700,9 +702,9 @@ window.App = (function () {
     const quick = h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.quick") })),
       h("div", { class: "quick" },
         layerSwitch(t("dash.quick.layer"), false),
-        switchCtl("overlay", "Visible", t("dash.quick.panel"), "Ctrl+Alt+O"),
+        switchCtl("overlay", "Visible", t("dash.quick.panel"), hk("toggle").key),
         switchCtl("overlay", "WatchEnabled", t("dash.quick.watch")),
-        switchCtl("overlay", "WindowEnabled", t("dash.quick.window"), "Ctrl+Alt+F"),
+        switchCtl("overlay", "WindowEnabled", t("dash.quick.window"), hk("window_toggle").key),
         switchCtl("overlay", "OpenVR", t("dash.quick.openvr")),
         switchCtl("desktop", "DesktopPanel", t("dash.quick.mirror"))));
     dash.appendChild(quick);
@@ -732,20 +734,13 @@ window.App = (function () {
     dash.appendChild(lastCard);
 
     // Raccourcis.
-    const k = (...keys) => h("span", { class: "combo" }, ["Ctrl", "Alt"].concat(keys).map(x => h("kbd", { text: x })));
+    // Raccourcis du moment (page Raccourcis) ; ceux retirés n'apparaissent pas.
+    const k = combo => h("span", { class: "combo" }, hotkeyParts(combo).map(x => h("kbd", { text: x })));
+    const keyList = HOTKEYS.filter(x => get("overlay", "Hotkey." + x.name))
+      .map(x => [k(get("overlay", "Hotkey." + x.name)), h("span", { text: t(x.label) })]);
     dash.appendChild(h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.keys") })),
-      h("div", { class: "keys" },
-        k("O"), h("span", { text: t("key.toggle") }),
-        k("P"), h("span", { text: t("key.position") }),
-        k("R"), h("span", { text: t("key.reset") }),
-        k(t("key.pgup") + " / " + t("key.pgdn")), h("span", { text: t("key.size") }),
-        k(t("key.home") + " / " + t("key.end")), h("span", { text: t("key.opacity") }),
-        k("F"), h("span", { text: t("key.window") }),
-        k("G"), h("span", { text: t("key.place") }),
-        k("S"), h("span", { text: t("key.record") }),
-        k("I"), h("span", { text: t("key.image") }),
-        videoEnabled() && get("desktop", "VideoHotkey") ? [h("span", { class: "combo" }, hotkeyParts(get("desktop", "VideoHotkey")).map(x => h("kbd", { text: x }))),
-          h("span", { text: t("key.video") })] : null)));
+      h("div", { class: "keys" }, keyList,
+        videoEnabled() && get("desktop", "VideoHotkey") ? [k(get("desktop", "VideoHotkey")), h("span", { text: t("key.video") })] : null)));
     page.appendChild(dash);
   }
 
@@ -814,11 +809,11 @@ window.App = (function () {
     const onView = () => get("overlay", "Anchor") === 0;
     const form = [
       group(t("panel.show"), null, [
-        switchCtl("overlay", "Visible", t("panel.visible"), t("panel.visible.help")),
+        switchCtl("overlay", "Visible", t("panel.visible"), t("panel.visible.help", hk("toggle"))),
         segRow("overlay", "Anchor", t("panel.anchor"), null, anchorOptions()),
       ]),
       group(t("panel.view"), t("panel.view.help"), [
-        row(t("panel.position"), t("panel.position.help"), spotPicker()),
+        row(t("panel.position"), t("panel.position.help", hk("position")), spotPicker()),
         sliderRow("overlay", "Distance", t("panel.distance"), null, 30, 500, meters, { factor: 100 }),
         sliderRow("overlay", "OffsetX", t("panel.offsetX"), null, 0, 300, cm, { factor: 100 }),
         sliderRow("overlay", "OffsetY", t("panel.offsetY"), null, 0, 300, cm, { factor: 100 }),
@@ -831,8 +826,8 @@ window.App = (function () {
         sliderRow("overlay", "HandLift", t("panel.lift"), null, -5, 10, signedCm, { factor: 100 }),
       ], () => !onView()),
       group(t("panel.size"), null, [
-        sliderRow("overlay", "Width", t("panel.width"), t("panel.width.help"), 10, 150, cm, { factor: 100 }),
-        sliderRow("overlay", "GlobalOpacity", t("panel.globalOpacity"), t("panel.globalOpacity.help"), 20, 100, pct, { factor: 100 }),
+        sliderRow("overlay", "Width", t("panel.width"), t("panel.width.help", hk("size_up", "size_down")), 10, 150, cm, { factor: 100 }),
+        sliderRow("overlay", "GlobalOpacity", t("panel.globalOpacity"), t("panel.globalOpacity.help", hk("opacity_up", "opacity_down")), 20, 100, pct, { factor: 100 }),
         sliderRow("overlay", "Opacity", t("panel.opacity"), null, 0, 100, pct, { factor: 100 }),
       ]),
       group(t("panel.games"), null, [
@@ -995,9 +990,9 @@ window.App = (function () {
       h("div", null, h("button", { class: "btn", type: "button", disabled: capture, onclick: () => send("listWindows") }, icon("refresh"), t("win.refresh"))));
     const crop = (key, label) => sliderRow("desktop", key, label, null, 0, 45, pct);
     const form = [
-      group(t("nav.window"), null, [switchCtl("overlay", "WindowEnabled", t("win.show"), t("win.show.help"))]),
+      group(t("nav.window"), null, [switchCtl("overlay", "WindowEnabled", t("win.show"), t("win.show.help", hk("window_toggle")))]),
       group(t("win.which"), t("win.which.help"), [row("", null, pick, { stack: true })]),
-      group(t("win.where"), t("win.where.help"), [
+      group(t("win.where"), t("win.where.help", hk("window_place")), [
         segRow("overlay", "WindowAnchor", t("win.where"), null, [{ value: 0, label: t("anchor.left") }, { value: 1, label: t("anchor.right") }, { value: 2, label: t("anchor.world") }]),
         sliderRow("overlay", "WindowDistance", t("win.distance"), null, 30, 300, meters, { factor: 100, enabled: () => !onHand() }),
         selectRow("overlay", "WindowPlacement", t("panel.placement"), null, placementOptions(), { enabled: onHand }),
@@ -1051,10 +1046,37 @@ window.App = (function () {
     return mb >= 1024 ? num(mb / 1024, 1) + " " + t("unit.gb") : num(mb, 0) + " " + t("unit.mb");
   }
 
-  // Raccourci de la vidéo : modificateurs << 16 | touche (code de touche virtuelle Windows). Modificateurs comme
-  // RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows. Mêmes règles que Settings.ValidVideoHotkey (XRPerfSensors).
+  // Raccourcis : modificateurs << 16 | touche (code de touche virtuelle Windows). Modificateurs comme
+  // RegisterHotKey : 1 Alt, 2 Ctrl, 4 Maj, 8 Windows. Mêmes règles que OverlaySettings.NormalizeHotkey et
+  // Settings.ValidVideoHotkey (XRPerfSensors). Ceux du casque dans l'ordre de OverlaySettings.HotkeyNames.
   const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
-  const HEADSET_KEYS = [0x4F, 0x50, 0x52, 0x46, 0x47, 0x53, 0x21, 0x22, 0x23, 0x24, 0x49];
+  const CTRL_ALT = (MOD_CTRL | MOD_ALT) << 16;
+  const HOTKEYS = [
+    { name: "toggle", label: "key.toggle", def: CTRL_ALT | 0x4F },
+    { name: "position", label: "key.position", def: CTRL_ALT | 0x50 },
+    { name: "reset", label: "key.reset", def: CTRL_ALT | 0x52 },
+    { name: "size_up", label: "key.sizeUp", def: CTRL_ALT | 0x21 },
+    { name: "size_down", label: "key.sizeDown", def: CTRL_ALT | 0x22 },
+    { name: "opacity_up", label: "key.opacityUp", def: CTRL_ALT | 0x24 },
+    { name: "opacity_down", label: "key.opacityDown", def: CTRL_ALT | 0x23 },
+    { name: "window_toggle", label: "key.window", def: CTRL_ALT | 0x46 },
+    { name: "window_place", label: "key.place", def: CTRL_ALT | 0x47 },
+    { name: "record", label: "key.record", def: CTRL_ALT | 0x53 },
+    { name: "image", label: "key.image", def: CTRL_ALT | 0x49 },
+  ];
+  // Texte des raccourcis du casque du moment, pour les aides : { key, key2 }.
+  function hk(name, name2) {
+    const text = n => { const c = get("overlay", "Hotkey." + n); return c ? hotkeyText(c) : t("hk.unset"); };
+    return name2 ? { key: text(name), key2: text(name2) } : { key: text(name) };
+  }
+  // Raccourci pris par un autre (casque ou vidéo) que `self` (« overlay:Hotkey.x » ou « desktop:VideoHotkey ») : son nom.
+  function hotkeyOwner(combo, self) {
+    if (!combo) return null;
+    for (const x of HOTKEYS)
+      if ("overlay:Hotkey." + x.name !== self && get("overlay", "Hotkey." + x.name) === combo) return t(x.label);
+    if (self !== "desktop:VideoHotkey" && get("desktop", "VideoHotkey") === combo) return t("key.video");
+    return null;
+  }
   const MODIFIER_KEYS = [0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
   function keyName(vk) {
     if (vk >= 0x70 && vk <= 0x87) return "F" + (vk - 0x6F);
@@ -1081,10 +1103,11 @@ window.App = (function () {
   }
   const hotkeyText = combo => hotkeyParts(combo).join("+");
   // null si le raccourci convient, sinon la raison.
-  function hotkeyProblem(mods, vk) {
+  function hotkeyProblem(mods, vk, self) {
     if (MODIFIER_KEYS.includes(vk)) return null;  // modificateur seul : on attend la touche
     if (!mods && !(vk >= 0x70 && vk <= 0x87)) return t("vid.key.needMod");
-    if ((mods & (MOD_CTRL | MOD_ALT)) === (MOD_CTRL | MOD_ALT) && HEADSET_KEYS.includes(vk)) return t("vid.key.headset", { key: hotkeyText((mods << 16) | vk) });
+    const owner = hotkeyOwner((mods << 16) | vk, self);
+    if (owner) return t("vid.key.used", { key: hotkeyText((mods << 16) | vk), name: owner });
     return null;
   }
 
@@ -1101,16 +1124,25 @@ window.App = (function () {
     send("videoHotkeyCapture", { on: false });
     c.done();
   }
-  function hotkeyRow() {
-    const button = h("button", { class: "btn hotkey-btn", type: "button" });
+  // Ligne de réglage d'un raccourci. `scope`, `key` : « desktop », « VideoHotkey » (raccourci global de
+  // XRPerfSensors, suspendu pendant la saisie) ou « overlay », « Hotkey.x » (lu en jeu par la layer et XRPerfVR).
+  // `def` : raccourci par défaut (bouton « Par défaut »), absent pour la vidéo.
+  function hotkeyRow(scope, key, label, help, def) {
+    scope = scope || "desktop";
+    key = key || "VideoHotkey";
+    const self = scope + ":" + key;
+    const global = scope === "desktop";
+    const button = h("button", { class: "btn hotkey-btn", type: "button", "aria-label": label || t("vid.key") });
     const clear = h("button", { class: "btn", type: "button", text: t("vid.key.clear") });
+    const reset = def ? h("button", { class: "btn", type: "button", text: t("hk.default") }) : null;
     const note = h("div", { class: "video-note", hidden: true });
     const show = () => {
-      const combo = get("desktop", "VideoHotkey") || 0;
+      const combo = get(scope, key) || 0;
       button.replaceChildren(...(combo ? hotkeyParts(combo).map(x => h("kbd", { text: x })) : [h("span", { text: t("vid.key.none") })]));
       button.classList.remove("capturing");
       clear.disabled = !combo || locked("overlay");
       button.disabled = locked("overlay");
+      if (reset) reset.disabled = combo === def || locked("overlay");
     };
     const live = mods => {
       const parts = [];
@@ -1132,29 +1164,40 @@ window.App = (function () {
         if (!document.body.contains(button)) { stopHotkeyCapture(); return; }
         const mods = modsOf(e), vk = e.keyCode;
         if (vk === 0x1B && !mods) { stopHotkeyCapture(); return; }
-        if ((vk === 0x08 || vk === 0x2E) && !mods) { setValue("desktop", "VideoHotkey", 0); stopHotkeyCapture(); return; }
+        if ((vk === 0x08 || vk === 0x2E) && !mods) { setValue(scope, key, 0); stopHotkeyCapture(); return; }
         if (MODIFIER_KEYS.includes(vk)) { live(mods); return; }
-        const problem = hotkeyProblem(mods, vk);
+        const problem = hotkeyProblem(mods, vk, self);
         if (problem) {
           note.textContent = problem;
           note.hidden = false;
           live(0);
           return;
         }
-        setValue("desktop", "VideoHotkey", (mods << 16) | vk);
+        setValue(scope, key, (mods << 16) | vk);
         stopHotkeyCapture();
       };
       const onKeyUp = e => { if (MODIFIER_KEYS.includes(e.keyCode)) { e.preventDefault(); live(modsOf(e)); } };
       hotkeyCapture = { onKey, onKeyUp, done: show, timer: setTimeout(stopHotkeyCapture, 15000) };
       document.addEventListener("keydown", onKey, true);
       document.addEventListener("keyup", onKeyUp, true);
-      send("videoHotkeyCapture", { on: true });
+      if (global) send("videoHotkeyCapture", { on: true });
     });
     button.addEventListener("blur", () => setTimeout(() => { if (hotkeyCapture && document.activeElement !== button) stopHotkeyCapture(); }, 0));
-    clear.addEventListener("click", () => { stopHotkeyCapture(); setValue("desktop", "VideoHotkey", 0); note.hidden = true; });
+    clear.addEventListener("click", () => { stopHotkeyCapture(); setValue(scope, key, 0); note.hidden = true; });
+    if (reset) reset.addEventListener("click", () => {
+      stopHotkeyCapture();
+      const owner = hotkeyOwner(def, self);
+      if (owner) {
+        note.textContent = t("vid.key.used", { key: hotkeyText(def), name: owner });
+        note.hidden = false;
+        return;
+      }
+      note.hidden = true;
+      setValue(scope, key, def);
+    });
     show();
     refreshers.push(() => { if (!hotkeyCapture) show(); });
-    const r = row(t("vid.key"), t("vid.key.help"), h("div", { class: "row-buttons" }, button, clear));
+    const r = row(label || t("vid.key"), help === undefined ? t("vid.key.help") : help, h("div", { class: "row-buttons" }, button, clear, reset));
     r.querySelector(".row-label").parentNode.appendChild(note);
     return r;
   }
@@ -1320,6 +1363,22 @@ window.App = (function () {
       button);
   }
 
+  // --- Raccourcis --------------------------------------------------------------------------------
+
+  // Raccourcis du casque (lus en jeu par la layer et XRPerfVR, quelle que soit la fenêtre active) et de la vidéo.
+  function renderHotkeysPage(page) {
+    refreshers = [];
+    const headset = HOTKEYS.map(x => hotkeyRow("overlay", "Hotkey." + x.name, t(x.label), null, x.def));
+    const form = [
+      group(t("hk.headset"), t("hk.headset.help"), headset.concat([
+        row(t("hk.resetAll"), t("hk.resetAll.help"),
+          h("button", { class: "btn", type: "button", disabled: locked("overlay"), onclick: () => { stopHotkeyCapture(); send("resetHotkeys"); } }, t("hk.resetAll.button"))),
+      ])),
+      group(t("hk.video"), null, [hotkeyRow()]),
+    ];
+    settingsLayout(page, form, null);
+  }
+
   // --- Image -----------------------------------------------------------------------------------
 
   // Filtres d'image : dans le casque (jeux OpenXR, au bas de la chaîne, après Pimax NR ou DLSS) ou
@@ -1330,11 +1389,44 @@ window.App = (function () {
     const on = () => mode() !== "off";
     const sharpening = () => on() && (get("overlay", "ImageSharpen") || "none") !== "none";
     const signed = v => (v > 0 ? "+" : "") + num(v);
+    // Preset dont les réglages sont ceux du moment (sinon « Personnalisé »).
+    const presets = get("overlay", "ImagePresets") || [];
+    const presetName = p => p.builtin ? t("img.preset." + p.id) : p.name;
+    const current = () => presets.find(p => Object.keys(p.values).every(k => get("overlay", k) === p.values[k]));
+    const presetSelect = h("select", { class: "select", "aria-label": t("img.preset") });
+    const fillPresets = () => {
+      const now = current();
+      presetSelect.replaceChildren(
+        h("option", { value: "", text: t("img.preset.custom"), hidden: !!now }),
+        h("optgroup", { label: t("img.preset.builtin") }, presets.filter(p => p.builtin).map(p => h("option", { value: p.id, text: presetName(p) }))),
+        presets.some(p => !p.builtin) ? h("optgroup", { label: t("img.preset.mine") }, presets.filter(p => !p.builtin).map(p => h("option", { value: p.id, text: p.name }))) : null);
+      presetSelect.value = now ? now.id : "";
+      presetSelect.disabled = locked("overlay");
+      remove.hidden = !now || now.builtin;
+    };
+    presetSelect.addEventListener("change", () => { if (presetSelect.value) send("imagePresetApply", { id: presetSelect.value }); });
+    const remove = h("button", { class: "btn", type: "button", text: t("img.preset.delete") });
+    remove.addEventListener("click", () => { const now = current(); if (now && !now.builtin) send("imagePresetDelete", { id: now.id }); });
+    const nameInput = h("input", { class: "text-input", style: { width: "200px" }, type: "text", maxlength: "40", spellcheck: "false", autocomplete: "off", placeholder: t("img.preset.name"), "aria-label": t("img.preset.name") });
+    const save = h("button", { class: "btn", type: "button", text: t("img.preset.save"), disabled: true });
+    const doSave = () => { const name = nameInput.value.trim(); if (name) { send("imagePresetSave", { name }); nameInput.value = ""; save.disabled = true; } };
+    nameInput.addEventListener("input", () => { save.disabled = !nameInput.value.trim() || locked("overlay"); });
+    nameInput.addEventListener("keydown", e => { if (e.key === "Enter") doSave(); });
+    save.addEventListener("click", doSave);
+    nameInput.disabled = locked("overlay");
+    fillPresets();
+    refreshers.push(fillPresets);
     const form = [
+      group(t("img.presets"), t("img.presets.help"), [
+        row(t("img.preset"), null, h("div", { class: "row-buttons" }, presetSelect, remove)),
+        row(t("img.preset.saveAs"), t("img.preset.saveAs.help"), h("div", { class: "row-buttons" }, nameInput, save)),
+      ]),
       group(t("nav.image"), t("img.help"), [
         liveHelp(segRow("overlay", "ImageMode", t("img.mode"), " ", ["off", "headset", "video"].map(m => ({ value: m, label: t("img.mode." + m) }))),
           () => t("img.mode.help." + mode())),
-        row(t("img.compare"), t("img.compare.help"), h("span", { class: "combo" }, ["Ctrl", "Alt", "I"].map(x => h("kbd", { text: x }))), { enabled: on }),
+        row(t("img.compare"), t("img.compare.help"), get("overlay", "Hotkey.image")
+          ? h("span", { class: "combo" }, hotkeyParts(get("overlay", "Hotkey.image")).map(x => h("kbd", { text: x })))
+          : h("span", { class: "row-help", text: t("hk.unset") }), { enabled: on }),
         row(t("img.reset"), t("img.reset.help"), h("button", { class: "btn", type: "button", disabled: locked("overlay"), onclick: () => send("resetImage") }, t("img.reset.button")),
           { enabled: on }),
       ]),
@@ -1346,6 +1438,7 @@ window.App = (function () {
       group(t("img.colors"), t("img.colors.help"), [
         sliderRow("overlay", "ImageBrightness", t("img.brightness"), null, -50, 50, signed),
         sliderRow("overlay", "ImageContrast", t("img.contrast"), null, -50, 50, signed),
+        sliderRow("overlay", "ImageHdr", t("img.hdr"), t("img.hdr.help"), 0, 100, num),
         sliderRow("overlay", "ImageSaturation", t("img.saturation"), null, -100, 100, signed),
         sliderRow("overlay", "ImageVibrance", t("img.vibrance"), t("img.vibrance.help"), 0, 100, num),
         sliderRow("overlay", "ImageGamma", t("img.gamma"), t("img.gamma.help"), 50, 200, v => num(v / 100, 2)),
@@ -1370,7 +1463,7 @@ window.App = (function () {
     const modes = ["auto", "manual", "off"];
     const r = segRow("overlay", "ReportMode", t("meas.mode"), " ", modes.map(m => ({ value: m, label: t("meas.mode." + m) })), { stack: true });
     const help = r.querySelector(".row-help");
-    const f = () => { help.textContent = t("meas.mode.help." + (modes.includes(get("overlay", "ReportMode")) ? get("overlay", "ReportMode") : "auto")); };
+    const f = () => { help.textContent = t("meas.mode.help." + (modes.includes(get("overlay", "ReportMode")) ? get("overlay", "ReportMode") : "auto"), hk("record")); };
     refreshers.push(f);
     f();
     return r;

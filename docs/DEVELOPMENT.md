@@ -109,6 +109,7 @@ layer/src/image_filter.cpp    headset image filters: copy of the eye's area then
 layer/src/image_filter_core.hlsli  filter math (CAS / RCAS / LumaSharpen sharpening, debanding, colors, colorblind), both HLSL and C++ (tested in preview.cpp)
 layer/src/image_filter_entry.hlsli  full-screen filter pass (HLSL); both .hlsli are embedded into the layer and the recorder by CMake
 layer/src/image_params.h      filter settings, bounds, values passed to the shader
+sensors/ImagePresets.cs       built-in and user image presets (ImagePresets.json)
 layer/src/video_record.cpp    XRPerfRecord.dll: shared textures -> framed image + panel -> NV12 (shaders) -> hardware encoder, PC sound and microphone, MP4
 sensors/VideoRecorder.cs      video: shared memory, XRPerfRecord.dll control, global hotkey (RegisterHotKey)
 layer/src/settings_apply.h    bounded application of the settings sent by XRPerfSensors (including the language)

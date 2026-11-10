@@ -16,6 +16,7 @@ struct ImageSettings {
     int saturation = 0;   // -100 à 100
     int vibrance = 0;     // 0 à 100
     int gamma = 100;      // 50 à 200 (1 = 100)
+    int hdr = 0;          // faux HDR (contraste local), 0 à 100
     int shadows = 0;      // 0 à 100
     int temperature = 0;  // -50 (froid) à 50 (chaud)
     int deband = 0;       // 0 à 100
@@ -37,19 +38,20 @@ struct ImageSettings {
         shadows = c(shadows, 0, 100);
         temperature = c(temperature, -50, 50);
         deband = c(deband, 0, 100);
+        hdr = c(hdr, 0, 100);
         colorblind = pick(colorblind, 4);
     }
 
     // Un réglage change l'image (sinon, rien à faire).
     bool changesImage() const {
         return sharpen != 0 || brightness != 0 || contrast != 0 || saturation != 0 || vibrance != 0 || gamma != 100 || shadows != 0 ||
-               temperature != 0 || deband != 0 || colorblind != 0;
+               temperature != 0 || deband != 0 || colorblind != 0 || hdr != 0;
     }
 
     bool operator==(const ImageSettings& o) const {
         return mode == o.mode && sharpen == o.sharpen && sharpness == o.sharpness && brightness == o.brightness && contrast == o.contrast &&
                saturation == o.saturation && vibrance == o.vibrance && gamma == o.gamma && shadows == o.shadows && temperature == o.temperature &&
-               deband == o.deband && colorblind == o.colorblind;
+               deband == o.deband && colorblind == o.colorblind && hdr == o.hdr;
     }
     bool operator!=(const ImageSettings& o) const { return !(*this == o); }
 };
@@ -60,7 +62,7 @@ struct ImageFilterParams {
     float contrast = 0.f, saturation = 0.f, vibrance = 0.f, gammaInverse = 1.f;
     float shadows = 0.f, temperature = 0.f, colorblind = 0.f, seed = 0.f;
     float originX = 0.f, originY = 0.f, inLinear = 1.f, outLinear = 1.f;
-    float width = 0.f, height = 0.f, reserved0 = 0.f, reserved1 = 0.f;
+    float width = 0.f, height = 0.f, hdr = 0.f, reserved = 0.f;
 };
 static_assert(sizeof(ImageFilterParams) == 80, "20 valeurs (5 x float4)");
 
@@ -78,6 +80,7 @@ inline ImageFilterParams ImageParamsFrom(ImageSettings s) {
     p.shadows = s.shadows / 100.f;
     p.temperature = s.temperature / 50.f;
     p.colorblind = static_cast<float>(s.colorblind);
+    p.hdr = s.hdr / 100.f;
     return p;
 }
 

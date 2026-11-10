@@ -76,6 +76,7 @@ struct XrprOptions {
     // le jeu ne les a pas encore reçus), 2 = dans la vidéo seulement (aussi dans un jeu SteamVR).
     int32_t imageMode, imageSharpen, imageSharpness, imageBrightness, imageContrast, imageSaturation;
     int32_t imageVibrance, imageGamma, imageShadows, imageTemperature, imageDeband, imageColorblind;
+    int32_t imageHdr;
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
     wchar_t captureDevice[256];  // micro ("" : celui par défaut)
@@ -973,6 +974,7 @@ class Recorder {
         m_image.temperature = m_options.imageTemperature;
         m_image.deband = m_options.imageDeband;
         m_image.colorblind = m_options.imageColorblind;
+        m_image.hdr = m_options.imageHdr;
         m_image.clamp();
         if (m_image.mode != 0 && m_image.changesImage() && !setupFilter(td)) {
             RecordLog("Filtres d'image indisponibles dans la video (shader ou textures) : video sans filtres.");

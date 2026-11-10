@@ -201,7 +201,8 @@ void Overlay::onSessionCreated(XrSession session, const XrSessionCreateInfo* cre
     }
     // Rapport : en mode automatique, l'enregistrement couvre toute la session.
     if (m_reportControl.begin(m_config.reportMode, Hotkeys::comboDown(m_config.keyRecord))) startRecording(m_sessionStart, false);
-    if (m_config.reportMode == ReportMode::Manual) Log("Rapports en mode manuel : Ctrl+Alt+touche %d pour demarrer / arreter.", m_config.keyRecord);
+    if (m_config.reportMode == ReportMode::Manual)
+        Log("Rapports en mode manuel : raccourci 0x%X (modificateurs << 16 | touche) pour demarrer / arreter.", static_cast<unsigned>(m_config.keyRecord));
 
     // Mesure du temps GPU : seulement si elle est demandée dans le .ini et possible avec cette API.
     m_timingActive = false;

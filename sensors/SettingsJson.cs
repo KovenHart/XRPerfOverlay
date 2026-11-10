@@ -77,6 +77,10 @@ namespace XRPerfSensors
             w.WriteNumber("ImageTemperature", o.ImageTemperature);
             w.WriteNumber("ImageDeband", o.ImageDeband);
             w.WriteString("ImageColorblind", o.ImageColorblind);
+            w.WriteNumber("ImageHdr", o.ImageHdr);
+            for (int k = 0; k < OverlaySettings.HotkeyNames.Length; k++) w.WriteNumber("Hotkey." + OverlaySettings.HotkeyNames[k], o.Hotkeys[k]);
+            w.WritePropertyName("ImagePresets");
+            ImagePresets.Write(w);
             w.WriteEndObject();
         }
 
@@ -157,8 +161,18 @@ namespace XRPerfSensors
         }
 
         /// <summary>Applique un réglage du casque. Retourne false si la clé ou la valeur ne convient pas.</summary>
-        public static bool ApplyOverlay(OverlaySettings o, string key, JsonElement v)
+        public static bool ApplyOverlay(OverlaySettings o, string key, JsonElement v, int videoHotkey = 0)
         {
+            // Raccourci du casque : valide, et pris ni par un autre raccourci du casque ni par celui de la vidéo.
+            if (key != null && key.StartsWith("Hotkey.", StringComparison.Ordinal))
+            {
+                int slot = Array.IndexOf(OverlaySettings.HotkeyNames, key.Substring(7));
+                if (slot < 0 || !Int(v, 0, 0xFFFFF, out int raw)) return false;
+                int combo = OverlaySettings.NormalizeHotkey(raw);
+                if (combo < 0 || (combo != 0 && (o.HotkeyTaken(combo, slot) || combo == videoHotkey))) return false;
+                o.Hotkeys[slot] = combo;
+                return true;
+            }
             bool b; int i; float f; Color c;
             switch (key)
             {
@@ -240,7 +254,7 @@ namespace XRPerfSensors
                     return true;
                 }
                 case "ImageSharpness": case "ImageBrightness": case "ImageContrast": case "ImageSaturation": case "ImageVibrance":
-                case "ImageGamma": case "ImageShadows": case "ImageTemperature": case "ImageDeband":
+                case "ImageGamma": case "ImageShadows": case "ImageTemperature": case "ImageDeband": case "ImageHdr":
                 {
                     OverlaySettings.ImageRange(key, out int min, out int max);
                     if (!Int(v, min, max, out i)) return false;
@@ -254,6 +268,7 @@ namespace XRPerfSensors
                         case "ImageGamma": o.ImageGamma = i; break;
                         case "ImageShadows": o.ImageShadows = i; break;
                         case "ImageTemperature": o.ImageTemperature = i; break;
+                        case "ImageHdr": o.ImageHdr = i; break;
                         default: o.ImageDeband = i; break;
                     }
                     return true;
@@ -266,7 +281,7 @@ namespace XRPerfSensors
         public enum Change { None, Mirror, Capture, Interface, Language, Video }
 
         /// <summary>Applique un réglage du bureau (fenêtre miroir, capture, interface, langue).</summary>
-        public static Change ApplyDesktop(Settings d, string key, JsonElement v)
+        public static Change ApplyDesktop(Settings d, string key, JsonElement v, int[] headsetHotkeys = null)
         {
             bool b; int i;
             string text = v.ValueKind == JsonValueKind.String ? v.GetString() : null;
@@ -310,6 +325,7 @@ namespace XRPerfSensors
                 case "VideoCaptureDevice": if (text == null || text.Length > 250) return Change.None; d.VideoCaptureDevice = text; return Change.Video;
                 case "VideoHotkey":
                     if (!Int(v, 0, 0xFFFFF, out i) || !Settings.ValidVideoHotkey(i >> 16, i & 0xFFFF)) return Change.None;
+                    if (i != 0 && headsetHotkeys != null && Array.IndexOf(headsetHotkeys, i) >= 0) return Change.None;  // pris par le casque
                     d.VideoKey = i & 0xFFFF;
                     if (d.VideoKey != 0) d.VideoMods = i >> 16;
                     return Change.Video;

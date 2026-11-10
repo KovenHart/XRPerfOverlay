@@ -860,7 +860,30 @@ static void testReportControl(const std::string& dir) {
     b.reportMode = 0; ApplySettings(cfg, b); assert(cfg.reportMode == ReportMode::Off);
     assert(offsetof(SettingsBlock, reportMode) == 188 && offsetof(SettingsBlock, power) == 192);
     // Filtres d'image (version 7) : mêmes positions que OverlaySettings.ToBlock (XRPerfSensors).
-    assert(offsetof(SettingsBlock, imageMode) == 200 && offsetof(SettingsBlock, imageColorblind) == 244 && sizeof(SettingsBlock) == 248);
+    assert(offsetof(SettingsBlock, imageMode) == 200 && offsetof(SettingsBlock, imageColorblind) == 244);
+    // Faux HDR et raccourcis (version 8).
+    assert(offsetof(SettingsBlock, imageHdr) == 248 && offsetof(SettingsBlock, hotkeys) == 252 && sizeof(SettingsBlock) == 296);
+    // Raccourcis : touche seule refusée sauf F1 à F24 ; un invalide reçu de XRPerfSensors garde le précédent.
+    assert(NormalizeHotkey((3 << 16) | 'O') == ((3 << 16) | 'O') && NormalizeHotkey(0) == 0);
+    assert(NormalizeHotkey('O') == -1 && NormalizeHotkey(0x78) == 0x78);  // O seul refusé, F9 seul accepté
+    assert(NormalizeHotkey(0x78 | (1 << 20)) == -1);                       // modificateur inconnu
+    assert(NormalizeHotkey((1 << 16) | 0x78) == ((1 << 16) | 0x78));       // Alt+F9
+    assert(NormalizeHotkey(0x10000 | 'K') == (0x10000 | 'K'));  // Alt+K
+    assert(NormalizeHotkey(0x40000 | 'K') == (0x40000 | 'K'));             // Maj+K
+    assert(NormalizeHotkey((2 << 16) | 0x11) == -1);                       // Ctrl+Ctrl
+    {
+        SettingsBlock keys = b;
+        Config before;
+        for (int i = 0; i < Config::kHotkeyCount; ++i) keys.hotkeys[i] = before.hotkey(i);
+        keys.hotkeys[0] = (6 << 16) | 'H';  // Ctrl+Maj+H
+        keys.hotkeys[1] = 0x7B;             // F12 seul
+        keys.hotkeys[2] = (1 << 20) | 'R';  // invalide : garde Ctrl+Alt+R
+        keys.hotkeys[10] = 0;               // sans raccourci
+        Config k;
+        ApplySettings(k, keys);
+        assert(k.keyToggle == ((6 << 16) | 'H') && k.keyPosition == 0x7B && k.keyReset == ((3 << 16) | 'R') && k.keyImage == 0 &&
+               k.keyRecord == ((3 << 16) | 'S'));
+    }
     b.imageMode = 1; b.imageSharpen = 2; b.imageSharpness = 140; b.imageGamma = 10; b.imageTemperature = -30; b.imageColorblind = 3;
     ApplySettings(cfg, b);
     assert(cfg.image.mode == 1 && cfg.image.sharpen == 2 && cfg.image.sharpness == 100 && cfg.image.gamma == 50 && cfg.image.temperature == -30 &&
@@ -979,7 +1002,7 @@ static void testImageFilters() {
         return std::fabs(a.x - b.x) <= tolerance && std::fabs(a.y - b.y) <= tolerance && std::fabs(a.z - b.z) <= tolerance;
     };
     const auto identity = [](float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float sharpen, float amount) {
-        return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, sharpen, amount, 0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
+        return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, e, e, sharpen, amount, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
     };
     // Réglages neutres : image inchangée (y compris des couleurs extrêmes).
     const float3 samples[] = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {0.2f, 0.5f, 0.9f}, {0.73f, 0.11f, 0.04f}, {0.5f, 0.5f, 0.5f}};
@@ -1040,6 +1063,23 @@ static void testImageFilters() {
     for (float mode = 1.f; mode <= 3.f; mode += 1.f) assert(near(Daltonize(float3(0.5f, 0.5f, 0.5f), mode), float3(0.5f, 0.5f, 0.5f), 0.03f));
     const float3 red = Daltonize(float3(0.8f, 0.2f, 0.2f), 2.f), green = Daltonize(float3(0.2f, 0.6f, 0.2f), 2.f);
     assert(std::fabs(red.z - green.z) > 0.1f);
+    // Faux HDR : force nulle, rien ; un pixel plus clair que son entourage s'éclaircit davantage qu'en zone
+    // unie, un plus sombre s'assombrit davantage ; noir, blanc et teinte gardés.
+    {
+        const float3 mid(0.6f, 0.6f, 0.6f), lower(0.4f, 0.4f, 0.4f), higher(0.8f, 0.8f, 0.8f);
+        assert(near(FilterPixel(mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, 0.f, lower, lower, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+                                1.f, 0.f, 0.f, 0.f),
+                    mid, 1e-6f));
+        const float3 flatHdr = FakeHdr(mid, mid, mid, 1.f);
+        assert(FakeHdr(mid, lower, lower, 1.f).x > flatHdr.x && FakeHdr(mid, higher, higher, 1.f).x < flatHdr.x);
+        assert(near(FakeHdr(float3(0.f, 0.f, 0.f), mid, mid, 1.f), float3(0.f, 0.f, 0.f), 1e-6f));
+        assert(near(FakeHdr(float3(1.f, 1.f, 1.f), lower, lower, 1.f), float3(1.f, 1.f, 1.f), 1e-6f));
+        const float3 hue(0.5f, 0.3f, 0.2f), hued = FakeHdr(hue, lower, higher, 0.7f);
+        assert(std::fabs(hued.x / hued.z - hue.x / hue.z) < 1e-3f);
+        ImageSettings settings;
+        settings.hdr = 140;
+        assert(settings.changesImage() && ImageParamsFrom(settings).hdr == 1.f);
+    }
     std::printf("Filtres d'image : OK\n");
 }
 

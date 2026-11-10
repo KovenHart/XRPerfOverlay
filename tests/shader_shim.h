@@ -35,6 +35,7 @@ inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
 inline float3 lerp(float3 a, float3 b, float t) { return a + (b - a) * t; }
 inline float dot(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 inline float3 sqrt(float3 a) { return {std::sqrt(a.x), std::sqrt(a.y), std::sqrt(a.z)}; }
+inline float pow(float a, float b) { return std::pow(a, b); }
 inline float3 pow(float3 a, float3 b) { return {std::pow(a.x, b.x), std::pow(a.y, b.y), std::pow(a.z, b.z)}; }
 
 }  // namespace shader

@@ -261,6 +261,15 @@ namespace XRPerfSensors
                         case "set": OnSet(Str(m, "scope"), Str(m, "key"), m.TryGetProperty("value", out JsonElement value) ? value : default(JsonElement)); break;
                         case "resetDefaults": _app.ResetOverlayDefaults(); PostOverlay(); break;
                         case "resetImage": _app.ResetImageDefaults(); PostOverlay(); break;
+                        case "resetHotkeys": _app.ResetHotkeys(); PostOverlay(); break;
+                        case "imagePresetApply": _app.ApplyImagePreset(Str(m, "id")); PostOverlay(); break;
+                        case "imagePresetSave":
+                            if (!_app.SaveImagePreset(Str(m, "name")))
+                                PostToast(Loc.T("Preset non enregistré (nom vide, 50 presets au plus, ou dossier inaccessible).",
+                                                "Preset not saved (empty name, 50 presets at most, or folder not writable)."));
+                            PostOverlay();
+                            break;
+                        case "imagePresetDelete": _app.DeleteImagePreset(Str(m, "id")); PostOverlay(); break;
                         case "setLayer": _app.SetLayerEnabled(m.TryGetProperty("on", out JsonElement layerOn) && layerOn.ValueKind == JsonValueKind.True); break;
                         case "fullscreen": SetFullscreen(m.TryGetProperty("on", out JsonElement on) && on.ValueKind == JsonValueKind.True); break;
                         case "chrome": ApplyChrome(Str(m, "background"), m.TryGetProperty("light", out JsonElement light) && light.ValueKind == JsonValueKind.True); break;
@@ -525,7 +534,14 @@ namespace XRPerfSensors
             if (key == null) return;
             if (scope == "overlay")
             {
-                if (_app.Unavailable != null || !SettingsJson.ApplyOverlay(_app.Overlay, key, value)) return;
+                Settings desk = _app.Desktop;
+                int video = desk.VideoKey == 0 ? 0 : (desk.VideoMods << 16) | desk.VideoKey;
+                if (_app.Unavailable != null) return;
+                if (!SettingsJson.ApplyOverlay(_app.Overlay, key, value, video))
+                {
+                    if (key.StartsWith("Hotkey.", StringComparison.Ordinal)) PostOverlay();  // refusé : la page reprend la valeur gardée
+                    return;
+                }
                 _app.OverlayChanged();
                 FastTick(); // aperçu redessiné tout de suite
                 return;
@@ -533,7 +549,7 @@ namespace XRPerfSensors
             if (scope != "desktop") return;
             Settings d = _app.Desktop;
             string before = d.Language;
-            SettingsJson.Change change = SettingsJson.ApplyDesktop(d, key, value);
+            SettingsJson.Change change = SettingsJson.ApplyDesktop(d, key, value, _app.Unavailable == null ? _app.Overlay.Hotkeys : null);
             switch (change)
             {
                 case SettingsJson.Change.None: return;

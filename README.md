@@ -8,7 +8,7 @@ Un panneau de performances affiché dans le casque pour tous les jeux OpenXR (do
 - **CPU** : charge, frametime, température, fréquence
 - **GPU** : charge, frametime, température, fréquence, VRAM
 
-En option : une montre au poignet, et une fenêtre du bureau (le chat d'un stream, Discord...) affichée dans le casque. Un rapport est écrit à chaque session de jeu (ou au raccourci `Ctrl+Alt+S`), avec son analyse et ses courbes. La page Vidéo enregistre ce que vous voyez dans le casque (H.264, H.265 ou AV1 par la carte graphique, avec le son du jeu et le micro, le panneau et la stabilisation en option), sans OBS. La page Image ajoute en option netteté (CAS, RCAS, LumaSharpen), réglages des couleurs, débandage et mode daltonien, dans le casque ou dans la vidéo. La page Configuration fait le diagnostic du PC pour la VR : runtime OpenXR, layers installées (à activer, désactiver ou réordonner), matériel, réglages de Windows.
+En option : une montre au poignet, et une fenêtre du bureau (le chat d'un stream, Discord...) affichée dans le casque. Un rapport est écrit à chaque session de jeu (ou au raccourci `Ctrl+Alt+S`), avec son analyse et ses courbes. La page Vidéo enregistre ce que vous voyez dans le casque (H.264, H.265 ou AV1 par la carte graphique, avec le son du jeu et le micro, le panneau et la stabilisation en option), sans OBS. La page Image ajoute en option netteté (CAS, RCAS, LumaSharpen), réglages des couleurs, faux HDR, débandage et mode daltonien, avec des presets, dans le casque ou dans la vidéo. Tous les raccourcis sont modifiables. La page Configuration fait le diagnostic du PC pour la VR : runtime OpenXR, layers installées (à activer, désactiver ou réordonner), matériel, réglages de Windows.
 
 ![Aperçu du panneau](docs/apercu.png)
 

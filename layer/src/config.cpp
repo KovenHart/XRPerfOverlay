@@ -151,17 +151,20 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
     c.refreshMs = readInt(c, L"overlay", L"refresh_ms", c.refreshMs, 50, 5000);
     c.statsWindowS = readInt(c, L"overlay", L"stats_window_s", c.statsWindowS, 2, 600);
 
-    c.keyToggle = readInt(c, L"hotkeys", L"toggle", c.keyToggle, 0, 255);
-    c.keyPosition = readInt(c, L"hotkeys", L"position", c.keyPosition, 0, 255);
-    c.keyReset = readInt(c, L"hotkeys", L"reset", c.keyReset, 0, 255);
-    c.keySizeUp = readInt(c, L"hotkeys", L"size_up", c.keySizeUp, 0, 255);
-    c.keySizeDown = readInt(c, L"hotkeys", L"size_down", c.keySizeDown, 0, 255);
-    c.keyOpacityUp = readInt(c, L"hotkeys", L"opacity_up", c.keyOpacityUp, 0, 255);
-    c.keyOpacityDown = readInt(c, L"hotkeys", L"opacity_down", c.keyOpacityDown, 0, 255);
-    c.keyWindowToggle = readInt(c, L"hotkeys", L"window_toggle", c.keyWindowToggle, 0, 255);
-    c.keyWindowPlace = readInt(c, L"hotkeys", L"window_place", c.keyWindowPlace, 0, 255);
-    c.keyRecord = readInt(c, L"hotkeys", L"record", c.keyRecord, 0, 255);
-    c.keyImage = readInt(c, L"hotkeys", L"image", c.keyImage, 0, 255);
+    // Raccourcis : touche (code de touche virtuelle) et ses modificateurs à part (clé « _mods » : 1 Alt, 2 Ctrl,
+    // 4 Maj, 8 Windows ; absente = Ctrl+Alt, comme avant). Invalide = par défaut.
+    {
+        static const wchar_t* const kHotkeyKeys[Config::kHotkeyCount] = {L"toggle",       L"position",      L"reset",         L"size_up",
+                                                                         L"size_down",    L"opacity_up",    L"opacity_down",  L"window_toggle",
+                                                                         L"window_place", L"record",        L"image"};
+        for (int i = 0; i < Config::kHotkeyCount; ++i) {
+            int& key = c.hotkey(i);
+            const int vk = readInt(c, L"hotkeys", kHotkeyKeys[i], key & 0xFFFF, 0, 0xFF);
+            const int mods = readInt(c, L"hotkeys", (std::wstring(kHotkeyKeys[i]) + L"_mods").c_str(), 3, 0, 0xF);
+            const int value = vk == 0 ? 0 : NormalizeHotkey((mods << 16) | vk);
+            if (value >= 0) key = value;
+        }
+    }
     c.videoCapture = readInt(c, L"video", L"capture", 1, 0, 1) != 0;
     c.videoFinal = lower(readString(c, L"video", L"source")) != L"game";
 
@@ -189,6 +192,7 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
         im.temperature = readInt(c, L"image", L"temperature", 0, -50, 50);
         im.deband = readInt(c, L"image", L"deband", 0, 0, 100);
         im.colorblind = pick(lower(readString(c, L"image", L"colorblind")), {L"none", L"protan", L"deutan", L"tritan"});
+        im.hdr = readInt(c, L"image", L"hdr", 0, 0, 100);
     }
 
     c.clock = readInt(c, L"overlay", L"clock", 1, 0, 1) != 0;
