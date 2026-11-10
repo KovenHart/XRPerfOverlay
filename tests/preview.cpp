@@ -970,7 +970,7 @@ static void testReportControl(const std::string& dir) {
 // équivalents C++ des fonctions HLSL, il se teste comme du code ordinaire.
 #include "shader_shim.h"
 namespace shader {
-#include "image_filter_core.hlsli"
+#include "../layer/src/image_filter_core.hlsli"
 }
 
 static void testImageFilters() {
