@@ -56,6 +56,7 @@ Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open 
 - **Appearance** (headset, watch and mirror): layout, colors (thumbnails of the nine sets), clock, headset / resolution line, session / battery line.
 - **Watch**: show the watch, attachment, position on the hand, style, elements, show on gaze, size, opacity, position adjustments, with its preview (see "Watch and attaching to the controllers").
 - **Window**: the desktop window shown in the headset (see "Desktop window in the headset").
+- **Video** also includes the **OBS source** for streaming (see "OBS source").
 - **Image**: presets, sharpening filters, colors, fake HDR, debanding and colorblind mode, in the headset or in the video (see "Image filters").
 - **Desktop mirror**: the mirror window for OBS, its position, size, opacity, keep on top.
 - **Video**: headset video recording (see "Headset video").
@@ -233,6 +234,20 @@ XRPerfSensors can record what you see in the headset, without OBS: one eye's ima
 **Where the image comes from.** In an OpenXR game (Direct3D 11 or 12), the layer copies the eye's image when it leaves for the runtime. If other layers sit below XR Perf Overlay (Pimax NR and its DLSS, OpenXR Toolkit...), **Recorded image** picks which one: *The headset's* (default), after their processing, as the runtime receives it (the layer adds a link at the very bottom of the OpenXR chain for this); *The game's*, before them (`source=game` in the `[video]` section). The choice applies from the next game launch. It is the game's image, without what the runtime adds on top; the recorder puts the panel back if you ask for it (see above), from its image provided by the layer. With foveated rendering (Quad-Views), it is the eye's wide image, less sharp in the center than in the headset. In a SteamVR (OpenVR) game, XRPerfVR takes SteamVR's mirror image, which also contains overlays (the panel included). The copy stays on the graphics card; the recorder crops, converts and encodes it, still on the graphics card (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel), a chip separate from rendering. The cost for the game is one copy of the recorded eye's image per video frame (around 0.1 ms on a high-end card, a few tenths on a more modest one), and nothing at all when not recording. While recording, the copy and the recorder also use video memory: a few hundred MB, more in 4K.
 
 **Turning it off.** The "Video recording" switch on the Video page (or `capture=0` in the `[video]` section of `XRPerfOverlay.ini`) releases the hotkey and, from the next game launch, the layer no longer follows the images of OpenXR games.
+
+## OBS source (streaming)
+
+To stream with OBS Studio (30 or later), XR Perf Overlay adds an **"XR Perf (headset)"** source to OBS: the same image as the recorded video (chosen eye, format, resolution, frame rate, crop, stabilization, level horizon, panel, image filters), passed straight through the graphics card. Nothing is encoded twice: OBS gets the untouched image and compresses it itself for the stream. OpenXR and SteamVR games.
+
+**Installation.** `Installer.bat` copies the source into OBS if it is installed (`C:\ProgramData\obs-studio\plugins\xrperf-obs`). OBS must be closed during installation; OBS installed after XR Perf Overlay: run `Installer.bat` again.
+
+**In OBS.** Sources, **+**, **XR Perf (headset)**. Sound is captured in OBS as usual (application or desktop audio capture, and the microphone).
+
+**How it works.** While the source is shown in OBS (active scene or preview) and a VR game is running, XRPerfSensors prepares the image, with no file or sound and no REC indicator in the headset. During a recording, OBS gets the same image. With no game, the source keeps its size and shows nothing. Settings are changed on the **Video** page (a change restarts the image for OBS a second later); XRPerfSensors must be running.
+
+**Setting.** Video page, "OBS source": the "Image for OBS" switch (on by default; nothing runs until the source is shown) and the status (plugin missing, source to add, waiting for a game, image received).
+
+**Limit.** OBS and the VR game must use the same graphics card (otherwise the OBS log says so: set OBS to the headset's card).
 
 ## Image filters
 

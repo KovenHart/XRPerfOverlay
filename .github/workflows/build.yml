@@ -42,10 +42,19 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           Write-Host "XR Perf Overlay $version"
 
+      # En-têtes de libobs (OBS Studio 30.0, la plus ancienne version prise en charge) pour la source OBS.
+      - name: En-têtes d'OBS Studio
+        shell: pwsh
+        run: |
+          git clone --quiet --depth 1 --branch 30.0.0 --filter=blob:none --sparse https://github.com/obsproject/obs-studio build/obs-studio
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git -C build/obs-studio sparse-checkout set libobs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Layer OpenXR (C++, MSVC)
         shell: pwsh
         run: |
-          cmake -S layer -B build/layer -A x64 -DXRPO_BUILD_TESTS=ON
+          cmake -S layer -B build/layer -A x64 -DXRPO_BUILD_TESTS=ON "-DXRPO_OBS_DIR=$PWD/build/obs-studio/libobs"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build/layer --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -66,6 +75,8 @@ jobs:
       # Windows PowerShell 5.1, comme sur les PC des utilisateurs (Creer-paquet.bat).
       - name: Paquet de distribution
         shell: powershell
+        env:
+          XRPO_REQUIRE_OBS: '1'
         run: ./scripts/package.ps1
 
       - name: Paquet joint à l'exécution

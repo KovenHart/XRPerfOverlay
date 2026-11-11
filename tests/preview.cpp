@@ -862,6 +862,9 @@ static void testReportControl(const std::string& dir) {
     // Filtres d'image (version 7) : mêmes positions que OverlaySettings.ToBlock (XRPerfSensors).
     assert(offsetof(SettingsBlock, imageMode) == 200 && offsetof(SettingsBlock, imageColorblind) == 244);
     // Faux HDR et raccourcis (version 8).
+    // Source OBS : mêmes positions que VideoRecorder.cs (XRPerfSensors) et le plugin.
+    assert(offsetof(ObsShare, consumerTickMs) == 8 && offsetof(ObsShare, producerTickMs) == 16 && offsetof(ObsShare, handle) == 24 &&
+           offsetof(ObsShare, adapterLuid) == 40 && sizeof(ObsShare) == 128);
     assert(offsetof(SettingsBlock, imageHdr) == 248 && offsetof(SettingsBlock, hotkeys) == 252 && offsetof(SettingsBlock, imageSharpenLimit) == 296 &&
            sizeof(SettingsBlock) == 304);
     // Raccourcis : touche seule refusée sauf F1 à F24 ; un invalide reçu de XRPerfSensors garde le précédent.

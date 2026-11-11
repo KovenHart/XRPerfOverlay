@@ -3,6 +3,10 @@
 // (layer/src/video_record.cpp) et raccourci clavier global (Ctrl+Alt+V par défaut).
 //
 // Rien ne tourne tant que personne n'enregistre : le bloc dit seulement « pas d'enregistrement ».
+//
+// Source OBS : bloc Local\XRPerfOverlay.Obs (ObsShare, layer/src/shared_block.h), où le plugin xrperf-obs.dll
+// note sa présence. L'enregistreur peut alors tourner sans fichier (StartObsOnly), ou donner aussi
+// l'image à OBS pendant un enregistrement.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -50,6 +54,8 @@ namespace XRPerfSensors
             public int ImageMode, ImageSharpen, ImageSharpness, ImageBrightness, ImageContrast, ImageSaturation;
             public int ImageVibrance, ImageGamma, ImageShadows, ImageTemperature, ImageDeband, ImageColorblind;
             public int ImageHdr, ImageSharpenLimit, ImageSharpenRadius;
+            public uint Encode;         // 1 : fichier MP4 ; 0 : image pour OBS seulement
+            public uint Obs;            // 1 : image donnée à la source OBS
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Folder;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string RenderDevice;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string CaptureDevice;
@@ -94,12 +100,21 @@ namespace XRPerfSensors
         private volatile int _codecs = -1;   // encodeurs matériels présents (bits : H.264, HEVC, AV1) ; -1 : pas encore connu
         private Task _stopping;
         private string _message = "";        // dernier refus de démarrage
+        private bool _obsOnly;               // l'enregistreur tourne pour OBS seulement (pas d'enregistrement)
+        private Status _lastRecording = new Status { File = "", Game = "", Encoder = "" };
+        // Bloc partagé avec le plugin OBS.
+        private const string ObsShareName = @"Local\XRPerfOverlay.Obs";
+        private const uint ObsMagic = 0x4F505258; // "XRPO"
+        private const uint ObsVersion = 1;
+        private const int ObsShareSize = 128;
+        private IntPtr _obsMapping, _obsView;
 
         /// <param name="folder">Dossier de XRPerfSensors.exe, où l'installation range aussi XRPerfRecord.dll.</param>
         public VideoRecorder(string folder)
         {
             _dllPath = Path.Combine(folder, "XRPerfRecord.dll");
             CreateShare();
+            CreateObsShare();
             // Encodeurs présents : la recherche prend un instant, faite à part.
             if (Available) Task.Run(() =>
             {
@@ -215,6 +230,68 @@ namespace XRPerfSensors
             Marshal.WriteInt64(_view, 32, 0);        // recordStartTickMs
         }
 
+        // Bloc de la source OBS : créé ici ou déjà par le plugin (OBS ouvert avant XRPerfSensors).
+        private void CreateObsShare()
+        {
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(Sddl, 1, out IntPtr descriptor, IntPtr.Zero)) return;
+            try
+            {
+                var attributes = new SECURITY_ATTRIBUTES { nLength = Marshal.SizeOf<SECURITY_ATTRIBUTES>(), lpSecurityDescriptor = descriptor };
+                _obsMapping = CreateFileMappingW(new IntPtr(-1), ref attributes, 0x04 /* PAGE_READWRITE */, 0, ObsShareSize, ObsShareName);
+            }
+            finally
+            {
+                LocalFree(descriptor);
+            }
+            if (_obsMapping == IntPtr.Zero) return;
+            _obsView = MapViewOfFile(_obsMapping, 0x0002 | 0x0004, 0, 0, new UIntPtr(ObsShareSize));
+            if (_obsView == IntPtr.Zero)
+            {
+                CloseHandle(_obsMapping);
+                _obsMapping = IntPtr.Zero;
+                return;
+            }
+            if (Marshal.ReadInt32(_obsView, 0) == 0)
+            {
+                Marshal.WriteInt32(_obsView, 4, (int)ObsVersion);
+                Marshal.WriteInt32(_obsView, 0, unchecked((int)ObsMagic));
+            }
+            Marshal.WriteInt32(_obsView, 24, 0);   // pas de texture (instance précédente arrêtée)
+            Marshal.WriteInt64(_obsView, 16, 0);
+        }
+
+        /// <summary>Temps (ms) depuis que la source OBS a été affichée pour la dernière fois ; long.MaxValue : jamais.</summary>
+        public long ObsSourceAgeMs
+        {
+            get
+            {
+                if (_obsView == IntPtr.Zero || unchecked((uint)Marshal.ReadInt32(_obsView, 0)) != ObsMagic) return long.MaxValue;
+                long tick = Marshal.ReadInt64(_obsView, 8);
+                return tick == 0 ? long.MaxValue : Math.Max(0, Environment.TickCount64 - tick);
+            }
+        }
+
+        /// <summary>L'image arrive à OBS (texture donnée il y a moins d'une seconde et demie).</summary>
+        public bool ObsFed
+        {
+            get
+            {
+                if (_obsView == IntPtr.Zero) return false;
+                long tick = Marshal.ReadInt64(_obsView, 16);
+                return tick != 0 && Environment.TickCount64 - tick < 1500;
+            }
+        }
+
+        /// <summary>Plugin installé pour OBS Studio (dossier des plugins de tous les comptes).</summary>
+        public static bool ObsPluginInstalled
+        {
+            get
+            {
+                string data = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                return File.Exists(Path.Combine(data, "obs-studio", "plugins", "xrperf-obs", "bin", "64bit", "xrperf-obs.dll"));
+            }
+        }
+
         // --- Bibliothèque -----------------------------------------------------------------------------
 
         private bool Load()
@@ -254,15 +331,73 @@ namespace XRPerfSensors
                 {
                 }
             }
+            if (_obsOnly) return _lastRecording;  // image pour OBS : l'état affiché reste celui du dernier enregistrement
             if (_stopping != null && !_stopping.IsCompleted && status.State == StateStopped) status.State = StateFinishing;
+            _lastRecording = status;
+            _lastRecording.State = StateStopped;
             return status;
         }
 
-        public bool Busy { get { int s = Current().State; return s != StateStopped; } }
+        private int NativeState()
+        {
+            var status = new Status();
+            try
+            {
+                if (_status != null) _status(out status);
+            }
+            catch (Exception)
+            {
+            }
+            return status.State;
+        }
+
+        /// <summary>Un enregistrement est en cours (pas l'image pour OBS seule).</summary>
+        public bool Busy { get { return !_obsOnly && Current().State != StateStopped; } }
+
+        /// <summary>L'enregistreur tourne pour OBS seulement.</summary>
+        public bool ObsOnlyRunning { get { return _obsOnly && NativeState() != StateStopped; } }
+
+        /// <summary>Arrête l'image pour OBS seule (aussitôt : pas de fichier à terminer).</summary>
+        public void StopObsOnly()
+        {
+            if (!_obsOnly) return;
+            try
+            {
+                _stop?.Invoke();
+            }
+            catch (Exception)
+            {
+            }
+            _obsOnly = false;
+        }
+
+        /// <summary>L'enregistreur tourne pour OBS seulement : image préparée sans fichier ni son. Null : démarré.</summary>
+        public string StartObsOnly(Settings s, OverlaySettings image)
+        {
+            if (!Available || !Load()) return "unavailable";
+            if (_stopping != null && !_stopping.IsCompleted) return "finishing";
+            if (NativeState() != StateStopped) return "busy";
+            XrprOptions options = Options(s, image);
+            options.Encode = 0;
+            options.Obs = 1;
+            int result;
+            try
+            {
+                result = _start(_view, ShareSize, ref options);
+            }
+            catch (Exception)
+            {
+                result = -1;
+            }
+            if (result != 0) return "refused " + result;
+            _obsOnly = true;
+            return null;
+        }
 
         /// <summary>Démarre un enregistrement. Retourne null, ou la raison du refus (texte pour l'interface).</summary>
-        public string Start(Settings s, OverlaySettings image)
+        public string Start(Settings s, OverlaySettings image, bool obs = false)
         {
+            StopObsOnly();  // l'image pour OBS seule laisse la place à l'enregistrement (qui la donne aussi)
             _message = "";
             if (!Available)
                 _message = File.Exists(_dllPath) ? Loc.T("Enregistrement impossible : mémoire partagée indisponible.", "Recording impossible: shared memory unavailable.")
@@ -274,6 +409,27 @@ namespace XRPerfSensors
             else if (_codecs >= 0 && (_codecs & CodecBit(s.VideoCodec)) == 0)
                 _message = string.Format(Loc.T("Pas d'encodeur matériel {0} sur ce PC : choisissez un autre format.", "No {0} hardware encoder on this PC: choose another format."), CodecName(s.VideoCodec));
             if (_message.Length > 0) return _message;
+            XrprOptions options = Options(s, image);
+            options.Encode = 1;
+            options.Obs = obs ? 1u : 0u;
+            int result;
+            try
+            {
+                result = _start(_view, ShareSize, ref options);
+            }
+            catch (Exception)
+            {
+                result = -1;
+            }
+            if (result == 0) return null;
+            _message = result == 1 ? Loc.T("Un enregistrement est déjà en cours.", "A recording is already running.")
+                                   : Loc.T("Enregistrement impossible (réglages refusés).", "Recording impossible (settings rejected).");
+            return _message;
+        }
+
+        // Réglages de l'enregistreur tirés de ceux de la page Vidéo et des filtres d'image.
+        private static XrprOptions Options(Settings s, OverlaySettings image)
+        {
             float aspect = s.VideoAspect == "4:3" ? 4f / 3f : s.VideoAspect == "1:1" ? 1f : 16f / 9f;
             var options = new XrprOptions
             {
@@ -304,19 +460,7 @@ namespace XRPerfSensors
             options.ImageHdr = values[12];
             options.ImageSharpenLimit = image.ImageSharpenLimit;
             options.ImageSharpenRadius = image.ImageSharpenRadius;
-            int result;
-            try
-            {
-                result = _start(_view, ShareSize, ref options);
-            }
-            catch (Exception)
-            {
-                result = -1;
-            }
-            if (result == 0) return null;
-            _message = result == 1 ? Loc.T("Un enregistrement est déjà en cours.", "A recording is already running.")
-                                   : Loc.T("Enregistrement impossible (réglages refusés).", "Recording impossible (settings rejected).");
-            return _message;
+            return options;
         }
 
         /// <summary>Arrête l'enregistrement ; la fin du fichier (quelques instants) se fait à part.</summary>
@@ -417,6 +561,8 @@ namespace XRPerfSensors
                 Marshal.WriteInt32(_view, 8, 0);
                 UnmapViewOfFile(_view);
             }
+            if (_obsView != IntPtr.Zero) UnmapViewOfFile(_obsView);
+            if (_obsMapping != IntPtr.Zero) CloseHandle(_obsMapping);
             if (_mapping != IntPtr.Zero) CloseHandle(_mapping);
             _view = _mapping = IntPtr.Zero;
         }

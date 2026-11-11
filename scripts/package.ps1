@@ -108,6 +108,23 @@ foreach ($file in @('XRPerfVR.exe', 'openvr_api.dll', 'XRPerfCapture.dll', 'XRPe
     Copy-Required (Join-Path $layerFolder $file) (Join-Path (Join-Path $program 'sensors') $file)
 }
 
+# Source OBS (xrperf-obs.dll) : rangée sous sensors\obs\xrperf-obs, dans la disposition d'un plugin d'OBS
+# Studio (bin\64bit, data\locale) ; Installer.bat la copie dans le dossier des plugins d'OBS s'il est
+# installé. Compilée seulement avec les en-têtes de libobs (XRPO_OBS_DIR) : exigée si XRPO_REQUIRE_OBS.
+$obsDll = Join-Path $layerFolder 'xrperf-obs.dll'
+$obsPlugin = Join-Path (Join-Path (Join-Path $program 'sensors') 'obs') 'xrperf-obs'
+if (Test-Path -LiteralPath $obsDll -PathType Leaf) {
+    Write-Host 'Source OBS (xrperf-obs.dll)...'
+    Copy-Required $obsDll (Join-Path (Join-Path (Join-Path $obsPlugin 'bin') '64bit') 'xrperf-obs.dll')
+    foreach ($locale in @(Get-ChildItem -LiteralPath (Under 'layer', 'obs', 'data', 'locale') -Filter '*.ini')) {
+        Copy-Required $locale.FullName (Join-Path (Join-Path (Join-Path $obsPlugin 'data') 'locale') $locale.Name)
+    }
+} elseif ($env:XRPO_REQUIRE_OBS) {
+    throw "xrperf-obs.dll introuvable ($obsDll) : compilez la layer avec -DXRPO_OBS_DIR=<sources d'OBS Studio>\libobs."
+} else {
+    Write-Warning "xrperf-obs.dll absente : le paquet n'aura pas la source OBS (compilez avec -DXRPO_OBS_DIR=<sources d'OBS Studio>\libobs)."
+}
+
 Write-Host 'Installateur et documentation...'
 Copy-Required (Under 'Installer.bat') (Join-Path $staging 'Installer.bat')
 Copy-Required (Under 'scripts', 'setup.ps1') (Join-Path (Join-Path $staging 'scripts') 'setup.ps1')

@@ -293,4 +293,34 @@ inline void VideoTextureName(wchar_t* out, size_t capacity, uint32_t pid, uint32
     out[n < capacity ? n : capacity - 1] = L'\0';
 }
 
+// --- Source OBS ------------------------------------------------------------------------------------
+// Image de la vidéo (œil cadré, stabilisé, filtres, panneau) donnée au plugin OBS xrperf-obs.dll (obs/),
+// sans encodage. Le plugin note sa présence tant que la source « XR Perf (casque) » est affichée ;
+// XRPerfSensors fait alors tourner l'enregistreur sans fichier (ou en plus d'un enregistrement), qui
+// recopie chaque image dans une texture Direct3D 11 partagée (ancien partage par poignée globale, verrou
+// « keyed mutex » : l'enregistreur prend la clé 0 et rend la clé 1, le plugin prend 1 et rend 0).
+// Créé par XRPerfSensors ou par le plugin, le premier des deux (même descripteur de sécurité).
+constexpr wchar_t kObsShareName[] = L"Local\\XRPerfOverlay.Obs";
+constexpr uint32_t kObsShareMagic = 0x4F505258;  // "XRPO"
+constexpr uint32_t kObsShareVersion = 1;
+constexpr uint32_t kObsShareBytes = 128;
+
+struct ObsShare {
+    uint32_t magic;            // 0
+    uint32_t version;          // 4
+    uint64_t consumerTickMs;   // 8  : GetTickCount64() du plugin, renouvelé tant que la source est affichée
+    uint64_t producerTickMs;   // 16 : GetTickCount64() de l'enregistreur à la dernière image donnée (0 : rien)
+    uint32_t handle;           // 24 : poignée partagée de la texture (R8G8B8A8, sRGB encodé ; 0 : aucune)
+    uint32_t width;            // 28
+    uint32_t height;           // 32
+    uint32_t generation;       // 36 : change quand la texture est recréée
+    uint64_t adapterLuid;      // 40 : carte graphique de la texture (LowPart | HighPart << 32)
+    uint32_t consumerPid;      // 48 : OBS
+    uint32_t producerPid;      // 52 : XRPerfSensors
+    uint32_t consumerVersion;  // 56 : version du plugin (majeur << 16 | mineur << 8 | correctif)
+    uint32_t reserved[17];     // 60
+};                             // 128 octets
+
+static_assert(sizeof(ObsShare) == kObsShareBytes, "disposition fixe (ObsOutput.cs, obs/xrperf_obs.cpp)");
+
 }  // namespace xrpo

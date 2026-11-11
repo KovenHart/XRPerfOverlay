@@ -9,6 +9,10 @@
 // 3. Son : WASAPI, son du PC en boucle (« loopback ») et micro, chacun en option, remis sur une même
 //    ligne de temps (video_math.h, AudioTimeline) puis encodés en AAC.
 //
+// 4. Source OBS (option `obs`) : l'image finale (cadrée, filtres, panneau) est aussi recopiée dans une
+//    texture partagée que lit le plugin xrperf-obs.dll (obs/). Sans `encode`, rien n'est écrit : ni
+//    fichier, ni son, ni témoin REC dans le casque (image pour OBS seulement).
+//
 // Horloge commune : QueryPerformanceCounter. La vidéo a une cadence fixe : à chaque instant prévu, la
 // dernière image reçue est encodée (répétée si le jeu n'en a pas fourni de nouvelle).
 
@@ -77,6 +81,8 @@ struct XrprOptions {
     int32_t imageMode, imageSharpen, imageSharpness, imageBrightness, imageContrast, imageSaturation;
     int32_t imageVibrance, imageGamma, imageShadows, imageTemperature, imageDeband, imageColorblind;
     int32_t imageHdr, imageSharpenLimit, imageSharpenRadius;
+    uint32_t encode;        // 1 : fichier MP4 (enregistrement) ; 0 : image pour OBS seulement
+    uint32_t obs;           // 1 : image donnée à la source OBS (bloc Local\XRPerfOverlay.Obs)
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
     wchar_t captureDevice[256];  // micro ("" : celui par défaut)
@@ -582,7 +588,8 @@ class Recorder {
         if (options.size != sizeof(XrprOptions) || options.codec > 2 || options.fps < 10 || options.fps > 240 || options.height < 240 ||
             options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f) ||
             options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f) ||
-            !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2)
+            !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2 ||
+            options.encode > 1 || options.obs > 1 || (!options.encode && !options.obs))
             return kBadOptions;
         m_options = options;
         m_options.folder[259] = m_options.renderDevice[255] = m_options.captureDevice[255] = 0;
@@ -689,17 +696,22 @@ class Recorder {
         }
         if (m_stop) return kStoppedByUser;
         if (!got) return kNoTextures;
-        reason = setupWriter();
-        if (reason != kOk) return reason;
+        openObs();
+        if (m_options.encode) {
+            reason = setupWriter();
+            if (reason != kOk) return reason;
+        } else if (!m_obs) {
+            return fail(kNoDevice, E_FAIL, "source OBS");  // rien à faire sans fichier ni OBS
+        }
 
         // 2. Son : chacun en option ; un échec n'empêche pas la vidéo. L'horloge commune part d'ici.
         m_origin = Now100ns();
         uint32_t audio = 0;
-        if (m_options.gameAudio) {
+        if (m_options.encode && m_options.gameAudio) {
             m_gameSound.reset(new AudioSource());
             audio |= m_gameSound->start(true, m_options.renderDevice, m_origin) ? 1u : 4u;
         }
-        if (m_options.micAudio) {
+        if (m_options.encode && m_options.micAudio) {
             m_micSound.reset(new AudioSource());
             audio |= m_micSound->start(false, m_options.captureDevice, m_origin) ? 2u : 8u;
         }
@@ -709,7 +721,7 @@ class Recorder {
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.audio = audio;
         }
-        m_block->recordStartTickMs = GetTickCount64();
+        if (m_options.encode) m_block->recordStartTickMs = GetTickCount64();  // témoin REC dans le casque
         m_state = kRecording;
 
         // 3. Une image à chaque instant prévu.
@@ -757,9 +769,14 @@ class Recorder {
                 reason = kGameEnded;
                 break;
             }
-            const int w = writeVideo(tick * period, period, fresh);
-            if (w != kOk) {
-                reason = w;
+            if (m_options.encode) {
+                const int w = writeVideo(tick * period, period, fresh);
+                if (w != kOk) {
+                    reason = w;
+                    break;
+                }
+            } else if (m_hasFrame && m_privateView && !convert(nullptr, 0, tick * period)) {
+                reason = fail(kNoConversion, E_FAIL, "image pour OBS");
                 break;
             }
             const int a = writeAudio((now - m_origin) - kAudioLatency100ns);
@@ -771,7 +788,7 @@ class Recorder {
             const unsigned long long ms = GetTickCount64();
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.seconds = static_cast<double>(tick * period) / 1e7;
-            if (ms - lastSizeCheck >= 1000) {
+            if (m_options.encode && ms - lastSizeCheck >= 1000) {
                 lastSizeCheck = ms;
                 WIN32_FILE_ATTRIBUTE_DATA data;
                 if (GetFileAttributesExW(m_path.c_str(), GetFileExInfoStandard, &data))
@@ -814,6 +831,7 @@ class Recorder {
         }
         m_allocator.reset();
         m_manager.reset();
+        closeObs();
         closeTextures();
         m_private.reset();
         m_privateView.reset();
@@ -866,6 +884,7 @@ class Recorder {
 
     // --- Carte graphique --------------------------------------------------------------------------------
     int setupDevice(uint64_t luidValue) {
+        m_adapterLuid = luidValue;
         LUID luid;
         luid.LowPart = static_cast<DWORD>(luidValue & 0xFFFFFFFFu);
         luid.HighPart = static_cast<LONG>(luidValue >> 32);
@@ -1480,24 +1499,28 @@ class Recorder {
         m_panelHeight = height;
     }
 
+    // Image de la vidéo dans `target` (NV12, pour l'encodeur) et, si la source OBS est active, dans la
+    // texture partagée avec OBS. `target` nul : pour OBS seulement.
     bool convert(ID3D11Texture2D* target, UINT subresource, int64_t time) {
         updatePanel();
         DeviceLock lock(m_multithread.get());
-        D3D11_TEXTURE2D_DESC desc;
-        target->GetDesc(&desc);
         Ptr<ID3D11RenderTargetView> luma, chroma;
-        D3D11_RENDER_TARGET_VIEW_DESC rtv = {};
-        if (desc.ArraySize > 1) {
-            rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
-            rtv.Texture2DArray.FirstArraySlice = subresource;
-            rtv.Texture2DArray.ArraySize = 1;
-        } else {
-            rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        if (target) {
+            D3D11_TEXTURE2D_DESC desc;
+            target->GetDesc(&desc);
+            D3D11_RENDER_TARGET_VIEW_DESC rtv = {};
+            if (desc.ArraySize > 1) {
+                rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+                rtv.Texture2DArray.FirstArraySlice = subresource;
+                rtv.Texture2DArray.ArraySize = 1;
+            } else {
+                rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+            }
+            rtv.Format = DXGI_FORMAT_R8_UNORM;
+            if (FAILED(m_device->CreateRenderTargetView(target, &rtv, luma.put()))) return false;
+            rtv.Format = DXGI_FORMAT_R8G8_UNORM;
+            if (FAILED(m_device->CreateRenderTargetView(target, &rtv, chroma.put()))) return false;
         }
-        rtv.Format = DXGI_FORMAT_R8_UNORM;
-        if (FAILED(m_device->CreateRenderTargetView(target, &rtv, luma.put()))) return false;
-        rtv.Format = DXGI_FORMAT_R8G8_UNORM;
-        if (FAILED(m_device->CreateRenderTargetView(target, &rtv, chroma.put()))) return false;
 
         // Cadre dans la partie qui contient l'œil (coordonnées 0 à 1 de cette partie), centré sur la tête.
         const uint32_t rw = m_rect[2] ? m_rect[2] : m_privateWidth, rh = m_rect[3] ? m_rect[3] : m_privateHeight;
@@ -1600,6 +1623,7 @@ class Recorder {
         // celle du casque, sans filtres).
         ID3D11RenderTargetView* panelTarget = m_frameTarget.get();
         ID3D11ShaderResourceView* converted = m_frameView.get();
+        ID3D11Texture2D* finalImage = m_frame.get();
         const bool filter = m_filteredView && (m_image.mode == 2 || (m_image.mode == 1 && m_block->producerKind != kVideoSteamVr && m_imageState == kVideoImageLater));
         if (filter) {
             ImageFilterParams fp = ImageParamsFrom(m_image);
@@ -1617,6 +1641,7 @@ class Recorder {
                 c->PSSetConstantBuffers(0, 1, buffers);
                 panelTarget = m_filteredTarget.get();
                 converted = m_filteredView.get();
+                finalImage = m_filtered.get();
             }
         }
         if (panel) {
@@ -1626,13 +1651,97 @@ class Recorder {
             c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
             c->RSSetState(nullptr);
         }
-        pass(luma.get(), m_width, m_height, m_vs.get(), m_psY.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
-        pass(chroma.get(), m_width / 2, m_height / 2, m_vs.get(), m_psUV.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        if (target) {
+            pass(luma.get(), m_width, m_height, m_vs.get(), m_psY.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+            pass(chroma.get(), m_width / 2, m_height / 2, m_vs.get(), m_psUV.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        }
         ID3D11RenderTargetView* none[] = {nullptr};
         c->OMSetRenderTargets(1, none, nullptr);
         c->PSSetShaderResources(0, 1, noView);
+        publishObs(finalImage);
         c->Flush();
         return true;
+    }
+
+    // --- Source OBS ----------------------------------------------------------------------------------
+
+    // Bloc partagé avec le plugin (créé par XRPerfSensors).
+    void openObs() {
+        if (!m_options.obs || m_obs) return;
+        m_obsMapping = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kObsShareName);
+        if (m_obsMapping) m_obs = static_cast<volatile ObsShare*>(MapViewOfFile(m_obsMapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(ObsShare)));
+        if (!m_obs || m_obs->magic != kObsShareMagic || m_obs->version != kObsShareVersion) {
+            RecordLog("Source OBS : bloc partage absent ou d'une autre version.");
+            closeObs();
+            return;
+        }
+        RecordLog("Source OBS : image donnee a OBS%s.", m_options.encode ? " (en plus du fichier)" : " (sans fichier)");
+    }
+
+    void closeObs() {
+        if (m_obs) {
+            m_obs->handle = 0;
+            m_obs->producerTickMs = 0;
+            MemoryBarrier();
+            UnmapViewOfFile(const_cast<ObsShare*>(m_obs));
+            m_obs = nullptr;
+        }
+        if (m_obsMapping) {
+            CloseHandle(m_obsMapping);
+            m_obsMapping = nullptr;
+        }
+        m_obsMutex.reset();
+        m_obsTexture.reset();
+        m_obsWidth = m_obsHeight = 0;
+    }
+
+    // Copie de l'image finale dans la texture partagée (contexte déjà verrouillé). Le plugin n'a pas encore
+    // pris la précédente : celle-ci est sautée (OBS affiche moins d'images par seconde que la vidéo).
+    void publishObs(ID3D11Texture2D* image) {
+        if (!m_obs || !image) return;
+        if (!m_obsTexture || m_obsWidth != m_width || m_obsHeight != m_height) {
+            m_obs->handle = 0;
+            MemoryBarrier();
+            m_obsMutex.reset();
+            m_obsTexture.reset();
+            D3D11_TEXTURE2D_DESC td = {};
+            td.Width = static_cast<UINT>(m_width);
+            td.Height = static_cast<UINT>(m_height);
+            td.MipLevels = 1;
+            td.ArraySize = 1;
+            td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            td.SampleDesc.Count = 1;
+            td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+            td.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+            HRESULT hr = m_device->CreateTexture2D(&td, nullptr, m_obsTexture.put());
+            Ptr<IDXGIResource> resource;
+            HANDLE shared = nullptr;
+            if (SUCCEEDED(hr)) hr = m_obsTexture->QueryInterface(__uuidof(IDXGIKeyedMutex), m_obsMutex.putVoid());
+            if (SUCCEEDED(hr)) hr = m_obsTexture->QueryInterface(__uuidof(IDXGIResource), resource.putVoid());
+            if (SUCCEEDED(hr)) hr = resource->GetSharedHandle(&shared);
+            if (FAILED(hr) || !shared) {
+                RecordLog("Source OBS : texture partagee impossible (0x%08lx).", static_cast<unsigned long>(hr));
+                closeObs();
+                return;
+            }
+            m_obsWidth = m_width;
+            m_obsHeight = m_height;
+            volatile ObsShare* o = m_obs;
+            o->width = static_cast<uint32_t>(m_width);
+            o->height = static_cast<uint32_t>(m_height);
+            o->adapterLuid = m_adapterLuid;
+            o->producerPid = GetCurrentProcessId();
+            o->generation = o->generation + 1;
+            MemoryBarrier();
+            o->handle = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(shared));
+            RecordLog("Source OBS : texture %dx%d partagee.", m_width, m_height);
+        }
+        const HRESULT hr = m_obsMutex->AcquireSync(0, 0);
+        if (hr != S_OK && hr != static_cast<HRESULT>(WAIT_ABANDONED)) return;
+        m_context->CopyResource(m_obsTexture.get(), image);
+        m_obsMutex->ReleaseSync(1);
+        m_obs->producerTickMs = GetTickCount64();
     }
 
     // Son mélangé jusqu'à la position `until` (100 ns depuis le début), par paquets de 20 ms au plus.
@@ -1705,6 +1814,13 @@ class Recorder {
     Ptr<ID3D11PixelShader> m_psFilter;
     Ptr<ID3D11Buffer> m_filterParams;
     Ptr<ID3D11Texture2D> m_filtered;
+    // Source OBS.
+    HANDLE m_obsMapping = nullptr;
+    volatile ObsShare* m_obs = nullptr;
+    Ptr<ID3D11Texture2D> m_obsTexture;
+    Ptr<IDXGIKeyedMutex> m_obsMutex;
+    int m_obsWidth = 0, m_obsHeight = 0;
+    uint64_t m_adapterLuid = 0;
     Ptr<ID3D11RenderTargetView> m_filteredRaw, m_filteredTarget;
     Ptr<ID3D11ShaderResourceView> m_filteredView;
     // Panneau dans la vidéo : image fournie par la layer, recopiée quand elle change.

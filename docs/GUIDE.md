@@ -56,6 +56,7 @@ Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit �
 - **Apparence** (casque, montre et miroir) : présentation, couleurs (vignettes des neuf jeux), heure, ligne casque / résolution, ligne session / batterie.
 - **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
 - **Fenêtre** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
+- **Vidéo** comprend aussi la **source OBS** pour le streaming (voir « Source OBS »).
 - **Image** : presets, filtres de netteté, couleurs, faux HDR, débandage et mode daltonien, dans le casque ou dans la vidéo (voir « Filtres d'image »).
 - **Miroir du bureau** : la fenêtre miroir pour OBS, son emplacement, sa taille, son opacité, premier plan.
 - **Vidéo** : enregistrement vidéo du casque (voir « Vidéo du casque »).
@@ -233,6 +234,20 @@ XRPerfSensors peut filmer ce que vous voyez dans le casque, sans OBS : l'image d
 **D'où vient l'image.** Dans un jeu OpenXR (Direct3D 11 ou 12), la layer copie l'image de l'œil au moment où elle part vers le runtime. Si d'autres layers sont placées sous XR Perf Overlay (Pimax NR et son DLSS, OpenXR Toolkit...), **Image enregistrée** choisit laquelle : *Celle du casque* (par défaut), après leur traitement, telle que le runtime la reçoit (la layer ajoute pour cela un maillon tout en bas de la chaîne OpenXR) ; *Celle du jeu*, avant elles (`source=game` dans la section `[video]`). Le choix vaut au prochain lancement du jeu. C'est l'image du jeu, sans ce que le runtime ajoute par-dessus ; l'enregistreur y remet le panneau si vous le demandez (voir plus haut), à partir de son image fournie par la layer. Avec un rendu fovéal (Quad-Views), c'est l'image large de l'œil, moins nette au centre que dans le casque. Dans un jeu SteamVR (OpenVR), XRPerfVR prend l'image miroir de SteamVR, qui contient aussi les calques (le panneau compris). La copie reste dans la carte graphique ; l'enregistreur la recadre, la convertit et l'encode, toujours sur la carte graphique (NVENC chez NVIDIA, AMF chez AMD, Quick Sync chez Intel), puce à part du rendu. Le coût pour le jeu est une copie de l'image de l'œil enregistré par image vidéo (de l'ordre de 0,1 ms sur une carte haut de gamme, quelques dixièmes sur une carte plus modeste), et rien du tout hors enregistrement. Pendant l'enregistrement, la copie et l'enregistreur occupent aussi de la mémoire vidéo : quelques centaines de Mo, davantage en 4K.
 
 **Désactiver.** L'interrupteur « Enregistrement vidéo » de la page Vidéo (ou `capture=0` dans la section `[video]` de `XRPerfOverlay.ini`) libère le raccourci et, au prochain lancement d'un jeu, la layer ne suit plus les images des jeux OpenXR.
+
+## Source OBS (streaming)
+
+Pour streamer avec OBS Studio (30 ou plus), XR Perf Overlay ajoute à OBS une source **« XR Perf (casque) »** : la même image que la vidéo enregistrée (œil choisi, format, résolution, cadence, recadrage, stabilisation, horizon droit, panneau, filtres d'image), passée directement par la carte graphique. Rien n'est encodé deux fois : OBS reçoit l'image intacte et la compresse lui-même pour le stream. Jeux OpenXR et SteamVR.
+
+**Installation.** `Installer.bat` copie la source dans OBS s'il est installé (`C:\ProgramData\obs-studio\plugins\xrperf-obs`). OBS doit être fermé pendant l'installation ; OBS installé après XR Perf Overlay : relancez `Installer.bat`.
+
+**Dans OBS.** Sources, **+**, **XR Perf (casque)**. Le son se prend dans OBS comme d'habitude (capture audio de l'application, ou du bureau, et le micro).
+
+**Fonctionnement.** Tant que la source est affichée dans OBS (scène active ou aperçu) et qu'un jeu VR tourne, XRPerfSensors prépare l'image, sans fichier ni son, et sans témoin REC dans le casque. Pendant un enregistrement, OBS reçoit la même image. Sans jeu, la source garde sa taille et n'affiche rien. Les réglages se changent dans la page **Vidéo** (un changement relance l'image pour OBS une seconde plus tard) ; XRPerfSensors doit être ouvert.
+
+**Réglage.** Page Vidéo, « Source OBS » : l'interrupteur « Image pour OBS » (activé par défaut ; rien ne tourne tant que la source n'est pas affichée) et l'état (plugin absent, source à ajouter, en attente d'un jeu, image reçue).
+
+**Limite.** OBS et le jeu VR doivent utiliser la même carte graphique (le journal d'OBS le signale sinon : réglez OBS sur la carte du casque).
 
 ## Filtres d'image
 
