@@ -7,6 +7,7 @@ Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier
 ## 1.11.0
 
 - **Source OBS pour le streaming** : OBS Studio (30 ou plus) gagne une source **« XR Perf (casque) »** qui reçoit l'image de la vidéo du casque (œil, format, résolution, recadrage, stabilisation, panneau, filtres) directement par la carte graphique, sans double encodage. Elle tourne dès que la source est affichée dans OBS, sans enregistrer (ni fichier, ni son, ni témoin REC), et continue pendant un enregistrement. Jeux OpenXR et SteamVR. `Installer.bat` l'ajoute à OBS s'il est installé ; réglage et état dans la page Vidéo (« Source OBS »).
+- **Menus et HUD du jeu dans la vidéo** (jeux OpenXR) : les écrans plats que le jeu fait afficher par le runtime au-dessus de la scène (couches « quad » et « cylinder » : menus, interface) sont maintenant copiés avec l'image et dessinés à leur place, en perspective, dans la vidéo enregistrée comme dans OBS (quatre au plus par image).
 
 ## 1.10.0
 

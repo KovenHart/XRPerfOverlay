@@ -36,6 +36,14 @@ struct VideoSource {
     uint32_t width = 0, height = 0;  // taille de la zone copiée
 };
 
+// Un écran plat du jeu (menu, HUD) à copier avec l'image de l'œil en attente.
+struct VideoLayerSource {
+    VideoSource source;      // zone copiée en haut à gauche de ses textures partagées
+    int64_t viewFormat = 0;  // format de la swapchain (lecture sRGB ou non)
+    uint32_t flags = 0;      // kVideoLayerAlpha, kVideoLayerUnpremultiplied (shared_block.h)
+    float corners[12] = {};  // coins dans le repère de l'œil (haut gauche, haut droit, bas gauche, bas droit)
+};
+
 // Ce que montre l'image copiée.
 struct VideoFrameInfo {
     uint32_t x = 0, y = 0, width = 0, height = 0;  // partie de la zone copiée qui contient l'œil
@@ -71,7 +79,13 @@ class VideoProducer {
     // Publie la dernière copie avec ce qu'elle montre ; sans effet s'il n'y en a pas.
     void publish(const VideoFrameInfo& info);
     // Oublie la dernière copie (le jeu n'a pas soumis cette image).
-    void dropPending() { m_pending = -1; }
+    void dropPending() {
+        m_pending = -1;
+        m_pendingLayerCount = 0;
+    }
+    // Copie les écrans plats du jeu avec l'image en attente (avant publish) : au plus kVideoLayers, dans
+    // l'ordre de la scène ; ceux qui ne peuvent pas être copiés sont omis.
+    void copyLayers(const VideoLayerSource* layers, int count);
     // Panneau dans la vidéo demandé par l'enregistreur (VideoOverlayMode) ; kVideoOverlayOff hors enregistrement.
     uint32_t overlayMode() const;
     // Image du panneau pour la vidéo : `width` x `height` pixels RGBA (alpha prémultiplié), lignes de
@@ -102,6 +116,12 @@ class VideoProducer {
     virtual uint64_t adapterLuid() = 0;
     // Format de la texture source (pour savoir s'il faut recréer les textures).
     virtual uint32_t sourceFormat(const VideoSource& source) = 0;
+    // Écrans plats : textures partagées de l'écran `layer` (kVideoSlots, nommées d'après `generation`), au
+    // format de la source ; libération (aussi faite par releaseResources) ; copie de plusieurs zones dans
+    // le slot `slot` de chacun (`layers[i]` : numéro de l'écran de `sources[i]`), puis `fenceValue` signalé.
+    virtual bool createLayerResources(int layer, const VideoSource& source, uint32_t generation, uint32_t& format) = 0;
+    virtual void releaseLayerResources(int layer) = 0;
+    virtual bool copyLayersTo(int slot, const VideoSource* sources, const int* layers, int count, uint64_t fenceValue) = 0;
 
     const uint32_t m_kind;
     bool m_failed = false;
@@ -111,6 +131,7 @@ class VideoProducer {
     void release(bool keepBlock);
     void fail();
     void writeGame();
+    void freeResources();
 
     std::wstring m_game;
     void* m_mapping = nullptr;
@@ -126,6 +147,13 @@ class VideoProducer {
     int m_latest = -1;             // slot de la dernière image publiée
     int m_pending = -1;            // slot copié, pas encore publié
     uint64_t m_pendingFrame = 0;
+    // Écrans plats : textures de chacun, et ceux copiés avec l'image en attente.
+    struct LayerTextures {
+        uint32_t generation = 0, width = 0, height = 0, format = 0, viewFormat = 0;
+    };
+    LayerTextures m_layer[kVideoLayers];
+    VideoLayerInfo m_pendingLayers[kVideoLayers] = {};
+    int m_pendingLayerCount = 0;
     int m_errors = 0;
 };
 

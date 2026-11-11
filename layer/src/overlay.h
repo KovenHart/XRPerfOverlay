@@ -119,6 +119,10 @@ class Overlay {
     // Calque accroché à une main : espace et pose, ou false s'il ne doit pas être affiché maintenant
     // (main non suivie, ou pas regardée en mode « seulement quand je la regarde »).
     enum class HandResult { NotOnHand, Show, Hide };
+    // Écrans plats du jeu (menus, HUD) soumis après la scène 3D : copiés avec l'image de l'œil.
+    void videoGameLayers(const XrFrameEndInfo& frameEndInfo, uint32_t projectionIndex, const XrCompositionLayerProjection& projection,
+                         const XrCompositionLayerProjectionView& view, uint32_t viewIndex, SwapchainRegistry& swapchains,
+                         PFN_xrEnumerateSwapchainImages enumerate);
     void videoPanelPlacement(const XrCompositionLayerProjection& projection, const XrCompositionLayerProjectionView& view, XrTime displayTime,
                              VideoFrameInfo& frame);
     HandResult handQuad(Anchor anchor, HandPlacement placement, float along, float lift, bool gazeOnly, XrTime displayTime, bool& looked,
@@ -261,6 +265,7 @@ class Overlay {
         uint32_t x = 0, y = 0, width = 0, height = 0;  // zone copiée : l'œil (vu aux dernières images)
     } m_videoTarget;
     double m_videoBoxSince = -1.0;  // début de la zone copiée actuelle (elle s'agrandit, puis repart de l'œil)
+    bool m_videoLayersLogged = false;  // écrans plats du jeu ajoutés à la vidéo : dit une fois
     XrSwapchain m_videoCopiedSwapchain = XR_NULL_HANDLE;  // copie en attente de publication : swapchain et image
     uint32_t m_videoCopiedIndex = 0;
     // Fil de xrEndFrame : en Direct3D 11, le contexte du jeu n'est utilisé que depuis ce fil.
