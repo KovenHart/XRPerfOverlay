@@ -679,7 +679,7 @@ class Recorder {
         int reason = mf ? kOk : kNoMediaFoundation;
         RecordLog("Demarrage (XRPerfRecord %s).", XRPO_VERSION_TEXT);
         try {
-            if (mf) reason = record();
+            if (mf) reason = GuardedRecord(this);
         } catch (...) {
             reason = kNoConversion;  // mémoire épuisée... : le fichier est terminé quand même
         }
@@ -705,6 +705,34 @@ class Recorder {
     }
 
     void alive() { m_block->recorderTickMs = GetTickCount64(); }
+
+    // Erreur grave dans l'enregistreur (accès mémoire...) : notée dans le journal (code, adresse dans la
+    // DLL) et l'enregistrement s'arrête, au lieu d'arrêter tout XRPerfSensors. Visual C++ seulement.
+#ifdef _MSC_VER
+    static int CrashFilter(EXCEPTION_POINTERS* info) {
+        const EXCEPTION_RECORD* r = info ? info->ExceptionRecord : nullptr;
+        HMODULE module = nullptr;
+        const void* address = r ? r->ExceptionAddress : nullptr;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, static_cast<LPCWSTR>(address), &module);
+        wchar_t name[MAX_PATH] = L"?";
+        if (module) GetModuleFileNameW(module, name, MAX_PATH);
+        const wchar_t* base = std::wcsrchr(name, L'\\');
+        RecordLog("Erreur grave 0x%08lx a %s+0x%llx : enregistrement arrete.", r ? static_cast<unsigned long>(r->ExceptionCode) : 0ul,
+                  Utf8(base ? base + 1 : name).c_str(),
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(module)));
+        return EXCEPTION_EXECUTE_HANDLER;
+    }
+
+    static int GuardedRecord(Recorder* self) {
+        __try {
+            return self->record();
+        } __except (CrashFilter(GetExceptionInformation())) {
+            return kNoConversion;
+        }
+    }
+#else
+    static int GuardedRecord(Recorder* self) { return self->record(); }
+#endif
 
     bool producerAlive() {
         const unsigned long long tick = GetTickCount64();
@@ -1099,13 +1127,10 @@ class Recorder {
         return reason;
     }
 
+    // Textures de l'œil et fence (celles des écrans plats ont leur propre génération : openLayer).
     void closeTextures() {
         for (Ptr<ID3D11Texture2D>& t : m_shared) t.reset();
         m_fence.reset();
-        for (GameLayer& l : m_layers) {
-            for (Ptr<ID3D11Texture2D>& t : l.shared) t.reset();
-            l.openGeneration = 0;
-        }
     }
 
     // Textures partagées d'un écran plat du jeu (une génération : une par slot).
@@ -1329,6 +1354,10 @@ class Recorder {
         for (GameLayer& l : m_layers) {
             if (!l.next || m_layerSlot < 0) continue;
             ID3D11Texture2D* source = l.shared[m_layerSlot].get();
+            if (!source) {
+                l.next = false;
+                continue;
+            }
             D3D11_TEXTURE2D_DESC ld;
             source->GetDesc(&ld);
             if (!l.priv || ld.Width != l.privWidth || ld.Height != l.privHeight || ld.Format != l.privFormat || l.nextViewFormat != l.privViewFormat) {
