@@ -121,6 +121,7 @@ namespace XRPerfSensors
             w.WriteNumber("VideoOverlaySize", d.VideoOverlaySize);
             w.WriteString("VideoStabilize", d.VideoStabilize);
             w.WriteBoolean("VideoLevel", d.VideoLevel);
+            w.WriteBoolean("VideoObs", d.VideoObs);
             w.WriteBoolean("VideoGameAudio", d.VideoGameAudio);
             w.WriteBoolean("VideoMic", d.VideoMic);
             w.WriteString("VideoRenderDevice", d.VideoRenderDevice);
@@ -320,6 +321,7 @@ namespace XRPerfSensors
                 case "VideoOverlayCorner": if (Array.IndexOf(Settings.VideoCorners, text) < 0) return Change.None; d.VideoOverlayCorner = text; return Change.Video;
                 case "VideoStabilize": if (Array.IndexOf(Settings.VideoStabilizations, text) < 0) return Change.None; d.VideoStabilize = text; return Change.Video;
                 case "VideoLevel": if (!Bool(v, out b)) return Change.None; d.VideoLevel = b; return Change.Video;
+                case "VideoObs": if (!Bool(v, out b)) return Change.None; d.VideoObs = b; return Change.Video;
                 case "VideoOverlaySize": if (!Int(v, Settings.MinVideoOverlaySize, Settings.MaxVideoOverlaySize, out i)) return Change.None; d.VideoOverlaySize = i; return Change.Video;
                 case "VideoEye": if (!Int(v, 0, 1, out i)) return Change.None; d.VideoEye = i; return Change.Video;
                 case "VideoAspect": if (Array.IndexOf(Settings.VideoAspects, text) < 0) return Change.None; d.VideoAspect = text; return Change.Video;

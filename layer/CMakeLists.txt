@@ -124,6 +124,44 @@ else()
     target_link_options(XRPerfRecord PRIVATE -static)
 endif()
 
+# xrperf-obs.dll : source OBS « XR Perf (casque) » (plugin pour OBS Studio 30 et plus, layer/obs/). Demande
+# les en-têtes de libobs (dossier libobs des sources d'OBS Studio : -DXRPO_OBS_DIR=...) ; sans eux, pas
+# construit. La bibliothèque d'import de obs.dll est tirée de la liste des fonctions utilisées (obs/obs.def).
+set(XRPO_OBS_DIR "" CACHE PATH "Dossier libobs des sources d'OBS Studio (en-tetes), pour xrperf-obs.dll")
+if(XRPO_OBS_DIR AND EXISTS "${XRPO_OBS_DIR}/obs-module.h")
+    set(obs_import_dir "${CMAKE_CURRENT_BINARY_DIR}/obs-import")
+    file(MAKE_DIRECTORY "${obs_import_dir}")
+    if(MSVC)
+        set(obs_import "${obs_import_dir}/obs.lib")
+        add_custom_command(OUTPUT "${obs_import}"
+            COMMAND "${CMAKE_AR}" /nologo "/def:${CMAKE_CURRENT_SOURCE_DIR}/obs/obs.def" /machine:x64 "/out:${obs_import}"
+            DEPENDS obs/obs.def)
+    else()
+        find_program(XRPO_DLLTOOL NAMES llvm-dlltool x86_64-w64-mingw32-dlltool dlltool REQUIRED)
+        set(obs_import "${obs_import_dir}/libobs.dll.a")
+        add_custom_command(OUTPUT "${obs_import}"
+            COMMAND "${XRPO_DLLTOOL}" -m i386:x86-64 -d "${CMAKE_CURRENT_SOURCE_DIR}/obs/obs.def" -l "${obs_import}"
+            DEPENDS obs/obs.def)
+    endif()
+    add_custom_target(xrperf_obs_import DEPENDS "${obs_import}")
+    add_library(xrperf-obs MODULE obs/xrperf_obs.cpp)
+    add_dependencies(xrperf-obs xrperf_obs_import)
+    target_include_directories(xrperf-obs PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    target_include_directories(xrperf-obs SYSTEM PRIVATE "${XRPO_OBS_DIR}")
+    target_compile_definitions(xrperf-obs PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _WIN32_WINNT=0x0A00)
+    target_link_libraries(xrperf-obs PRIVATE "${obs_import}" d3d11 dxgi advapi32)
+    set_target_properties(xrperf-obs PROPERTIES PREFIX "")
+    if(MSVC)
+        target_compile_options(xrperf-obs PRIVATE /W3 /utf-8 /EHsc)
+    else()
+        target_compile_options(xrperf-obs PRIVATE -Wall -Wextra -Wno-missing-field-initializers)
+        target_link_options(xrperf-obs PRIVATE -static)
+    endif()
+    message(STATUS "xrperf-obs.dll : en-tetes de libobs dans ${XRPO_OBS_DIR}")
+else()
+    message(STATUS "xrperf-obs.dll non construite (XRPO_OBS_DIR : dossier libobs des sources d'OBS Studio)")
+endif()
+
 if(XRPO_BUILD_TESTS)
     add_executable(xrpo_preview ../tests/preview.cpp src/panel.cpp src/preview_api.cpp)
     if(MSVC)

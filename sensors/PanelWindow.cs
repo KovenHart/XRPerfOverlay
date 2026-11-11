@@ -570,6 +570,7 @@ namespace XRPerfSensors
         public int VideoOverlaySize = 30;
         public string VideoStabilize = "off";
         public bool VideoLevel;                // horizon droit
+        public bool VideoObs = true;           // image donnée à la source OBS « XR Perf (casque) » quand elle est affichée
         public bool VideoGameAudio = true;
         public bool VideoMic;
         public string VideoRenderDevice = "";  // identifiant Windows de la sortie audio enregistrée ("" : celle par défaut)
@@ -667,6 +668,7 @@ namespace XRPerfSensors
                         case "video_eye": if (value == 0 || value == 1) settings.VideoEye = value; break;
                         case "video_field": if (value >= MinVideoField && value <= 100) settings.VideoField = value; break;
                         case "video_level": settings.VideoLevel = value != 0; break;
+                        case "video_obs": settings.VideoObs = value != 0; break;
                         case "video_overlay_size": if (value >= MinVideoOverlaySize && value <= MaxVideoOverlaySize) settings.VideoOverlaySize = value; break;
                         case "video_game_audio": settings.VideoGameAudio = value != 0; break;
                         case "video_mic": settings.VideoMic = value != 0; break;
@@ -749,6 +751,7 @@ namespace XRPerfSensors
                     "video_overlay_size=" + VideoOverlaySize.ToString(CultureInfo.InvariantCulture),
                     "video_stabilize=" + VideoStabilize,
                     "video_level=" + (VideoLevel ? 1 : 0),
+                    "video_obs=" + (VideoObs ? 1 : 0),
                     "video_game_audio=" + (VideoGameAudio ? 1 : 0),
                     "video_mic=" + (VideoMic ? 1 : 0),
                     "video_render_device=" + OneLine(VideoRenderDevice),

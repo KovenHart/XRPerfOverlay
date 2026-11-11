@@ -450,6 +450,7 @@ namespace XRPerfSensors
                 RefreshTooltip();
                 UpdateVrCompanion(); // relance XRPerfVR s'il s'est arrêté
                 UpdateCapture();     // capture de fenêtre demandée (ou plus) par un jeu VR
+                UpdateObs();         // image pour la source OBS, tant qu'elle est affichée
                 if (_video != null && _main != null && !_main.IsDisposed) _main.PostVideo();
                 if (_videoItem != null && _video != null) _videoItem.Checked = _video.Busy;
             };
@@ -485,7 +486,7 @@ namespace XRPerfSensors
             if (_video == null) return Loc.T("Enregistrement vidéo indisponible.", "Video recording unavailable.");
             if (!VideoEnabled)
                 return Loc.T("L'enregistrement vidéo est désactivé (page Vidéo).", "Video recording is turned off (Video page).");
-            string refused = _video.Start(_settings, _overlay);
+            string refused = _video.Start(_settings, _overlay, ObsWanted);
             if (_main != null && !_main.IsDisposed) _main.PostVideo();
             if (refused != null && (_main == null || _main.IsDisposed || !_main.Visible))
                 _icon.ShowBalloonTip(6000, "XRPerfSensors", refused, ToolTipIcon.Warning);
@@ -508,6 +509,45 @@ namespace XRPerfSensors
         {
             SaveDesktopSoon();
             UpdateVideoHotkey();
+            ObsSettingsChanged();
+        }
+
+        // --- Source OBS ---------------------------------------------------------------------------------
+        // Le plugin xrperf-obs.dll note sa présence tant que la source « XR Perf (casque) » est affichée dans
+        // OBS. Hors enregistrement, l'enregistreur tourne alors pour OBS seulement (sans fichier ni son) ;
+        // un enregistrement donne aussi l'image à OBS. Réglages changés : image pour OBS relancée (une seconde
+        // après le dernier changement, pour ne pas la relancer à chaque cran d'un curseur).
+
+        private long _obsRetryAt, _obsRestartAt;
+        private string _obsImage = "";
+
+        /// <summary>Source OBS affichée récemment et réglage permis : l'image lui est donnée.</summary>
+        public bool ObsWanted { get { return _video != null && VideoEnabled && _settings.VideoObs && _video.ObsSourceAgeMs < 3000; } }
+
+        /// <summary>Réglages de la vidéo ou des filtres changés : l'image pour OBS seule sera relancée.</summary>
+        public void ObsSettingsChanged()
+        {
+            if (_video != null && _video.ObsOnlyRunning) _obsRestartAt = Environment.TickCount64 + 1000;
+        }
+
+        private void UpdateObs()
+        {
+            if (_video == null || _video.Busy) return;  // enregistrement : l'image pour OBS a été décidée au départ
+            long now = Environment.TickCount64;
+            bool running = _video.ObsOnlyRunning;
+            // Source cachée depuis 10 s (changement de scène bref toléré), réglage coupé : arrêt.
+            bool keep = VideoEnabled && _settings.VideoObs && _video.ObsSourceAgeMs < 10000;
+            if (running && (!keep || (_obsRestartAt != 0 && now >= _obsRestartAt)))
+            {
+                _video.StopObsOnly();
+                running = false;
+                _obsRestartAt = 0;
+            }
+            if (!running && ObsWanted && now >= _obsRetryAt)
+            {
+                string refused = _video.StartObsOnly(_settings, _overlay);
+                if (refused != null) _obsRetryAt = now + 5000;
+            }
         }
 
         // Raccourci présent tant que la fonction est permise.
@@ -700,6 +740,13 @@ namespace XRPerfSensors
             UpdateVrCompanion();
             UpdateCapture();
             UpdateVideoHotkey();
+            // Filtres d'image changés : l'image pour OBS seule les reprend.
+            string image = string.Join(",", _overlay.ImageValues()) + "," + _overlay.ImageSharpenLimit + "," + _overlay.ImageSharpenRadius;
+            if (image != _obsImage)
+            {
+                _obsImage = image;
+                ObsSettingsChanged();
+            }
             _overlayDirty = true;
             _saveTimer.Stop();
             _saveTimer.Start();

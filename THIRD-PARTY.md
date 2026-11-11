@@ -68,6 +68,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
+## libobs (OBS Studio), en-têtes seulement (`layer/obs/`)
+
+La source OBS `xrperf-obs.dll` est compilée avec les en-têtes de libobs (OBS Studio 30.0,
+https://github.com/obsproject/obs-studio, licence GPL-2.0-or-later), récupérés à la compilation, et chargée par
+OBS Studio. Son code (`layer/obs/xrperf_obs.cpp`, licence MIT, compatible avec la GPL) n'inclut aucun fichier
+d'OBS ; la bibliothèque d'import de `obs.dll` est produite depuis la liste des fonctions utilisées
+(`layer/obs/obs.def`).
+
 ## LibreHardwareMonitorLib
 
 Bibliothèque de lecture des capteurs utilisée par `sensors/` (téléchargée par NuGet à la compilation, version 0.9.6).

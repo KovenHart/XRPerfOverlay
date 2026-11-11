@@ -87,6 +87,9 @@ off and back on to compare.
 
 Every hotkey can be changed on the Hotkeys page of XRPerfSensors.
 
+Streaming: with OBS Studio 30 or later installed, Installer.bat adds the "XR Perf (headset)"
+source to OBS: the same image as the video, straight through the graphics card.
+
 Language: French or English for everything (window, icon menu, panel and watch in the headset,
 reports). By default, the Windows language. Change it on the Interface page.
 

@@ -280,10 +280,12 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
     // Première scène 3D de l'image ; avec quatre vues (rendu fovéal), les deux premières sont l'image
     // large de chaque œil.
     const XrCompositionLayerProjection* projection = nullptr;
+    uint32_t projectionIndex = 0;
     for (uint32_t i = 0; i < frameEndInfo.layerCount && i < 64; ++i) {
         const XrCompositionLayerBaseHeader* layer = frameEndInfo.layers[i];
         if (layer && layer->type == XR_TYPE_COMPOSITION_LAYER_PROJECTION) {
             projection = reinterpret_cast<const XrCompositionLayerProjection*>(layer);
+            projectionIndex = i;
             break;
         }
     }
@@ -343,6 +345,7 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
                     imageLater = m_imageActive && m_imageFilter && !m_imageFilter->failed() && m_imageBelowVideo.load(std::memory_order_relaxed);
                 }
                 frame.imageState = m_videoCopiedFiltered ? kVideoImageFiltered : (imageLater ? kVideoImageLater : kVideoImageNone);
+                videoGameLayers(frameEndInfo, projectionIndex, *projection, view, viewIndex, swapchains, enumerate);
                 videoPanelPlacement(*projection, view, frameEndInfo.displayTime, frame);
                 m_video->publish(frame);
             }
@@ -370,6 +373,100 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
     m_videoTarget.y = static_cast<uint32_t>(cy0);
     m_videoTarget.width = static_cast<uint32_t>(cx1 - cx0);
     m_videoTarget.height = static_cast<uint32_t>(cy1 - cy0);
+}
+
+namespace {
+Pose ToPose(const XrPosef& p) {
+    Pose r;
+    r.position = {p.position.x, p.position.y, p.position.z};
+    r.orientation = {p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w};
+    return r;
+}
+}  // namespace
+
+// Menus et HUD du jeu : le runtime superpose ces écrans plats à la scène (couches « quad », ou « cylinder »
+// ramenées à leur corde), ils ne sont donc pas dans l'image de l'œil. Chacun est copié (dernière image rendue
+// de sa swapchain, déjà rendue au runtime et intacte jusqu'à ce que le jeu la reprenne, après cet appel)
+// avec ses coins dans le repère de l'œil enregistré. Nos propres calques ne passent pas par nos fonctions
+// de création de swapchain : absents du registre, donc ignorés ici.
+void Overlay::videoGameLayers(const XrFrameEndInfo& frameEndInfo, uint32_t projectionIndex, const XrCompositionLayerProjection& projection,
+                              const XrCompositionLayerProjectionView& view, uint32_t viewIndex, SwapchainRegistry& swapchains,
+                              PFN_xrEnumerateSwapchainImages enumerate) {
+    VideoLayerSource layers[kVideoLayers];
+    int count = 0;
+    const Pose eyeFromScene = Inverse(ToPose(view.pose));
+    for (uint32_t i = projectionIndex + 1; i < frameEndInfo.layerCount && i < 64 && count < kVideoLayers; ++i) {
+        const XrCompositionLayerBaseHeader* layer = frameEndInfo.layers[i];
+        if (!layer) continue;
+        XrSpace space = XR_NULL_HANDLE;
+        XrEyeVisibility visibility = XR_EYE_VISIBILITY_BOTH;
+        XrSwapchainSubImage sub = {};
+        Pose local;  // centre de l'écran dans son repère
+        float width = 0.f, height = 0.f;
+        if (layer->type == XR_TYPE_COMPOSITION_LAYER_QUAD) {
+            const auto* quad = reinterpret_cast<const XrCompositionLayerQuad*>(layer);
+            space = quad->space;
+            visibility = quad->eyeVisibility;
+            sub = quad->subImage;
+            local = ToPose(quad->pose);
+            width = quad->size.width;
+            height = quad->size.height;
+        } else if (layer->type == XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR) {
+            const auto* cylinder = reinterpret_cast<const XrCompositionLayerCylinderKHR*>(layer);
+            if (!(cylinder->radius > 0.f) || !(cylinder->centralAngle > 0.f) || !(cylinder->aspectRatio > 0.f)) continue;
+            space = cylinder->space;
+            visibility = cylinder->eyeVisibility;
+            sub = cylinder->subImage;
+            // Corde de l'arc vu depuis l'axe (devant, à -z) : même bords que l'écran courbe.
+            const float half = 0.5f * (cylinder->centralAngle < 6.2f ? cylinder->centralAngle : 6.2f);
+            width = 2.f * cylinder->radius * std::sin(half);
+            height = cylinder->radius * cylinder->centralAngle / cylinder->aspectRatio;
+            Pose front;
+            front.position = {0.f, 0.f, -cylinder->radius * std::cos(half)};
+            local = Compose(ToPose(cylinder->pose), front);
+        } else {
+            continue;
+        }
+        if ((visibility == XR_EYE_VISIBILITY_LEFT && viewIndex != 0) || (visibility == XR_EYE_VISIBILITY_RIGHT && viewIndex != 1)) continue;
+        if (!(width > 0.f) || !(height > 0.f)) continue;
+        SwapchainRegistry::Info info;
+        if (!swapchains.lookup(sub.swapchain, info) || info.sampleCount > 1 || info.released < 0) continue;
+        if (!info.imagesRead) readImages(swapchains, sub.swapchain, info, enumerate);
+        if (info.released >= static_cast<int64_t>(info.images.size()) || !info.images[static_cast<size_t>(info.released)]) continue;
+        const XrRect2Di rect = sub.imageRect;
+        const int64_t x0 = rect.offset.x < 0 ? 0 : rect.offset.x, y0 = rect.offset.y < 0 ? 0 : rect.offset.y;
+        const int64_t x1 = std::min<int64_t>(info.width, static_cast<int64_t>(rect.offset.x) + rect.extent.width);
+        const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(rect.offset.y) + rect.extent.height);
+        if (x1 - x0 < 4 || y1 - y0 < 4) continue;
+        // Repère de l'écran -> scène (celui de la couche projetée) -> œil.
+        Pose inScene = local;
+        if (space != projection.space) {
+            if (!m_next.LocateSpace || space == XR_NULL_HANDLE) continue;
+            XrSpaceLocation location = {XR_TYPE_SPACE_LOCATION};
+            const XrSpaceLocationFlags needed = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+            if (XR_FAILED(m_next.LocateSpace(space, projection.space, frameEndInfo.displayTime, &location)) || (location.locationFlags & needed) != needed)
+                continue;
+            inScene = Compose(ToPose(location.pose), local);
+        }
+        VideoLayerSource& l = layers[count];
+        QuadCorners(Compose(eyeFromScene, inScene), width, height, l.corners);
+        const uint32_t slice = sub.imageArrayIndex < info.arraySize ? sub.imageArrayIndex : 0;
+        l.source.texture = info.images[static_cast<size_t>(info.released)];
+        l.source.subresource = slice * info.mipCount;
+        l.source.x = static_cast<uint32_t>(x0);
+        l.source.y = static_cast<uint32_t>(y0);
+        l.source.width = static_cast<uint32_t>(x1 - x0);
+        l.source.height = static_cast<uint32_t>(y1 - y0);
+        l.viewFormat = info.format;
+        l.flags = ((layer->layerFlags & XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT) ? kVideoLayerAlpha : 0u) |
+                  ((layer->layerFlags & XR_COMPOSITION_LAYER_UNPREMULTIPLIED_ALPHA_BIT) ? kVideoLayerUnpremultiplied : 0u);
+        ++count;
+    }
+    if (count > 0 && !m_videoLayersLogged) {
+        m_videoLayersLogged = true;
+        Log("Video : %d ecran(s) plat(s) du jeu (menus, HUD) ajoute(s) a l'image.", count);
+    }
+    m_video->copyLayers(layers, count);
 }
 
 // Où le panneau se trouve dans l'image de l'œil enregistré : coins du calque dessiné à cette image, ramenés

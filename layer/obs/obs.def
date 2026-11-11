@@ -1,0 +1,23 @@
+; Fonctions de obs.dll (OBS Studio 30 et plus) utilisées par xrperf-obs.dll : la bibliothèque d'import en
+; est tirée à la compilation (layer/CMakeLists.txt), sans avoir à construire OBS.
+LIBRARY obs.dll
+EXPORTS
+    blog
+    gs_copy_texture
+    gs_get_device_obj
+    gs_texture_acquire_sync
+    gs_texture_create
+    gs_texture_destroy
+    gs_texture_get_color_format
+    gs_texture_get_height
+    gs_texture_get_width
+    gs_texture_open_shared
+    gs_texture_release_sync
+    obs_enter_graphics
+    obs_get_locale
+    obs_leave_graphics
+    obs_properties_add_text
+    obs_properties_create
+    obs_register_source_s
+    obs_source_draw
+    obs_source_showing

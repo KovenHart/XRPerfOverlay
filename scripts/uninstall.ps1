@@ -37,6 +37,16 @@ try {
         Write-Host (T "Tâche planifiée 'XRPerfSensors' supprimée." "Scheduled task 'XRPerfSensors' removed.") -ForegroundColor Green
     }
     Get-Process -Name 'XRPerfSensors' -ErrorAction SilentlyContinue | Stop-Process -Force
+    # Source OBS (plugin copié par Installer.bat) : retirée d'OBS Studio.
+    $obsPlugin = Join-Path (Join-Path (Join-Path $env:ProgramData 'obs-studio') 'plugins') 'xrperf-obs'
+    if (Test-Path -LiteralPath $obsPlugin) {
+        try {
+            Remove-Item -LiteralPath $obsPlugin -Recurse -Force
+            Write-Host (T "Source OBS retirée d'OBS Studio." "OBS source removed from OBS Studio.") -ForegroundColor Green
+        } catch {
+            Write-Host (T "Source OBS non retirée (OBS Studio est ouvert ?) : supprimez $obsPlugin à la main." "OBS source not removed (is OBS Studio open?): delete $obsPlugin by hand.") -ForegroundColor Yellow
+        }
+    }
     # XRPerfVR s'arrête de lui-même avec XRPerfSensors, après avoir terminé son rapport.
     foreach ($process in @(Get-Process -Name 'XRPerfVR' -ErrorAction SilentlyContinue)) {
         try { if (-not $process.WaitForExit(5000)) { $process.Kill() } } catch { }

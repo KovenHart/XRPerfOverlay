@@ -466,6 +466,10 @@ namespace XRPerfSensors
                 w.WriteBoolean("hotkeyOk", _app.VideoHotkeyOk);
                 w.WriteString("hotkeyText", _app.VideoHotkeyText);
                 w.WriteString("folder", _app.Desktop.VideoFolderOrDefault);
+                // Source OBS : plugin installé, source affichée dans OBS, image donnée.
+                w.WriteBoolean("obsPlugin", VideoRecorder.ObsPluginInstalled);
+                w.WriteBoolean("obsShown", video != null && video.ObsSourceAgeMs < 3000);
+                w.WriteBoolean("obsFed", video != null && video.ObsFed);
             }));
         }
 

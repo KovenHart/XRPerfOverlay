@@ -41,12 +41,13 @@
     CaptureFps: 5, CaptureOpacity: 100, CropLeft: 0, CropTop: 0, CropRight: 0, CropBottom: 0,
     UiTheme: params.get("theme") || "panel", UiBackground: "#12161c", UiText: "#eef2f7", UiAccent: "#f2a65a", UiScale: 100, UiAnimations: true, UiStartFullscreen: false,
     Language: params.get("lang") || "auto",
-    VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30, VideoStabilize: "light", VideoLevel: false,
+    VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30, VideoStabilize: "light", VideoLevel: false, VideoObs: true,
     VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoHotkey: (3 << 16) | 86,
   };
   // Enregistrement vidéo simulé : ?video=rec (en cours), wait (en attente d'un jeu), error (dernière fin sur erreur), off.
   const video = { available: true, codecs: params.get("codecs") != null ? Number(params.get("codecs")) : 7, state: 0, seconds: 0, bytes: 0, frames: 0, repeated: 0, dropped: 0,
-    audio: 0, file: "", game: "", encoder: "", reason: "", hotkeyOk: params.get("hotkey") !== "taken", folder: desktop.VideoFolder };
+    audio: 0, file: "", game: "", encoder: "", reason: "", hotkeyOk: params.get("hotkey") !== "taken", folder: desktop.VideoFolder,
+    obsPlugin: params.get("obs") !== "missing", obsShown: params.get("obs") === "shown" || params.get("obs") === "fed", obsFed: params.get("obs") === "fed" };
   if (params.get("video") === "rec") Object.assign(video, { state: 2, seconds: 754, bytes: 3.71e9, audio: 3, game: "GothicRemake-Win64-Shipping", encoder: "NVIDIA HEVC Encoder MFT" });
   if (params.get("video") === "wait") video.state = 1;
   if (params.get("video") === "error") video.reason = "Le jeu s'est arrêté : le fichier a été terminé.";

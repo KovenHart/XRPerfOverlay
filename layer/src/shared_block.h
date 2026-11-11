@@ -173,8 +173,8 @@ constexpr size_t kWindowShareBytes = sizeof(WindowShareHeader) + static_cast<siz
 //    encodage par l'enregistreur.
 constexpr wchar_t kVideoShareName[] = L"Local\\XRPerfOverlay.Video";
 constexpr uint32_t kVideoShareMagic = 0x56505258;  // "XRPV"
-constexpr uint32_t kVideoShareVersion = 4;  // 2 : textures de la taille de la swapchain, infos par texture ; 3 : panneau dans la vidéo ;
-                                           // 4 : orientation de l'œil et de la tête (stabilisation)
+constexpr uint32_t kVideoShareVersion = 5;  // 2 : textures de la taille de la swapchain, infos par texture ; 3 : panneau dans la vidéo ;
+                                           // 4 : orientation de l'œil et de la tête (stabilisation) ; 5 : écrans plats du jeu
 constexpr int kVideoSlots = 3;  // textures partagées : la plus récente, une en lecture, une en écriture
 
 // Panneau de performances dans la vidéo (overlay, demandé par l'enregistreur) : un jeu OpenXR ne met pas le
@@ -192,6 +192,33 @@ constexpr uint32_t kVideoPanelShown = 1, kVideoPanelPlaced = 2;
 // vidéo n'en reçoit que si l'enregistreur les applique lui-même, mode « vidéo seulement ») ; image déjà
 // filtrée ; filtres appliqués plus bas dans la chaîne que la copie (l'enregistreur les applique).
 enum VideoImageState : uint32_t { kVideoImageNone = 0, kVideoImageFiltered = 1, kVideoImageLater = 2 };
+
+// Écrans plats du jeu (menus, HUD : couches « quad » ou « cylinder » d'OpenXR, que le runtime superpose à
+// la scène) : copiés à chaque image avec celle de l'œil, chacun dans ses propres textures partagées (une
+// par slot, nommées comme celles de l'œil avec leur propre génération), puis dessinés à leur place par
+// l'enregistreur. Jusqu'à kVideoLayers par image, dans l'ordre où le jeu les soumet.
+constexpr int kVideoLayers = 4;
+// VideoLayerInfo.flags : alpha de la texture utilisé (sinon opaque) ; couleurs non prémultipliées par l'alpha.
+constexpr uint32_t kVideoLayerAlpha = 1, kVideoLayerUnpremultiplied = 2;
+
+// Textures d'un écran plat (une génération = kVideoSlots textures de cette taille et de ce format).
+struct VideoLayerTexture {
+    uint32_t generation;  // 0 : pas de textures
+    uint32_t width, height;
+    uint32_t format;      // format des textures (peut être « typeless »)
+    uint32_t viewFormat;  // format de lecture (celui de la swapchain : _SRGB ou non)
+    uint32_t reserved[3];
+};                        // 32 octets
+
+// Un écran plat dans une image (par slot, sous la même protection que la texture de l'œil).
+struct VideoLayerInfo {
+    uint32_t generation;     // textures de l'écran (VideoLayerTexture.generation) ; 0 : absent de cette image
+    uint32_t flags;          // kVideoLayerAlpha, kVideoLayerUnpremultiplied
+    uint32_t width, height;  // partie copiée (en haut à gauche de la texture)
+    float corners[12];       // coins (haut gauche, haut droit, bas gauche, bas droit) dans le repère de l'œil, en mètres
+};                           // 64 octets
+
+static_assert(sizeof(VideoLayerTexture) == 32 && sizeof(VideoLayerInfo) == 64, "disposition fixe");
 
 // Qui fournit les images (producerKind).
 enum VideoProducerKind : uint32_t { kVideoNone = 0, kVideoOpenXrD3D11 = 1, kVideoOpenXrD3D12 = 2, kVideoSteamVr = 3 };
@@ -253,11 +280,14 @@ struct VideoShareHeader {
     uint32_t panelWidth;         // 680 : taille de l'image du panneau (0 : pas d'image)
     uint32_t panelHeight;        // 684
     uint32_t reserved2[4];       // 688
-};                               // 704 octets, puis (à kVideoPanelOffset) l'image du panneau : panelWidth x
+    // --- Écrans plats du jeu (version 5) ---------------------------------------------------------
+    VideoLayerTexture layerTextures[kVideoLayers];           // 704
+    VideoLayerInfo layers[kVideoSlots][kVideoLayers];        // 832
+};                               // 1600 octets, puis (à kVideoPanelOffset) l'image du panneau : panelWidth x
                                  // panelHeight pixels RGBA 8 bits (sRGB, alpha prémultiplié, opacité du casque),
                                  // lignes de kVideoPanelMaxWidth pixels
 
-static_assert(sizeof(VideoShareHeader) == 704, "la disposition doit rester identique a celle de VideoRecorder.cs");
+static_assert(sizeof(VideoShareHeader) == 1600, "la disposition doit rester identique a celle de VideoRecorder.cs");
 static_assert(sizeof(VideoShareHeader) <= kVideoPanelOffset, "l'image du panneau suit l'en-tete");
 inline uint64_t VideoLatest(uint64_t frame, int slot) { return (frame << 2) | static_cast<uint64_t>(slot & 3); }
 inline uint64_t VideoLatestFrame(uint64_t latest) { return latest >> 2; }
@@ -292,5 +322,35 @@ inline void VideoTextureName(wchar_t* out, size_t capacity, uint32_t pid, uint32
     }
     out[n < capacity ? n : capacity - 1] = L'\0';
 }
+
+// --- Source OBS ------------------------------------------------------------------------------------
+// Image de la vidéo (œil cadré, stabilisé, filtres, panneau) donnée au plugin OBS xrperf-obs.dll (obs/),
+// sans encodage. Le plugin note sa présence tant que la source « XR Perf (casque) » est affichée ;
+// XRPerfSensors fait alors tourner l'enregistreur sans fichier (ou en plus d'un enregistrement), qui
+// recopie chaque image dans une texture Direct3D 11 partagée (ancien partage par poignée globale, verrou
+// « keyed mutex » : l'enregistreur prend la clé 0 et rend la clé 1, le plugin prend 1 et rend 0).
+// Créé par XRPerfSensors ou par le plugin, le premier des deux (même descripteur de sécurité).
+constexpr wchar_t kObsShareName[] = L"Local\\XRPerfOverlay.Obs";
+constexpr uint32_t kObsShareMagic = 0x4F505258;  // "XRPO"
+constexpr uint32_t kObsShareVersion = 1;
+constexpr uint32_t kObsShareBytes = 128;
+
+struct ObsShare {
+    uint32_t magic;            // 0
+    uint32_t version;          // 4
+    uint64_t consumerTickMs;   // 8  : GetTickCount64() du plugin, renouvelé tant que la source est affichée
+    uint64_t producerTickMs;   // 16 : GetTickCount64() de l'enregistreur à la dernière image donnée (0 : rien)
+    uint32_t handle;           // 24 : poignée partagée de la texture (R8G8B8A8, sRGB encodé ; 0 : aucune)
+    uint32_t width;            // 28
+    uint32_t height;           // 32
+    uint32_t generation;       // 36 : change quand la texture est recréée
+    uint64_t adapterLuid;      // 40 : carte graphique de la texture (LowPart | HighPart << 32)
+    uint32_t consumerPid;      // 48 : OBS
+    uint32_t producerPid;      // 52 : XRPerfSensors
+    uint32_t consumerVersion;  // 56 : version du plugin (majeur << 16 | mineur << 8 | correctif)
+    uint32_t reserved[17];     // 60
+};                             // 128 octets
+
+static_assert(sizeof(ObsShare) == kObsShareBytes, "disposition fixe (ObsOutput.cs, obs/xrperf_obs.cpp)");
 
 }  // namespace xrpo

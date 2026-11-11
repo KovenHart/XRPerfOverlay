@@ -89,6 +89,9 @@ rétablit tous les filtres pour comparer.
 
 Tous les raccourcis se changent dans la page Raccourcis de XRPerfSensors.
 
+Streaming : avec OBS Studio 30 ou plus installé, Installer.bat ajoute à OBS la source
+« XR Perf (casque) » : la même image que la vidéo, directement par la carte graphique.
+
 Langue : français ou anglais pour tout (fenêtre, menu de l'icône, panneau et montre dans le casque,
 rapports). Par défaut, celle de Windows. À changer dans la page Interface.
 

@@ -1308,6 +1308,10 @@ window.App = (function () {
         hotkeyRow(),
         folderRow,
       ], videoEnabled),
+      group(t("vid.obs"), t("vid.obs.help"), [
+        switchCtl("desktop", "VideoObs", t("vid.obs.enable"), t("vid.obs.enable.help")),
+        row(t("vid.obs.state"), null, h("span", { class: "row-help", id: "obs-state", "aria-live": "polite" }), { enabled: () => !!get("desktop", "VideoObs") }),
+      ], videoEnabled),
     ];
     settingsLayout(page, form, null);
     refreshers.push(updateVideo);
@@ -1321,6 +1325,9 @@ window.App = (function () {
     const folder = document.getElementById("video-folder");
     const v = state.video || { state: 0, available: true };
     if (folder) folder.textContent = get("desktop", "VideoFolder") || v.folder || "";
+    const obs = document.getElementById("obs-state");
+    if (obs) obs.textContent = !get("desktop", "VideoObs") ? t("vid.obs.state.off") : v.obsShown ? t(v.obsFed ? "vid.obs.state.fed" : "vid.obs.state.waiting")
+      : v.obsPlugin ? t("vid.obs.state.notShown") : t("vid.obs.state.missing");
     if (!card) return;
     const enabled = videoEnabled();
     const key = get("desktop", "VideoHotkey");

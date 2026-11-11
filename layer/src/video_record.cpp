@@ -9,6 +9,10 @@
 // 3. Son : WASAPI, son du PC en boucle (« loopback ») et micro, chacun en option, remis sur une même
 //    ligne de temps (video_math.h, AudioTimeline) puis encodés en AAC.
 //
+// 4. Source OBS (option `obs`) : l'image finale (cadrée, filtres, panneau) est aussi recopiée dans une
+//    texture partagée que lit le plugin xrperf-obs.dll (obs/). Sans `encode`, rien n'est écrit : ni
+//    fichier, ni son, ni témoin REC dans le casque (image pour OBS seulement).
+//
 // Horloge commune : QueryPerformanceCounter. La vidéo a une cadence fixe : à chaque instant prévu, la
 // dernière image reçue est encodée (répétée si le jeu n'en a pas fourni de nouvelle).
 
@@ -77,6 +81,8 @@ struct XrprOptions {
     int32_t imageMode, imageSharpen, imageSharpness, imageBrightness, imageContrast, imageSaturation;
     int32_t imageVibrance, imageGamma, imageShadows, imageTemperature, imageDeband, imageColorblind;
     int32_t imageHdr, imageSharpenLimit, imageSharpenRadius;
+    uint32_t encode;        // 1 : fichier MP4 (enregistrement) ; 0 : image pour OBS seulement
+    uint32_t obs;           // 1 : image donnée à la source OBS (bloc Local\XRPerfOverlay.Obs)
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
     wchar_t captureDevice[256];  // micro ("" : celui par défaut)
@@ -269,6 +275,7 @@ cbuffer Params : register(b0) {
     float4 cameraTan;  // bords de la vidéo, en tangentes dans le repère de la caméra (gauche, droite, haut, bas)
     float4 eyeTan;     // bords de l'image de l'œil, en tangentes (gauche, droite, haut, bas)
     float4 eyeRect;    // partie de la texture qui contient l'œil (coordonnées 0 à 1 : origine, taille)
+    float4 layerMode;  // écran plat du jeu : x = 1 si son alpha compte, y = 1 si couleurs non prémultipliées
 };
 Texture2D image : register(t0);
 SamplerState linearClamp : register(s0);
@@ -316,6 +323,15 @@ float4 PsPanel(VsOut i) : SV_Target {
     return image.SampleLevel(linearClamp, i.uv, 0);  // alpha prémultiplié, comme le runtime l'affiche
 }
 
+// Écran plat du jeu (menu, HUD) : comme le panneau, en suivant ses indications d'alpha (OpenXR : sans
+// « source alpha », opaque ; couleurs non prémultipliées à multiplier par l'alpha).
+float4 PsLayer(VsOut i) : SV_Target {
+    float4 c = image.SampleLevel(linearClamp, i.uv, 0);
+    if (layerMode.x < 0.5) return float4(c.rgb, 1.0);
+    if (layerMode.y > 0.5) c.rgb *= c.a;
+    return c;
+}
+
 // 3. Conversion RVB -> YUV 4:2:0 (BT.709, plage limitée), à partir de l'image encodée en sRGB.
 float luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
@@ -341,6 +357,7 @@ struct ShaderParams {
     float cameraTan[4];
     float eyeTan[4];
     float eyeRect[4];
+    float layerMode[4];
 };
 static_assert(sizeof(ShaderParams) % 16 == 0, "tampon de constantes : multiple de 16 octets");
 
@@ -566,6 +583,32 @@ class DeviceLock {
     ID3D11Multithread* m_m;
 };
 
+// Écrans plats du jeu (menus, HUD) : textures partagées, notre copie, et où les dessiner.
+struct GameLayer {
+    Ptr<ID3D11Texture2D> shared[kVideoSlots];
+    uint32_t openGeneration = 0;
+    Ptr<ID3D11Texture2D> priv;
+    Ptr<ID3D11ShaderResourceView> view;
+    uint32_t privWidth = 0, privHeight = 0, privViewFormat = 0;
+    DXGI_FORMAT privFormat = DXGI_FORMAT_UNKNOWN;
+    bool next = false;  // présent dans l'image en cours de lecture
+    uint32_t nextFlags = 0, nextWidth = 0, nextHeight = 0, nextViewFormat = 0;
+    float nextCorners[12] = {};
+    bool used = false;  // présent dans l'image gardée
+    uint32_t flags = 0, width = 0, height = 0;
+    float corners[12] = {};
+
+    void reset() {
+        for (Ptr<ID3D11Texture2D>& t : shared) t.reset();
+        openGeneration = 0;
+        priv.reset();
+        view.reset();
+        privWidth = privHeight = privViewFormat = 0;
+        privFormat = DXGI_FORMAT_UNKNOWN;
+        next = used = false;
+    }
+};
+
 class Recorder {
   public:
     // Fin du programme sans arrêt préalable : le fil est abandonné (on ne peut pas l'attendre ici).
@@ -582,7 +625,8 @@ class Recorder {
         if (options.size != sizeof(XrprOptions) || options.codec > 2 || options.fps < 10 || options.fps > 240 || options.height < 240 ||
             options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f) ||
             options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f) ||
-            !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2)
+            !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2 ||
+            options.encode > 1 || options.obs > 1 || (!options.encode && !options.obs))
             return kBadOptions;
         m_options = options;
         m_options.folder[259] = m_options.renderDevice[255] = m_options.captureDevice[255] = 0;
@@ -635,7 +679,7 @@ class Recorder {
         int reason = mf ? kOk : kNoMediaFoundation;
         RecordLog("Demarrage (XRPerfRecord %s).", XRPO_VERSION_TEXT);
         try {
-            if (mf) reason = record();
+            if (mf) reason = GuardedRecord(this);
         } catch (...) {
             reason = kNoConversion;  // mémoire épuisée... : le fichier est terminé quand même
         }
@@ -661,6 +705,34 @@ class Recorder {
     }
 
     void alive() { m_block->recorderTickMs = GetTickCount64(); }
+
+    // Erreur grave dans l'enregistreur (accès mémoire...) : notée dans le journal (code, adresse dans la
+    // DLL) et l'enregistrement s'arrête, au lieu d'arrêter tout XRPerfSensors. Visual C++ seulement.
+#ifdef _MSC_VER
+    static int CrashFilter(EXCEPTION_POINTERS* info) {
+        const EXCEPTION_RECORD* r = info ? info->ExceptionRecord : nullptr;
+        HMODULE module = nullptr;
+        const void* address = r ? r->ExceptionAddress : nullptr;
+        GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, static_cast<LPCWSTR>(address), &module);
+        wchar_t name[MAX_PATH] = L"?";
+        if (module) GetModuleFileNameW(module, name, MAX_PATH);
+        const wchar_t* base = std::wcsrchr(name, L'\\');
+        RecordLog("Erreur grave 0x%08lx a %s+0x%llx : enregistrement arrete.", r ? static_cast<unsigned long>(r->ExceptionCode) : 0ul,
+                  Utf8(base ? base + 1 : name).c_str(),
+                  static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(module)));
+        return EXCEPTION_EXECUTE_HANDLER;
+    }
+
+    static int GuardedRecord(Recorder* self) {
+        __try {
+            return self->record();
+        } __except (CrashFilter(GetExceptionInformation())) {
+            return kNoConversion;
+        }
+    }
+#else
+    static int GuardedRecord(Recorder* self) { return self->record(); }
+#endif
 
     bool producerAlive() {
         const unsigned long long tick = GetTickCount64();
@@ -689,17 +761,22 @@ class Recorder {
         }
         if (m_stop) return kStoppedByUser;
         if (!got) return kNoTextures;
-        reason = setupWriter();
-        if (reason != kOk) return reason;
+        openObs();
+        if (m_options.encode) {
+            reason = setupWriter();
+            if (reason != kOk) return reason;
+        } else if (!m_obs) {
+            return fail(kNoDevice, E_FAIL, "source OBS");  // rien à faire sans fichier ni OBS
+        }
 
         // 2. Son : chacun en option ; un échec n'empêche pas la vidéo. L'horloge commune part d'ici.
         m_origin = Now100ns();
         uint32_t audio = 0;
-        if (m_options.gameAudio) {
+        if (m_options.encode && m_options.gameAudio) {
             m_gameSound.reset(new AudioSource());
             audio |= m_gameSound->start(true, m_options.renderDevice, m_origin) ? 1u : 4u;
         }
-        if (m_options.micAudio) {
+        if (m_options.encode && m_options.micAudio) {
             m_micSound.reset(new AudioSource());
             audio |= m_micSound->start(false, m_options.captureDevice, m_origin) ? 2u : 8u;
         }
@@ -709,7 +786,7 @@ class Recorder {
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.audio = audio;
         }
-        m_block->recordStartTickMs = GetTickCount64();
+        if (m_options.encode) m_block->recordStartTickMs = GetTickCount64();  // témoin REC dans le casque
         m_state = kRecording;
 
         // 3. Une image à chaque instant prévu.
@@ -757,9 +834,14 @@ class Recorder {
                 reason = kGameEnded;
                 break;
             }
-            const int w = writeVideo(tick * period, period, fresh);
-            if (w != kOk) {
-                reason = w;
+            if (m_options.encode) {
+                const int w = writeVideo(tick * period, period, fresh);
+                if (w != kOk) {
+                    reason = w;
+                    break;
+                }
+            } else if (m_hasFrame && m_privateView && !convert(nullptr, 0, tick * period)) {
+                reason = fail(kNoConversion, E_FAIL, "image pour OBS");
                 break;
             }
             const int a = writeAudio((now - m_origin) - kAudioLatency100ns);
@@ -771,7 +853,7 @@ class Recorder {
             const unsigned long long ms = GetTickCount64();
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.seconds = static_cast<double>(tick * period) / 1e7;
-            if (ms - lastSizeCheck >= 1000) {
+            if (m_options.encode && ms - lastSizeCheck >= 1000) {
                 lastSizeCheck = ms;
                 WIN32_FILE_ATTRIBUTE_DATA data;
                 if (GetFileAttributesExW(m_path.c_str(), GetFileExInfoStandard, &data))
@@ -814,6 +896,7 @@ class Recorder {
         }
         m_allocator.reset();
         m_manager.reset();
+        closeObs();
         closeTextures();
         m_private.reset();
         m_privateView.reset();
@@ -821,6 +904,11 @@ class Recorder {
         m_vsPanel.reset();
         m_psEye.reset();
         m_psPanel.reset();
+        m_psLayer.reset();
+        m_layerBlend.reset();
+        m_layerRaster.reset();
+        for (GameLayer& l : m_layers) l.reset();
+        m_layerSlot = -1;
         m_psY.reset();
         m_psUV.reset();
         m_frame.reset();
@@ -866,6 +954,7 @@ class Recorder {
 
     // --- Carte graphique --------------------------------------------------------------------------------
     int setupDevice(uint64_t luidValue) {
+        m_adapterLuid = luidValue;
         LUID luid;
         luid.LowPart = static_cast<DWORD>(luidValue & 0xFFFFFFFFu);
         luid.HighPart = static_cast<LONG>(luidValue >> 32);
@@ -908,7 +997,7 @@ class Recorder {
         PFN_Compile compile = compiler ? reinterpret_cast<PFN_Compile>(reinterpret_cast<void*>(GetProcAddress(compiler, "D3DCompile"))) : nullptr;
         if (!compile) return fail(kNoConversion, E_NOINTERFACE);
         m_compile = compile;
-        Ptr<ID3DBlob> vs, vsPanel, psEye, psPanel, psY, psUV, errors;
+        Ptr<ID3DBlob> vs, vsPanel, psEye, psPanel, psLayer, psY, psUV, errors;
         const auto build = [&](const char* entry, const char* target, Ptr<ID3DBlob>& out) {
             return compile(kShaders, sizeof(kShaders) - 1, "video", nullptr, nullptr, entry, target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, out.put(), errors.put());
         };
@@ -916,6 +1005,7 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = build("VsPanel", "vs_4_0", vsPanel);
         if (SUCCEEDED(hr)) hr = build("PsEye", "ps_4_0", psEye);
         if (SUCCEEDED(hr)) hr = build("PsPanel", "ps_4_0", psPanel);
+        if (SUCCEEDED(hr)) hr = build("PsLayer", "ps_4_0", psLayer);
         if (SUCCEEDED(hr)) hr = build("PsLuma", "ps_4_0", psY);
         if (SUCCEEDED(hr)) hr = build("PsChroma", "ps_4_0", psUV);
         if (FAILED(hr) && errors) RecordLog("Shaders : %.*s", static_cast<int>(errors->GetBufferSize()), static_cast<const char*>(errors->GetBufferPointer()));
@@ -923,6 +1013,7 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = m_device->CreateVertexShader(vsPanel->GetBufferPointer(), vsPanel->GetBufferSize(), nullptr, m_vsPanel.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psEye->GetBufferPointer(), psEye->GetBufferSize(), nullptr, m_psEye.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psPanel->GetBufferPointer(), psPanel->GetBufferSize(), nullptr, m_psPanel.put());
+        if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psLayer->GetBufferPointer(), psLayer->GetBufferSize(), nullptr, m_psLayer.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psY->GetBufferPointer(), psY->GetBufferSize(), nullptr, m_psY.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psUV->GetBufferPointer(), psUV->GetBufferSize(), nullptr, m_psUV.put());
         if (FAILED(hr)) return fail(kNoConversion, hr, "shaders");
@@ -1036,9 +1127,30 @@ class Recorder {
         return reason;
     }
 
+    // Textures de l'œil et fence (celles des écrans plats ont leur propre génération : openLayer).
     void closeTextures() {
         for (Ptr<ID3D11Texture2D>& t : m_shared) t.reset();
         m_fence.reset();
+    }
+
+    // Textures partagées d'un écran plat du jeu (une génération : une par slot).
+    bool openLayer(GameLayer& l, uint32_t pid, uint32_t generation) {
+        for (Ptr<ID3D11Texture2D>& t : l.shared) t.reset();
+        l.openGeneration = 0;
+        wchar_t name[96];
+        for (int i = 0; i < kVideoSlots; ++i) {
+            VideoTextureName(name, 96, pid, generation, i);
+            HANDLE handle = nullptr;
+            HRESULT hr = m_d3d12->OpenSharedHandleByName(name, GENERIC_ALL, &handle);
+            if (SUCCEEDED(hr) && handle) hr = m_device1->OpenSharedResource1(handle, __uuidof(ID3D11Texture2D), l.shared[i].putVoid());
+            if (handle) CloseHandle(handle);
+            if (FAILED(hr) || !l.shared[i]) {
+                diagnose("ecran plat \"%s\" : 0x%08lx", Utf8(name).c_str(), static_cast<unsigned long>(hr));
+                return false;
+            }
+        }
+        l.openGeneration = generation;
+        return true;
     }
 
     bool openTextures(uint32_t pid, uint32_t generation) {
@@ -1111,6 +1223,23 @@ class Recorder {
             const Quat headOrientation = {info.headOrientation[0], info.headOrientation[1], info.headOrientation[2], info.headOrientation[3]};
             float panelCorners[12];
             for (int i = 0; i < 12; ++i) panelCorners[i] = info.panelCorners[i];
+            // Écrans plats du jeu de cette image (leurs textures de ce slot sont protégées avec elle).
+            for (int k = 0; k < kVideoLayers; ++k) {
+                GameLayer& l = m_layers[k];
+                const volatile VideoLayerInfo& li = b->layers[slot][k];
+                const volatile VideoLayerTexture& lt = b->layerTextures[k];
+                l.next = false;
+                const uint32_t layerGeneration = li.generation;
+                if (layerGeneration == 0 || layerGeneration != lt.generation) continue;
+                l.nextFlags = li.flags;
+                l.nextWidth = li.width;
+                l.nextHeight = li.height;
+                for (int c = 0; c < 12; ++c) l.nextCorners[c] = li.corners[c];
+                l.nextViewFormat = lt.viewFormat;
+                if (l.openGeneration != layerGeneration && !openLayer(l, pid, layerGeneration)) continue;
+                l.next = l.shared[slot].get() != nullptr;
+            }
+            m_layerSlot = slot;
             bool ok = true;
             if (b->producerPid != pid) {  // relève entre deux fournisseurs : on réessaie
                 InterlockedExchange(reinterpret_cast<volatile LONG*>(&b->slotBusy[slot]), 0);
@@ -1157,6 +1286,14 @@ class Recorder {
             m_eyeOrientation = Normalized(eyeOrientation);
             m_headOrientation = Normalized(headOrientation);
             std::memcpy(m_panelCorners, panelCorners, sizeof(m_panelCorners));
+            for (GameLayer& l : m_layers) {
+                l.used = l.next && l.view;
+                if (!l.used) continue;
+                l.flags = l.nextFlags;
+                l.width = l.nextWidth;
+                l.height = l.nextHeight;
+                std::memcpy(l.corners, l.nextCorners, sizeof(l.corners));
+            }
             m_hasFrame = true;
             fresh = true;
             return kOk;
@@ -1213,6 +1350,50 @@ class Recorder {
             m_privateFormat = desc.Format;
         }
         m_context->CopyResource(m_private.get(), shared);
+        // Écrans plats du jeu de la même image, dans leurs textures à nous.
+        for (GameLayer& l : m_layers) {
+            if (!l.next || m_layerSlot < 0) continue;
+            ID3D11Texture2D* source = l.shared[m_layerSlot].get();
+            if (!source) {
+                l.next = false;
+                continue;
+            }
+            D3D11_TEXTURE2D_DESC ld;
+            source->GetDesc(&ld);
+            if (!l.priv || ld.Width != l.privWidth || ld.Height != l.privHeight || ld.Format != l.privFormat || l.nextViewFormat != l.privViewFormat) {
+                l.priv.reset();
+                l.view.reset();
+                D3D11_TEXTURE2D_DESC own = ld;
+                own.Format = TypelessOf(ld.Format);
+                own.MipLevels = 1;
+                own.ArraySize = 1;
+                own.SampleDesc.Count = 1;
+                own.Usage = D3D11_USAGE_DEFAULT;
+                own.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                own.CPUAccessFlags = 0;
+                own.MiscFlags = 0;
+                // Lecture au format de la swapchain du jeu (_SRGB : décodé en valeurs linéaires, comme le runtime).
+                const DXGI_FORMAT viewFormat = static_cast<DXGI_FORMAT>(l.nextViewFormat);
+                D3D11_SHADER_RESOURCE_VIEW_DESC view = {};
+                view.Format = viewFormat != DXGI_FORMAT_UNKNOWN && TypelessOf(viewFormat) == TypelessOf(ld.Format) && TypelessOf(viewFormat) != viewFormat
+                                  ? viewFormat
+                                  : ViewOf(ld.Format);
+                view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+                view.Texture2D.MipLevels = 1;
+                if (FAILED(m_device->CreateTexture2D(&own, nullptr, l.priv.put())) || FAILED(m_device->CreateShaderResourceView(l.priv.get(), &view, l.view.put()))) {
+                    diagnose("ecran plat %ux%u (format DXGI %u) illisible", ld.Width, ld.Height, static_cast<unsigned>(ld.Format));
+                    l.priv.reset();
+                    l.view.reset();
+                    l.next = false;
+                    continue;
+                }
+                l.privWidth = ld.Width;
+                l.privHeight = ld.Height;
+                l.privFormat = ld.Format;
+                l.privViewFormat = l.nextViewFormat;
+            }
+            m_context->CopyResource(l.priv.get(), source);
+        }
         // La texture partagée est rendue au jeu seulement une fois la copie faite par la carte graphique.
         const uint64_t value = ++m_copyValue;
         if (FAILED(m_context4->Signal(m_copyFence.get(), value))) return -1;
@@ -1480,24 +1661,28 @@ class Recorder {
         m_panelHeight = height;
     }
 
+    // Image de la vidéo dans `target` (NV12, pour l'encodeur) et, si la source OBS est active, dans la
+    // texture partagée avec OBS. `target` nul : pour OBS seulement.
     bool convert(ID3D11Texture2D* target, UINT subresource, int64_t time) {
         updatePanel();
         DeviceLock lock(m_multithread.get());
-        D3D11_TEXTURE2D_DESC desc;
-        target->GetDesc(&desc);
         Ptr<ID3D11RenderTargetView> luma, chroma;
-        D3D11_RENDER_TARGET_VIEW_DESC rtv = {};
-        if (desc.ArraySize > 1) {
-            rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
-            rtv.Texture2DArray.FirstArraySlice = subresource;
-            rtv.Texture2DArray.ArraySize = 1;
-        } else {
-            rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+        if (target) {
+            D3D11_TEXTURE2D_DESC desc;
+            target->GetDesc(&desc);
+            D3D11_RENDER_TARGET_VIEW_DESC rtv = {};
+            if (desc.ArraySize > 1) {
+                rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
+                rtv.Texture2DArray.FirstArraySlice = subresource;
+                rtv.Texture2DArray.ArraySize = 1;
+            } else {
+                rtv.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+            }
+            rtv.Format = DXGI_FORMAT_R8_UNORM;
+            if (FAILED(m_device->CreateRenderTargetView(target, &rtv, luma.put()))) return false;
+            rtv.Format = DXGI_FORMAT_R8G8_UNORM;
+            if (FAILED(m_device->CreateRenderTargetView(target, &rtv, chroma.put()))) return false;
         }
-        rtv.Format = DXGI_FORMAT_R8_UNORM;
-        if (FAILED(m_device->CreateRenderTargetView(target, &rtv, luma.put()))) return false;
-        rtv.Format = DXGI_FORMAT_R8G8_UNORM;
-        if (FAILED(m_device->CreateRenderTargetView(target, &rtv, chroma.put()))) return false;
 
         // Cadre dans la partie qui contient l'œil (coordonnées 0 à 1 de cette partie), centré sur la tête.
         const uint32_t rw = m_rect[2] ? m_rect[2] : m_privateWidth, rh = m_rect[3] ? m_rect[3] : m_privateHeight;
@@ -1600,6 +1785,7 @@ class Recorder {
         // celle du casque, sans filtres).
         ID3D11RenderTargetView* panelTarget = m_frameTarget.get();
         ID3D11ShaderResourceView* converted = m_frameView.get();
+        ID3D11Texture2D* finalImage = m_frame.get();
         const bool filter = m_filteredView && (m_image.mode == 2 || (m_image.mode == 1 && m_block->producerKind != kVideoSteamVr && m_imageState == kVideoImageLater));
         if (filter) {
             ImageFilterParams fp = ImageParamsFrom(m_image);
@@ -1617,6 +1803,45 @@ class Recorder {
                 c->PSSetConstantBuffers(0, 1, buffers);
                 panelTarget = m_filteredTarget.get();
                 converted = m_filteredView.get();
+                finalImage = m_filtered.get();
+            }
+        }
+        // Écrans plats du jeu (menus, HUD), à leur place dans la scène, avant notre panneau (dessiné par-dessus
+        // dans le casque aussi).
+        bool layerDrawn = false;
+        if (ensureLayerStates()) {
+            const Quat eyeToCamera = Conjugate(cameraToEye);
+            for (const GameLayer& l : m_layers) {
+                if (!l.used || !l.view || l.privWidth == 0 || l.privHeight == 0) continue;
+                ShaderParams lp = p;
+                float corners[12];
+                for (int k = 0; k < 4; ++k) {
+                    const Vec3 v = Rotate(eyeToCamera, {l.corners[k * 3], l.corners[k * 3 + 1], l.corners[k * 3 + 2]});
+                    corners[k * 3] = v.x;
+                    corners[k * 3 + 1] = v.y;
+                    corners[k * 3 + 2] = v.z;
+                }
+                if (!PanelClipCorners(corners, cameraTan[0], cameraTan[1], cameraTan[2], cameraTan[3], CropBox(), lp.corner)) continue;
+                lp.panelUv[0] = static_cast<float>(l.width) / static_cast<float>(l.privWidth);
+                lp.panelUv[1] = static_cast<float>(l.height) / static_cast<float>(l.privHeight);
+                lp.layerMode[0] = (l.flags & kVideoLayerAlpha) ? 1.f : 0.f;
+                lp.layerMode[1] = (l.flags & kVideoLayerUnpremultiplied) ? 1.f : 0.f;
+                D3D11_MAPPED_SUBRESOURCE layerMapped;
+                if (FAILED(c->Map(m_params.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &layerMapped))) continue;
+                std::memcpy(layerMapped.pData, &lp, sizeof(lp));
+                c->Unmap(m_params.get(), 0);
+                c->OMSetBlendState(m_layerBlend.get(), nullptr, 0xFFFFFFFF);
+                c->RSSetState(m_layerRaster.get());
+                pass(panelTarget, m_width, m_height, m_vsPanel.get(), m_psLayer.get(), l.view.get(), D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP, 4);
+                layerDrawn = true;
+            }
+            if (layerDrawn) {
+                c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+                c->RSSetState(nullptr);
+                if (SUCCEEDED(c->Map(m_params.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {  // réglages de l'image, pour la suite
+                    std::memcpy(mapped.pData, &p, sizeof(p));
+                    c->Unmap(m_params.get(), 0);
+                }
             }
         }
         if (panel) {
@@ -1626,13 +1851,124 @@ class Recorder {
             c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
             c->RSSetState(nullptr);
         }
-        pass(luma.get(), m_width, m_height, m_vs.get(), m_psY.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
-        pass(chroma.get(), m_width / 2, m_height / 2, m_vs.get(), m_psUV.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        if (target) {
+            pass(luma.get(), m_width, m_height, m_vs.get(), m_psY.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+            pass(chroma.get(), m_width / 2, m_height / 2, m_vs.get(), m_psUV.get(), converted, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 3);
+        }
         ID3D11RenderTargetView* none[] = {nullptr};
         c->OMSetRenderTargets(1, none, nullptr);
         c->PSSetShaderResources(0, 1, noView);
+        publishObs(finalImage);
         c->Flush();
         return true;
+    }
+
+    // Mélange (alpha prémultiplié, en valeurs linéaires) et tracé sans élimination des faces, pour les écrans
+    // plats du jeu ; créés à la première image qui en a.
+    bool ensureLayerStates() {
+        if (!m_psLayer || !m_vsPanel) return false;
+        if (m_layerBlend && m_layerRaster) return true;
+        D3D11_BLEND_DESC bd = {};
+        bd.RenderTarget[0].BlendEnable = TRUE;
+        bd.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE;
+        bd.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+        bd.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+        bd.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+        bd.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+        bd.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+        bd.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        D3D11_RASTERIZER_DESC rd = {};
+        rd.FillMode = D3D11_FILL_SOLID;
+        rd.CullMode = D3D11_CULL_NONE;
+        rd.DepthClipEnable = TRUE;
+        if (FAILED(m_device->CreateBlendState(&bd, m_layerBlend.put())) || FAILED(m_device->CreateRasterizerState(&rd, m_layerRaster.put()))) {
+            m_layerBlend.reset();
+            m_layerRaster.reset();
+            m_psLayer.reset();  // plus d'essai
+            return false;
+        }
+        return true;
+    }
+
+    // --- Source OBS ----------------------------------------------------------------------------------
+
+    // Bloc partagé avec le plugin (créé par XRPerfSensors).
+    void openObs() {
+        if (!m_options.obs || m_obs) return;
+        m_obsMapping = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kObsShareName);
+        if (m_obsMapping) m_obs = static_cast<volatile ObsShare*>(MapViewOfFile(m_obsMapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(ObsShare)));
+        if (!m_obs || m_obs->magic != kObsShareMagic || m_obs->version != kObsShareVersion) {
+            RecordLog("Source OBS : bloc partage absent ou d'une autre version.");
+            closeObs();
+            return;
+        }
+        RecordLog("Source OBS : image donnee a OBS%s.", m_options.encode ? " (en plus du fichier)" : " (sans fichier)");
+    }
+
+    void closeObs() {
+        if (m_obs) {
+            m_obs->handle = 0;
+            m_obs->producerTickMs = 0;
+            MemoryBarrier();
+            UnmapViewOfFile(const_cast<ObsShare*>(m_obs));
+            m_obs = nullptr;
+        }
+        if (m_obsMapping) {
+            CloseHandle(m_obsMapping);
+            m_obsMapping = nullptr;
+        }
+        m_obsMutex.reset();
+        m_obsTexture.reset();
+        m_obsWidth = m_obsHeight = 0;
+    }
+
+    // Copie de l'image finale dans la texture partagée (contexte déjà verrouillé). Le plugin n'a pas encore
+    // pris la précédente : celle-ci est sautée (OBS affiche moins d'images par seconde que la vidéo).
+    void publishObs(ID3D11Texture2D* image) {
+        if (!m_obs || !image) return;
+        if (!m_obsTexture || m_obsWidth != m_width || m_obsHeight != m_height) {
+            m_obs->handle = 0;
+            MemoryBarrier();
+            m_obsMutex.reset();
+            m_obsTexture.reset();
+            D3D11_TEXTURE2D_DESC td = {};
+            td.Width = static_cast<UINT>(m_width);
+            td.Height = static_cast<UINT>(m_height);
+            td.MipLevels = 1;
+            td.ArraySize = 1;
+            td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            td.SampleDesc.Count = 1;
+            td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+            td.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+            HRESULT hr = m_device->CreateTexture2D(&td, nullptr, m_obsTexture.put());
+            Ptr<IDXGIResource> resource;
+            HANDLE shared = nullptr;
+            if (SUCCEEDED(hr)) hr = m_obsTexture->QueryInterface(__uuidof(IDXGIKeyedMutex), m_obsMutex.putVoid());
+            if (SUCCEEDED(hr)) hr = m_obsTexture->QueryInterface(__uuidof(IDXGIResource), resource.putVoid());
+            if (SUCCEEDED(hr)) hr = resource->GetSharedHandle(&shared);
+            if (FAILED(hr) || !shared) {
+                RecordLog("Source OBS : texture partagee impossible (0x%08lx).", static_cast<unsigned long>(hr));
+                closeObs();
+                return;
+            }
+            m_obsWidth = m_width;
+            m_obsHeight = m_height;
+            volatile ObsShare* o = m_obs;
+            o->width = static_cast<uint32_t>(m_width);
+            o->height = static_cast<uint32_t>(m_height);
+            o->adapterLuid = m_adapterLuid;
+            o->producerPid = GetCurrentProcessId();
+            o->generation = o->generation + 1;
+            MemoryBarrier();
+            o->handle = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(shared));
+            RecordLog("Source OBS : texture %dx%d partagee.", m_width, m_height);
+        }
+        const HRESULT hr = m_obsMutex->AcquireSync(0, 0);
+        if (hr != S_OK && hr != static_cast<HRESULT>(WAIT_ABANDONED)) return;
+        m_context->CopyResource(m_obsTexture.get(), image);
+        m_obsMutex->ReleaseSync(1);
+        m_obs->producerTickMs = GetTickCount64();
     }
 
     // Son mélangé jusqu'à la position `until` (100 ns depuis le début), par paquets de 20 ms au plus.
@@ -1705,6 +2041,13 @@ class Recorder {
     Ptr<ID3D11PixelShader> m_psFilter;
     Ptr<ID3D11Buffer> m_filterParams;
     Ptr<ID3D11Texture2D> m_filtered;
+    // Source OBS.
+    HANDLE m_obsMapping = nullptr;
+    volatile ObsShare* m_obs = nullptr;
+    Ptr<ID3D11Texture2D> m_obsTexture;
+    Ptr<IDXGIKeyedMutex> m_obsMutex;
+    int m_obsWidth = 0, m_obsHeight = 0;
+    uint64_t m_adapterLuid = 0;
     Ptr<ID3D11RenderTargetView> m_filteredRaw, m_filteredTarget;
     Ptr<ID3D11ShaderResourceView> m_filteredView;
     // Panneau dans la vidéo : image fournie par la layer, recopiée quand elle change.
@@ -1726,6 +2069,11 @@ class Recorder {
     int m_width = 0, m_height = 0;
 
     Ptr<ID3D11Texture2D> m_shared[kVideoSlots];
+    GameLayer m_layers[kVideoLayers];
+    int m_layerSlot = -1;
+    Ptr<ID3D11PixelShader> m_psLayer;
+    Ptr<ID3D11BlendState> m_layerBlend;
+    Ptr<ID3D11RasterizerState> m_layerRaster;
     Ptr<ID3D11Fence> m_fence;
     uint32_t m_openPid = 0, m_openGeneration = 0;
     uint64_t m_luid = 0;

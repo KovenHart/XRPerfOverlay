@@ -4,6 +4,11 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.11.0
+
+- **Source OBS pour le streaming** : OBS Studio (30 ou plus) gagne une source **« XR Perf (casque) »** qui reçoit l'image de la vidéo du casque (œil, format, résolution, recadrage, stabilisation, panneau, filtres) directement par la carte graphique, sans double encodage. Elle tourne dès que la source est affichée dans OBS, sans enregistrer (ni fichier, ni son, ni témoin REC), et continue pendant un enregistrement. Jeux OpenXR et SteamVR. `Installer.bat` l'ajoute à OBS s'il est installé ; réglage et état dans la page Vidéo (« Source OBS »).
+- **Menus et HUD du jeu dans la vidéo** (jeux OpenXR) : les écrans plats que le jeu fait afficher par le runtime au-dessus de la scène (couches « quad » et « cylinder » : menus, interface) sont maintenant copiés avec l'image et dessinés à leur place, en perspective, dans la vidéo enregistrée comme dans OBS (quatre au plus par image).
+
 ## 1.10.0
 
 - **Filtres d'image** (nouvelle page **Image**) : **netteté** au choix *CAS* (AMD FidelityFX), *RCAS* (FSR 1) ou *LumaSharpen*, avec sa force ; **couleurs** : luminosité, contraste, saturation, vibrance, gamma, ombres (éclaircit les zones sombres, le noir reste noir) et température ; **débandage** des dégradés ; **mode daltonien** (protanopie, deutéranopie, tritanopie). Trois modes : *Désactivés* (par défaut), *Dans le casque* ou *Vidéo seulement*. Dans le casque (jeux OpenXR, Direct3D 11 et 12), les filtres s'appliquent en tout dernier, après Pimax NR, OpenXR Toolkit ou DLSS, et la vidéo enregistrée les reçoit aussi. Dans un jeu SteamVR, ils ne s'appliquent qu'à la vidéo (mode *Vidéo seulement*) : SteamVR ne permet pas de modifier l'image du jeu. `Ctrl+Alt+I` coupe et rétablit tous les filtres d'un coup, le temps de la session, pour comparer. Réglages appliqués aussitôt, même en jeu ; un interrupteur (page Image, « Filtres du casque possibles ») empêche la layer de toucher à l'image du jeu.

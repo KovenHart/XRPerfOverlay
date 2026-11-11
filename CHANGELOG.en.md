@@ -4,6 +4,11 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.11.0
+
+- **OBS source for streaming**: OBS Studio (30 or later) gets an **"XR Perf (headset)"** source that receives the headset video image (eye, format, resolution, crop, stabilization, panel, filters) straight through the graphics card, with no double encoding. It runs as soon as the source is shown in OBS, without recording (no file, no sound, no REC indicator), and keeps going during a recording. OpenXR and SteamVR games. `Installer.bat` adds it to OBS if it is installed; setting and status on the Video page ("OBS source").
+- **Game menus and HUD in the video** (OpenXR games): the flat screens the game has the runtime display over the scene ("quad" and "cylinder" layers: menus, interface) are now copied with the image and drawn in place, in perspective, in the recorded video as in OBS (up to four per frame).
+
 ## 1.10.0
 
 - **Image filters** (new **Image** page): **sharpening** with *CAS* (AMD FidelityFX), *RCAS* (FSR 1) or *LumaSharpen*, with its strength; **colors**: brightness, contrast, saturation, vibrance, gamma, shadows (lifts dark areas while black stays black) and temperature; gradient **debanding**; **colorblind mode** (protanopia, deuteranopia, tritanopia). Three modes: *Off* (default), *In the headset* or *Video only*. In the headset (OpenXR games, Direct3D 11 and 12), the filters are applied last, after Pimax NR, OpenXR Toolkit or DLSS, and the recorded video gets them too. In a SteamVR game, they only apply to the video (*Video only* mode): SteamVR doesn't allow changing the game's image. `Ctrl+Alt+I` turns every filter off and back on at once, for the session, to compare. Settings apply immediately, even in game; a switch (Image page, "Headset filters possible") keeps the layer from ever touching the game's image.

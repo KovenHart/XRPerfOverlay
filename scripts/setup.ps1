@@ -212,6 +212,30 @@ function Find-UnregisteredFolder([string]$DefaultFolder) {
 }
 
 # Liste ce qui manque dans le dossier compilé (liste vide = complet).
+# Source OBS : le plugin (rangé sous sensors\obs\xrperf-obs) est copié dans le dossier des plugins d'OBS
+# Studio pour tous les comptes (C:\ProgramData\obs-studio\plugins, lu par OBS 30 et plus), si OBS est
+# installé. Retourne 'ok', 'absent' (paquet sans plugin), 'no-obs' ou 'locked' (OBS ouvert).
+function Install-ObsPlugin([string]$TargetFolder) {
+    $plugin = Join-Path (Join-Path (Join-Path $TargetFolder 'sensors') 'obs') 'xrperf-obs'
+    if (-not (Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $plugin 'bin') '64bit') 'xrperf-obs.dll') -PathType Leaf)) { return 'absent' }
+    $obsData = Join-Path $env:ProgramData 'obs-studio'
+    $hklm = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+    $obsKey = $hklm.OpenSubKey('SOFTWARE\OBS Studio')
+    $hasObs = ($null -ne $obsKey) -or (Test-Path -LiteralPath $obsData -PathType Container)
+    if ($obsKey) { $obsKey.Close() }
+    $hklm.Close()
+    if (-not $hasObs) { return 'no-obs' }
+    $target = Join-Path (Join-Path $obsData 'plugins') 'xrperf-obs'
+    try {
+        if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+        Copy-Item -LiteralPath $plugin -Destination $target -Recurse -Force
+        return 'ok'
+    } catch {
+        return 'locked'
+    }
+}
+
 function Get-MissingSourceFiles([string]$SourceFolder) {
     $required = @($LayerDll, $LayerJson, $IniName) + $ScriptFiles
     # Fenêtre de XRPerfSensors : son interface (ui\) et le lien avec le moteur WebView2.
@@ -471,6 +495,7 @@ function Invoke-Setup {
         throw ("$($_.Exception.Message)`n`n" + (T "L'installation n'est pas terminée et XRPerfSensors est arrêté. Vos réglages et vos résumés de session ne sont pas touchés. Corrigez la cause indiquée ci-dessus puis relancez Installer.bat : il reprendra proprement." "Installation is not finished and XRPerfSensors is stopped. Your settings and session summaries are untouched. Fix the cause shown above, then run Installer.bat again: it will resume cleanly."))
     }
     $sensorsRunning = Test-SensorsRunning
+    $obsPlugin = Install-ObsPlugin $targetFolder
 
     Write-Host ''
     Write-Host (T 'Installation terminée.' 'Installation finished.') -ForegroundColor Green
@@ -501,6 +526,13 @@ function Invoke-Setup {
     if (-not (Test-WebView2)) {
         Write-Host (T "  Fenêtre        : le moteur WebView2 de Microsoft, qui affiche la fenêtre de XRPerfSensors, n'est pas installé." "  Window         : Microsoft's WebView2 engine, which displays the XRPerfSensors window, is not installed.") -ForegroundColor Yellow
         Write-Host (T "                   Installez-le depuis https://developer.microsoft.com/microsoft-edge/webview2/ (le panneau du casque fonctionne sans)." "                   Install it from https://developer.microsoft.com/microsoft-edge/webview2/ (the headset panel works without it).") -ForegroundColor Yellow
+    }
+    if ($obsPlugin -eq 'ok') {
+        Write-Host (T "  OBS            : source « XR Perf (casque) » ajoutée à OBS Studio (Sources, +)." '  OBS            : "XR Perf (headset)" source added to OBS Studio (Sources, +).')
+    } elseif ($obsPlugin -eq 'locked') {
+        Write-Host (T "  OBS            : OBS Studio est ouvert, sa source n'a pas pu être mise à jour : fermez OBS puis relancez Installer.bat." "  OBS            : OBS Studio is open, its source could not be updated: close OBS, then run Installer.bat again.") -ForegroundColor Yellow
+    } elseif ($obsPlugin -eq 'no-obs') {
+        Write-Host (T "  OBS            : OBS Studio non trouvé ; après l'avoir installé, relancez Installer.bat pour ajouter la source XR Perf." "  OBS            : OBS Studio not found; after installing it, run Installer.bat again to add the XR Perf source.")
     }
     Write-Host (T '  Dans le casque : Ctrl+Alt+O affiche ou masque le panneau.' '  In the headset : Ctrl+Alt+O shows or hides the panel.')
     Write-Host (T '  Interface      : double-clic sur l''icône de XRPerfSensors, près de l''horloge.' '  Interface      : double-click the XRPerfSensors icon, near the clock.')

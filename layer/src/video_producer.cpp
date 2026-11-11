@@ -99,7 +99,7 @@ void VideoProducer::release(bool keepBlock) {
     m_producing = false;
     m_latest = m_pending = -1;
     if (m_hasResources) {
-        releaseResources();
+        freeResources();
         m_hasResources = false;
     }
     if (!keepBlock && m_block) {
@@ -111,6 +111,16 @@ void VideoProducer::release(bool keepBlock) {
 }
 
 void VideoProducer::shutdown() { release(false); }
+
+// Textures de l'œil et des écrans plats libérées (l'enregistreur ne doit plus les ouvrir).
+void VideoProducer::freeResources() {
+    releaseResources();
+    for (int k = 0; k < kVideoLayers; ++k) {
+        m_layer[k] = LayerTextures();
+        if (m_block) m_block->layerTextures[k].generation = 0;
+    }
+    m_pendingLayerCount = 0;
+}
 
 // Abandon pour la session : le rôle est rendu tout de suite, les textures plus tard (sans attendre).
 void VideoProducer::fail() {
@@ -129,7 +139,7 @@ bool VideoProducer::active(int& eye) {
     if (m_failed) {
         // Échec : textures libérées dès que la carte graphique n'y copie plus (jamais d'attente ici).
         if (m_hasResources && idle()) {
-            releaseResources();
+            freeResources();
             m_hasResources = false;
         }
         return false;
@@ -150,7 +160,7 @@ bool VideoProducer::active(int& eye) {
             Log("Video : enregistrement termine.");
         }
         if (m_hasResources && idle()) {
-            releaseResources();
+            freeResources();
             m_hasResources = false;
         }
         return false;
@@ -212,7 +222,7 @@ bool VideoProducer::copy(const VideoSource& source) {
             if (!idle()) return false;  // copies encore en cours : on recrée à une image suivante, sans attendre
             b->latest = 0;
             Barrier();
-            releaseResources();
+            freeResources();
             m_hasResources = false;
             m_latest = m_pending = -1;
         }
@@ -265,11 +275,99 @@ bool VideoProducer::copy(const VideoSource& source) {
     return true;
 }
 
+void VideoProducer::copyLayers(const VideoLayerSource* layers, int count) {
+    m_pendingLayerCount = 0;
+    if (m_failed || !m_producing || !m_block || m_pending < 0 || !layers || count <= 0) return;
+    volatile VideoShareHeader* b = m_block;
+    VideoSource sources[kVideoLayers];
+    int indices[kVideoLayers];
+    int copies = 0;
+    for (int i = 0; i < count && i < kVideoLayers; ++i) {
+        const VideoLayerSource& l = layers[i];
+        const VideoSource& source = l.source;
+        if (!source.texture || source.width == 0 || source.height == 0) continue;
+        LayerTextures& t = m_layer[i];
+        const uint32_t format = sourceFormat(source);
+        const uint32_t viewFormat = static_cast<uint32_t>(l.viewFormat);
+        // Textures de cet écran : grandissent seulement, recréées si le format change (sans attendre : un
+        // écran dont les textures sont encore en copie est omis à cette image).
+        const bool same = t.generation != 0 && t.format == format;
+        if (!same || source.width > t.width || source.height > t.height) {
+            if (t.generation != 0) {
+                if (!idle()) continue;
+                b->layerTextures[i].generation = 0;
+                Barrier();
+                releaseLayerResources(i);
+                t = LayerTextures();
+            }
+            VideoSource sized = source;
+            if (same) {
+                sized.width = source.width > t.width ? source.width : t.width;
+                sized.height = source.height > t.height ? source.height : t.height;
+            }
+            const uint32_t generation = NextGeneration();
+            uint32_t created = 0;
+            if (!createLayerResources(i, sized, generation, created)) {
+                releaseLayerResources(i);
+                continue;  // cet écran seulement (l'image de l'œil reste)
+            }
+            t.generation = generation;
+            t.width = sized.width;
+            t.height = sized.height;
+            t.format = format;
+            volatile VideoLayerTexture& d = b->layerTextures[i];
+            d.width = sized.width;
+            d.height = sized.height;
+            d.format = created;
+            Barrier();
+            d.generation = generation;
+            Log("Video : ecran plat %d du jeu, textures partagees %ux%u (format DXGI %u).", i, sized.width, sized.height, created);
+        }
+        t.viewFormat = viewFormat;
+        b->layerTextures[i].viewFormat = viewFormat;
+        sources[copies] = source;
+        indices[copies] = i;
+        VideoLayerInfo& info = m_pendingLayers[i];
+        info.generation = t.generation;
+        info.flags = l.flags;
+        info.width = source.width;
+        info.height = source.height;
+        for (int c = 0; c < 12; ++c) info.corners[c] = l.corners[c];
+        ++copies;
+    }
+    if (copies == 0) return;
+    const uint64_t value = ++m_frame;
+    if (!copyLayersTo(m_pending, sources, indices, copies, value)) return;
+    // L'enregistreur attend ce numéro : l'image de l'œil (copiée avant, sur la même file) et les écrans.
+    m_pendingFrame = value;
+    m_pendingLayerCount = kVideoLayers;
+    for (int i = 0; i < kVideoLayers; ++i) {
+        bool used = false;
+        for (int c = 0; c < copies; ++c) used = used || indices[c] == i;
+        if (!used) m_pendingLayers[i].generation = 0;
+    }
+}
+
 void VideoProducer::publish(const VideoFrameInfo& info) {
     const int slot = m_pending;
     m_pending = -1;
+    const int layerCount = m_pendingLayerCount;
+    m_pendingLayerCount = 0;
     if (slot < 0 || !m_producing || !m_block || info.width == 0 || info.height == 0) return;
     volatile VideoShareHeader* b = m_block;
+    for (int i = 0; i < kVideoLayers; ++i) {
+        volatile VideoLayerInfo& d = b->layers[slot][i];
+        if (layerCount == 0 || m_pendingLayers[i].generation == 0) {
+            d.generation = 0;
+            continue;
+        }
+        const VideoLayerInfo& l = m_pendingLayers[i];
+        d.flags = l.flags;
+        d.width = l.width;
+        d.height = l.height;
+        for (int c = 0; c < 12; ++c) d.corners[c] = l.corners[c];
+        d.generation = l.generation;
+    }
     volatile VideoSlotInfo& s = b->slots[slot];
     const uint32_t x = info.x < m_width ? info.x : 0, y = info.y < m_height ? info.y : 0;
     s.rectX = x;
@@ -410,9 +508,64 @@ class VideoProducerD3D11 final : public VideoProducer {
             if (m_handles[i]) CloseHandle(m_handles[i]);
             m_handles[i] = nullptr;
         }
+        for (int k = 0; k < kVideoLayers; ++k) releaseLayerResources(k);
         m_fence.reset();
         if (m_fenceHandle) CloseHandle(m_fenceHandle);
         m_fenceHandle = nullptr;
+    }
+
+    bool createLayerResources(int layer, const VideoSource& source, uint32_t generation, uint32_t& format) override {
+        D3D11_TEXTURE2D_DESC sourceDesc = {};
+        static_cast<ID3D11Texture2D*>(source.texture)->GetDesc(&sourceDesc);
+        if (sourceDesc.SampleDesc.Count > 1 || !m_fence) return false;
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = source.width;
+        desc.Height = source.height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = sourceDesc.Format;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+        wchar_t name[96];
+        for (int i = 0; i < kVideoSlots; ++i) {
+            HRESULT hr = m_device->CreateTexture2D(&desc, nullptr, m_layerTextures[layer][i].put());
+            Com<IDXGIResource1> resource;
+            if (SUCCEEDED(hr)) hr = m_layerTextures[layer][i]->QueryInterface(__uuidof(IDXGIResource1), reinterpret_cast<void**>(resource.put()));
+            VideoTextureName(name, 96, GetCurrentProcessId(), generation, i);
+            if (SUCCEEDED(hr))
+                hr = resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, name, &m_layerHandles[layer][i]);
+            if (FAILED(hr)) {
+                Log("Video : texture d'ecran plat impossible (format DXGI %u, erreur 0x%08lx).", static_cast<unsigned>(desc.Format),
+                    static_cast<unsigned long>(hr));
+                return false;
+            }
+        }
+        format = static_cast<uint32_t>(desc.Format);
+        return true;
+    }
+
+    void releaseLayerResources(int layer) override {
+        for (int i = 0; i < kVideoSlots; ++i) {
+            m_layerTextures[layer][i].reset();
+            if (m_layerHandles[layer][i]) CloseHandle(m_layerHandles[layer][i]);
+            m_layerHandles[layer][i] = nullptr;
+        }
+    }
+
+    bool copyLayersTo(int slot, const VideoSource* sources, const int* layers, int count, uint64_t fenceValue) override {
+        if (!m_fence) return false;
+        for (int i = 0; i < count; ++i) {
+            ID3D11Texture2D* target = m_layerTextures[layers[i]][slot].get();
+            if (!target) return false;
+            const VideoSource& source = sources[i];
+            D3D11_BOX box = {source.x, source.y, 0, source.x + source.width, source.y + source.height, 1};
+            m_context->CopySubresourceRegion(target, 0, 0, 0, 0, static_cast<ID3D11Texture2D*>(source.texture), source.subresource, &box);
+        }
+        if (FAILED(m_context4->Signal(m_fence.get(), fenceValue))) return false;
+        m_context->Flush();
+        return true;
     }
 
     bool copyTo(int slot, const VideoSource& source, uint64_t fenceValue) override {
@@ -444,6 +597,8 @@ class VideoProducerD3D11 final : public VideoProducer {
     HANDLE m_handles[kVideoSlots] = {};
     Com<ID3D11Fence> m_fence;
     HANDLE m_fenceHandle = nullptr;
+    Com<ID3D11Texture2D> m_layerTextures[kVideoLayers][kVideoSlots];
+    HANDLE m_layerHandles[kVideoLayers][kVideoSlots] = {};
 };
 
 // --- Direct3D 12 (jeu en Direct3D 12) ------------------------------------------------------------------
@@ -571,12 +726,15 @@ class VideoProducerD3D12 final : public VideoProducer {
         for (int i = 0; i < kVideoSlots; ++i) {
             m_lists[i].reset();
             m_allocators[i].reset();
+            m_layerLists[i].reset();
+            m_layerAllocators[i].reset();
             m_textures[i].reset();
             m_shared11[i].reset();
             if (m_handles[i]) CloseHandle(m_handles[i]);
             m_handles[i] = nullptr;
             m_slotValue[i] = 0;
         }
+        for (int k = 0; k < kVideoLayers; ++k) releaseLayerResources(k);
         m_fence.reset();
         if (m_fenceHandle) CloseHandle(m_fenceHandle);
         m_fenceHandle = nullptr;
@@ -584,6 +742,114 @@ class VideoProducerD3D12 final : public VideoProducer {
     }
 
     bool slotReady(int slot) override { return m_fence && m_fence->GetCompletedValue() >= m_slotValue[slot]; }
+
+    // Écrans plats : textures créées par Direct3D 11 puis ouvertes ici, comme celles de l'œil.
+    bool createLayerResources(int layer, const VideoSource& source, uint32_t generation, uint32_t& format) override {
+        const D3D12_RESOURCE_DESC sourceDesc = static_cast<ID3D12Resource*>(source.texture)->GetDesc();
+        if (sourceDesc.SampleDesc.Count > 1 || !m_fence || !ensureD3D11()) return false;
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = source.width;
+        desc.Height = source.height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = sourceDesc.Format;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE;
+        wchar_t name[96];
+        for (int i = 0; i < kVideoSlots; ++i) {
+            HRESULT hr = m_d3d11->CreateTexture2D(&desc, nullptr, m_layerShared11[layer][i].put());
+            Com<IDXGIResource1> resource;
+            if (SUCCEEDED(hr)) hr = m_layerShared11[layer][i]->QueryInterface(__uuidof(IDXGIResource1), reinterpret_cast<void**>(resource.put()));
+            VideoTextureName(name, 96, GetCurrentProcessId(), generation, i);
+            if (SUCCEEDED(hr))
+                hr = resource->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, name, &m_layerHandles[layer][i]);
+            if (SUCCEEDED(hr))
+                hr = m_device->OpenSharedHandle(m_layerHandles[layer][i], __uuidof(ID3D12Resource), reinterpret_cast<void**>(m_layerTextures[layer][i].put()));
+            if (FAILED(hr)) {
+                Log("Video : texture d'ecran plat impossible (format DXGI %u, erreur 0x%08lx).", static_cast<unsigned>(desc.Format),
+                    static_cast<unsigned long>(hr));
+                return false;
+            }
+        }
+        format = static_cast<uint32_t>(desc.Format);
+        return true;
+    }
+
+    void releaseLayerResources(int layer) override {
+        for (int i = 0; i < kVideoSlots; ++i) {
+            m_layerTextures[layer][i].reset();
+            m_layerShared11[layer][i].reset();
+            if (m_layerHandles[layer][i]) CloseHandle(m_layerHandles[layer][i]);
+            m_layerHandles[layer][i] = nullptr;
+        }
+    }
+
+    // Une liste de commandes par slot pour les écrans (la copie de l'œil a la sienne) ; chaque copie entre
+    // ses transitions (une même texture du jeu peut servir à deux écrans).
+    bool copyLayersTo(int slot, const VideoSource* sources, const int* layers, int count, uint64_t fenceValue) override {
+        if (!m_fence) return false;
+        if (!m_layerAllocators[slot]) {
+            HRESULT hr = m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator),
+                                                          reinterpret_cast<void**>(m_layerAllocators[slot].put()));
+            if (SUCCEEDED(hr))
+                hr = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_layerAllocators[slot].get(), nullptr, __uuidof(ID3D12GraphicsCommandList),
+                                                 reinterpret_cast<void**>(m_layerLists[slot].put()));
+            if (SUCCEEDED(hr)) hr = m_layerLists[slot]->Close();
+            if (FAILED(hr)) {
+                m_layerLists[slot].reset();
+                m_layerAllocators[slot].reset();
+                return false;
+            }
+        }
+        // Le slot vient d'être choisi libre (slotReady) : sa liste précédente est terminée.
+        if (FAILED(m_layerAllocators[slot]->Reset()) || FAILED(m_layerLists[slot]->Reset(m_layerAllocators[slot].get(), nullptr))) return false;
+        ID3D12GraphicsCommandList* list = m_layerLists[slot].get();
+        for (int i = 0; i < count; ++i) {
+            ID3D12Resource* target = m_layerTextures[layers[i]][slot].get();
+            if (!target) {
+                list->Close();
+                return false;
+            }
+            const VideoSource& source = sources[i];
+            ID3D12Resource* src = static_cast<ID3D12Resource*>(source.texture);
+            D3D12_RESOURCE_BARRIER barriers[2] = {};
+            barriers[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barriers[0].Transition.pResource = src;
+            barriers[0].Transition.Subresource = source.subresource;
+            barriers[0].Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            barriers[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+            barriers[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barriers[1].Transition.pResource = target;
+            barriers[1].Transition.Subresource = 0;
+            barriers[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+            barriers[1].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST;
+            list->ResourceBarrier(2, barriers);
+            D3D12_TEXTURE_COPY_LOCATION to = {};
+            to.pResource = target;
+            to.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            D3D12_TEXTURE_COPY_LOCATION from = {};
+            from.pResource = src;
+            from.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            from.SubresourceIndex = source.subresource;
+            D3D12_BOX box = {source.x, source.y, 0, source.x + source.width, source.y + source.height, 1};
+            list->CopyTextureRegion(&to, 0, 0, 0, &from, &box);
+            for (D3D12_RESOURCE_BARRIER& barrier : barriers) {
+                const D3D12_RESOURCE_STATES before = barrier.Transition.StateBefore;
+                barrier.Transition.StateBefore = barrier.Transition.StateAfter;
+                barrier.Transition.StateAfter = before;
+            }
+            list->ResourceBarrier(2, barriers);
+        }
+        if (FAILED(list->Close())) return false;
+        ID3D12CommandList* lists[] = {list};
+        m_queue->ExecuteCommandLists(1, lists);
+        if (FAILED(m_queue->Signal(m_fence.get(), fenceValue))) return false;
+        m_slotValue[slot] = fenceValue;
+        m_lastValue = fenceValue;
+        return true;
+    }
 
     bool idle() override { return !m_fence || m_fence->GetCompletedValue() >= m_lastValue; }
 
@@ -648,6 +914,11 @@ class VideoProducerD3D12 final : public VideoProducer {
     Com<ID3D12Fence> m_fence;
     HANDLE m_fenceHandle = nullptr;
     uint64_t m_lastValue = 0;
+    Com<ID3D12CommandAllocator> m_layerAllocators[kVideoSlots];
+    Com<ID3D12GraphicsCommandList> m_layerLists[kVideoSlots];
+    Com<ID3D12Resource> m_layerTextures[kVideoLayers][kVideoSlots];
+    Com<ID3D11Texture2D> m_layerShared11[kVideoLayers][kVideoSlots];
+    HANDLE m_layerHandles[kVideoLayers][kVideoSlots] = {};
 };
 
 }  // namespace
