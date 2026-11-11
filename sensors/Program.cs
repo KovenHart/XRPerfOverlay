@@ -550,6 +550,15 @@ namespace XRPerfSensors
             }
         }
 
+        // Entrée du menu de l'icône : enregistrement ou direct, selon la sortie choisie (page Vidéo).
+        private string VideoItemText()
+        {
+            string videoKey = _settings.VideoKey != 0 ? " (" + VideoHotkeyText + ")" : "";
+            if (_settings.VideoTarget == "stream")
+                return string.Format(Loc.T("Direct sur {0}", "Go live on {0}"), _settings.StreamService == "youtube" ? "YouTube" : "Twitch") + videoKey;
+            return Loc.T("Enregistrer la vidéo du casque", "Record headset video") + videoKey;
+        }
+
         // Raccourci présent tant que la fonction est permise.
         private void UpdateVideoHotkey()
         {
@@ -567,7 +576,11 @@ namespace XRPerfSensors
                                         "The video hotkey {0} is already taken by another program: choose another one (Video page)."), VideoHotkeyText),
                     ToolTipIcon.Warning);
             }
-            if (_videoItem != null) _videoItem.Enabled = VideoEnabled;
+            if (_videoItem != null)
+            {
+                _videoItem.Enabled = VideoEnabled;
+                _videoItem.Text = VideoItemText();
+            }
         }
 
         private int _videoHotkeyWarned;
@@ -912,8 +925,7 @@ namespace XRPerfSensors
             _layerItem.Click += (s, e) => SetLayerEnabled(!_layerItem.Checked);
             menu.Items.Add(_layerItem);
             // Enregistrement vidéo : démarrer ou arrêter (comme le raccourci).
-            string videoKey = _settings.VideoKey != 0 ? " (" + VideoHotkeyText + ")" : "";
-            _videoItem = new ToolStripMenuItem(Loc.T("Enregistrer la vidéo du casque", "Record headset video") + videoKey)
+            _videoItem = new ToolStripMenuItem(VideoItemText())
             {
                 Enabled = VideoEnabled,
                 Checked = _video != null && _video.Busy,

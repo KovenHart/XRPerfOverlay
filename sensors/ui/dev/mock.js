@@ -43,13 +43,19 @@
     Language: params.get("lang") || "auto",
     VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30, VideoStabilize: "light", VideoLevel: false, VideoObs: true,
     VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoHotkey: (3 << 16) | 86,
+    VideoTarget: params.get("video") === "live" ? "stream" : "file", StreamService: "twitch", StreamHeight: 900, StreamFps: 60, StreamBitrate: 6000,
+    StreamKeyTwitchSet: params.get("key") !== "none", StreamKeyYoutubeSet: false,
   };
   // Enregistrement vidéo simulé : ?video=rec (en cours), wait (en attente d'un jeu), error (dernière fin sur erreur), off.
   const video = { available: true, codecs: params.get("codecs") != null ? Number(params.get("codecs")) : 7, state: 0, seconds: 0, bytes: 0, frames: 0, repeated: 0, dropped: 0,
     audio: 0, file: "", game: "", encoder: "", reason: "", hotkeyOk: params.get("hotkey") !== "taken", folder: desktop.VideoFolder,
-    obsPlugin: params.get("obs") !== "missing", obsShown: params.get("obs") === "shown" || params.get("obs") === "fed", obsFed: params.get("obs") === "fed" };
+    obsPlugin: params.get("obs") !== "missing", obsShown: params.get("obs") === "shown" || params.get("obs") === "fed", obsFed: params.get("obs") === "fed",
+    streaming: false, streamState: 0, streamKbps: 0, streamDropped: 0, streamReconnects: 0 };
   if (params.get("video") === "rec") Object.assign(video, { state: 2, seconds: 754, bytes: 3.71e9, audio: 3, game: "GothicRemake-Win64-Shipping", encoder: "NVIDIA HEVC Encoder MFT" });
   if (params.get("video") === "wait") video.state = 1;
+  // ?video=live : direct en cours sur Twitch.
+  if (params.get("video") === "live") Object.assign(video, { state: 2, seconds: 1834, streaming: true, streamState: 2, streamKbps: 6120, streamDropped: 0, audio: 1,
+    game: "GothicRemake-Win64-Shipping", encoder: "NVIDIA H.264 Encoder MFT" });
   if (params.get("video") === "error") video.reason = "Le jeu s'est arrêté : le fichier a été terminé.";
   if (params.get("video") === "last") video.file = desktop.VideoFolder + "\\GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4";
   function tickVideo() {
@@ -170,6 +176,7 @@
           break;
         case "set":
           (msg.scope === "overlay" ? overlay : desktop)[msg.key] = msg.value;
+          if (msg.key === "StreamKeyTwitch" || msg.key === "StreamKeyYoutube") desktop[msg.key + "Set"] = msg.value.length > 0;
           if (msg.scope === "desktop" && msg.key === "Language") {
             lang = msg.value === "en" ? "en" : "fr";
             reply({ type: "lang", lang });

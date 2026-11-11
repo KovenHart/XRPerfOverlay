@@ -54,12 +54,17 @@ namespace XRPerfSensors
             public int ImageMode, ImageSharpen, ImageSharpness, ImageBrightness, ImageContrast, ImageSaturation;
             public int ImageVibrance, ImageGamma, ImageShadows, ImageTemperature, ImageDeband, ImageColorblind;
             public int ImageHdr, ImageSharpenLimit, ImageSharpenRadius;
-            public uint Encode;         // 1 : fichier MP4 ; 0 : image pour OBS seulement
+            public uint Encode;         // 1 : fichier MP4 ; 2 : direct (Twitch, YouTube) ; 0 : image pour OBS seulement
             public uint Obs;            // 1 : image donnée à la source OBS
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Folder;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string RenderDevice;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string CaptureDevice;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] StreamUrl;  // direct : UTF-8, terminé par un zéro
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] StreamKey;
         }
+
+        // États du direct (StreamState, layer/src/rtmp.h).
+        public const int StreamIdle = 0, StreamConnecting = 1, StreamLive = 2, StreamReconnecting = 3, StreamFailed = 4;
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         public struct Status
@@ -76,6 +81,10 @@ namespace XRPerfSensors
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string File;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string Game;
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string Encoder;
+            public uint StreamState;      // direct : StreamIdle...
+            public uint StreamKbps;       // débit envoyé ces dernières secondes
+            public uint StreamDropped;    // images perdues faute de débit
+            public uint StreamReconnects;
         }
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -101,6 +110,7 @@ namespace XRPerfSensors
         private Task _stopping;
         private string _message = "";        // dernier refus de démarrage
         private bool _obsOnly;               // l'enregistreur tourne pour OBS seulement (pas d'enregistrement)
+        private bool _streaming;             // dernier départ : un direct (pas un fichier)
         private Status _lastRecording = new Status { File = "", Game = "", Encoder = "" };
         // Bloc partagé avec le plugin OBS.
         private const string ObsShareName = @"Local\XRPerfOverlay.Obs";
@@ -351,6 +361,9 @@ namespace XRPerfSensors
             return status.State;
         }
 
+        /// <summary>Le dernier départ (en cours ou fini) était un direct.</summary>
+        public bool Streaming { get { return _streaming; } }
+
         /// <summary>Un enregistrement est en cours (pas l'image pour OBS seule).</summary>
         public bool Busy { get { return !_obsOnly && Current().State != StateStopped; } }
 
@@ -394,9 +407,15 @@ namespace XRPerfSensors
             return null;
         }
 
-        /// <summary>Démarre un enregistrement. Retourne null, ou la raison du refus (texte pour l'interface).</summary>
+        /// <summary>
+        /// Démarre un enregistrement, ou un direct si c'est la sortie choisie (Settings.VideoTarget). Retourne
+        /// null, ou la raison du refus (texte pour l'interface).
+        /// </summary>
         public string Start(Settings s, OverlaySettings image, bool obs = false)
         {
+            bool stream = s.VideoTarget == "stream";
+            string key = stream ? StreamKey.Unprotect(s.StreamKeyStored(s.StreamService)) : "";
+            string service = s.StreamService == "youtube" ? "YouTube" : "Twitch";
             StopObsOnly();  // l'image pour OBS seule laisse la place à l'enregistrement (qui la donne aussi)
             _message = "";
             if (!Available)
@@ -406,12 +425,31 @@ namespace XRPerfSensors
                 _message = Loc.T("XRPerfRecord.dll illisible : réinstallez XR Perf Overlay.", "XRPerfRecord.dll is unreadable: reinstall XR Perf Overlay.");
             else if (_stopping != null && !_stopping.IsCompleted)
                 _message = Loc.T("Le fichier précédent est en cours de finalisation, un instant.", "The previous file is being finalized, one moment.");
-            else if (_codecs >= 0 && (_codecs & CodecBit(s.VideoCodec)) == 0)
+            else if (stream && s.StreamKeyStored(s.StreamService).Length == 0)
+                _message = string.Format(Loc.T("Direct : saisissez votre clé de stream {0} (page Vidéo).", "Live: enter your {0} stream key (Video page)."), service);
+            else if (stream && key.Length == 0)
+                _message = string.Format(Loc.T("Direct : la clé de stream {0} enregistrée est illisible, saisissez-la à nouveau (page Vidéo).",
+                                               "Live: the saved {0} stream key cannot be read, enter it again (Video page)."), service);
+            else if (stream && _codecs >= 0 && (_codecs & 1) == 0)
+                _message = Loc.T("Direct : pas d'encodeur matériel H.264 sur ce PC.", "Live: no H.264 hardware encoder on this PC.");
+            else if (!stream && _codecs >= 0 && (_codecs & CodecBit(s.VideoCodec)) == 0)
                 _message = string.Format(Loc.T("Pas d'encodeur matériel {0} sur ce PC : choisissez un autre format.", "No {0} hardware encoder on this PC: choose another format."), CodecName(s.VideoCodec));
             if (_message.Length > 0) return _message;
             XrprOptions options = Options(s, image);
             options.Encode = 1;
             options.Obs = obs ? 1u : 0u;
+            if (stream)
+            {
+                // H.264 à débit constant, résolution et cadence du direct.
+                options.Encode = 2;
+                options.Codec = 0;
+                options.Height = (uint)s.StreamHeight;
+                options.Fps = (uint)s.StreamFps;
+                options.BitrateKbps = (uint)s.StreamBitrateFor(s.StreamService);
+                options.StreamUrl = Utf8Z(Settings.StreamUrl(s.StreamService));
+                options.StreamKey = Utf8Z(key);
+            }
+            _streaming = stream;
             int result;
             try
             {
@@ -425,6 +463,15 @@ namespace XRPerfSensors
             _message = result == 1 ? Loc.T("Un enregistrement est déjà en cours.", "A recording is already running.")
                                    : Loc.T("Enregistrement impossible (réglages refusés).", "Recording impossible (settings rejected).");
             return _message;
+        }
+
+        // Texte UTF-8 de 256 octets au plus, terminé par un zéro.
+        private static byte[] Utf8Z(string text)
+        {
+            var bytes = new byte[256];
+            byte[] data = System.Text.Encoding.UTF8.GetBytes(text ?? "");
+            Array.Copy(data, bytes, Math.Min(data.Length, 255));
+            return bytes;
         }
 
         // Réglages de l'enregistreur tirés de ceux de la page Vidéo et des filtres d'image.
@@ -452,6 +499,8 @@ namespace XRPerfSensors
                 Folder = s.VideoFolderOrDefault,
                 RenderDevice = s.VideoRenderDevice ?? "",
                 CaptureDevice = s.VideoCaptureDevice ?? "",
+                StreamUrl = new byte[256],
+                StreamKey = new byte[256],
             };
             int[] values = image.ImageValues();
             options.ImageMode = values[0]; options.ImageSharpen = values[1]; options.ImageSharpness = values[2]; options.ImageBrightness = values[3];
@@ -507,6 +556,10 @@ namespace XRPerfSensors
                 case 24: return Loc.T("Le son a été refusé par l'encodeur AAC : essayez sans le micro ou sans le son du jeu. Détails dans XRPerfRecord.log.",
                                       "The sound was refused by the AAC encoder: try without the microphone or the game sound. Details in XRPerfRecord.log.") + code;
                 case 30: return Loc.T("Le jeu s'est arrêté : le fichier a été terminé.", "The game stopped: the file was finalized.");
+                case 40: return Loc.T("Direct : serveur injoignable. Vérifiez la connexion Internet (ou un pare-feu qui bloque XRPerfSensors).",
+                                      "Live: server unreachable. Check the Internet connection (or a firewall blocking XRPerfSensors).");
+                case 41: return Loc.T("Direct refusé par le service : vérifiez la clé de stream (page Vidéo).", "Live refused by the service: check the stream key (Video page).");
+                case 42: return Loc.T("Direct arrêté : connexion perdue pendant plus d'une minute.", "Live stopped: connection lost for more than a minute.");
                 default: return Loc.T("Enregistrement arrêté sur une erreur.", "Recording stopped on an error.") + code;
             }
         }

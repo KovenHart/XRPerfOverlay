@@ -579,6 +579,29 @@ namespace XRPerfSensors
         public int VideoKey = 'V';             // Ctrl+Alt+V ; 0 = sans raccourci
         public int VideoMods = ModCtrl | ModAlt;
 
+        // Direct sur Twitch ou YouTube : le raccourci et le bouton de la vidéo lancent l'un ou l'autre
+        // (VideoTarget). Réglages de l'image communs (œil, cadrage, panneau, filtres, son) ; résolution, cadence
+        // et débit propres au direct (H.264, débit constant). Clés gardées chiffrées (StreamKey.cs).
+        public static readonly string[] VideoTargets = { "file", "stream" };
+        public static readonly string[] StreamServices = { "twitch", "youtube" };
+        public static readonly int[] StreamHeights = { 720, 900, 1080, 1440 };
+        public static readonly int[] StreamRates = { 30, 60 };
+        public const int MinStreamBitrate = 1500, MaxStreamBitrateAny = 30000; // kbit/s
+        /// <summary>Débit maximal accepté par le service (kbit/s) : Twitch limite les chaînes à environ 8000.</summary>
+        public static int MaxStreamBitrate(string service) { return service == "youtube" ? 30000 : 8000; }
+        /// <summary>Serveur d'entrée RTMP du service (sans chiffrement, accepté par les deux).</summary>
+        public static string StreamUrl(string service) { return service == "youtube" ? "rtmp://a.rtmp.youtube.com/live2" : "rtmp://live.twitch.tv/app"; }
+        public string VideoTarget = "file";
+        public string StreamService = "twitch";
+        public int StreamHeight = 900;
+        public int StreamFps = 60;
+        public int StreamBitrate = 6000;
+        public string StreamKeyTwitch = "";    // chiffrées (DPAPI), en base64
+        public string StreamKeyYoutube = "";
+
+        public string StreamKeyStored(string service) { return service == "youtube" ? StreamKeyYoutube : StreamKeyTwitch; }
+        public int StreamBitrateFor(string service) { return Math.Min(StreamBitrate, MaxStreamBitrate(service)); }
+
         /// <summary>
         /// Raccourci possible : une touche ordinaire (pas un modificateur seul) avec au moins un modificateur, ou
         /// une touche F1 à F24 seule ; pas un raccourci du casque. Touche 0 : pas de raccourci.
@@ -625,6 +648,8 @@ namespace XRPerfSensors
                     if (key == "video_folder") { settings.VideoFolder = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "video_render_device") { settings.VideoRenderDevice = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "video_capture_device") { settings.VideoCaptureDevice = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "stream_key_twitch") { settings.StreamKeyTwitch = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "stream_key_youtube") { settings.StreamKeyYoutube = line.Substring(equals + 1).Trim(); continue; }
                     string text = line.Substring(equals + 1).Trim();
                     if (key == "language") { if (Array.IndexOf(Loc.Names, text) >= 0) settings.Language = text; continue; }
                     if (key == "ui_theme") { if (Array.IndexOf(UiThemes, text) >= 0) settings.UiTheme = text; continue; }
@@ -637,6 +662,8 @@ namespace XRPerfSensors
                     if (key == "video_overlay") { if (Array.IndexOf(VideoOverlays, text) >= 0) settings.VideoOverlay = text; continue; }
                     if (key == "video_stabilize") { if (Array.IndexOf(VideoStabilizations, text) >= 0) settings.VideoStabilize = text; continue; }
                     if (key == "video_overlay_corner") { if (Array.IndexOf(VideoCorners, text) >= 0) settings.VideoOverlayCorner = text; continue; }
+                    if (key == "video_target") { if (Array.IndexOf(VideoTargets, text) >= 0) settings.VideoTarget = text; continue; }
+                    if (key == "stream_service") { if (Array.IndexOf(StreamServices, text) >= 0) settings.StreamService = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
                     {
@@ -674,6 +701,9 @@ namespace XRPerfSensors
                         case "video_mic": settings.VideoMic = value != 0; break;
                         case "video_key": if (value >= 0 && value <= 0xFE) settings.VideoKey = value; break;
                         case "video_mods": if (value >= 0 && value <= 0xF) settings.VideoMods = value; break;
+                        case "stream_height": if (Array.IndexOf(StreamHeights, value) >= 0) settings.StreamHeight = value; break;
+                        case "stream_fps": if (Array.IndexOf(StreamRates, value) >= 0) settings.StreamFps = value; break;
+                        case "stream_bitrate": if (value >= MinStreamBitrate && value <= MaxStreamBitrateAny) settings.StreamBitrate = value; break;
                     }
                 }
             }
@@ -759,6 +789,13 @@ namespace XRPerfSensors
                     "video_folder=" + OneLine(VideoFolder),
                     "video_key=" + VideoKey.ToString(CultureInfo.InvariantCulture),
                     "video_mods=" + VideoMods.ToString(CultureInfo.InvariantCulture),
+                    "video_target=" + VideoTarget,
+                    "stream_service=" + StreamService,
+                    "stream_height=" + StreamHeight.ToString(CultureInfo.InvariantCulture),
+                    "stream_fps=" + StreamFps.ToString(CultureInfo.InvariantCulture),
+                    "stream_bitrate=" + StreamBitrate.ToString(CultureInfo.InvariantCulture),
+                    "stream_key_twitch=" + OneLine(StreamKeyTwitch),
+                    "stream_key_youtube=" + OneLine(StreamKeyYoutube),
                 });
             }
             catch (Exception)

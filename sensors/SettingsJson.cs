@@ -128,6 +128,14 @@ namespace XRPerfSensors
             w.WriteString("VideoCaptureDevice", d.VideoCaptureDevice);
             w.WriteString("VideoFolder", d.VideoFolderOrDefault);
             w.WriteNumber("VideoHotkey", d.VideoKey == 0 ? 0 : (d.VideoMods << 16) | d.VideoKey);  // modificateurs << 16 | touche
+            w.WriteString("VideoTarget", d.VideoTarget);
+            w.WriteString("StreamService", d.StreamService);
+            w.WriteNumber("StreamHeight", d.StreamHeight);
+            w.WriteNumber("StreamFps", d.StreamFps);
+            w.WriteNumber("StreamBitrate", d.StreamBitrate);
+            // Clés : seulement si elles sont enregistrées (jamais leur texte).
+            w.WriteBoolean("StreamKeyTwitchSet", d.StreamKeyTwitch.Length > 0);
+            w.WriteBoolean("StreamKeyYoutubeSet", d.StreamKeyYoutube.Length > 0);
             w.WriteEndObject();
         }
 
@@ -330,6 +338,23 @@ namespace XRPerfSensors
                 case "VideoMic": if (!Bool(v, out b)) return Change.None; d.VideoMic = b; return Change.Video;
                 case "VideoRenderDevice": if (text == null || text.Length > 250) return Change.None; d.VideoRenderDevice = text; return Change.Video;
                 case "VideoCaptureDevice": if (text == null || text.Length > 250) return Change.None; d.VideoCaptureDevice = text; return Change.Video;
+                case "VideoTarget": if (Array.IndexOf(Settings.VideoTargets, text) < 0) return Change.None; d.VideoTarget = text; return Change.Video;
+                case "StreamService": if (Array.IndexOf(Settings.StreamServices, text) < 0) return Change.None; d.StreamService = text; return Change.Video;
+                case "StreamHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.StreamHeights, i) < 0) return Change.None; d.StreamHeight = i; return Change.Video;
+                case "StreamFps": if (!Int(v, 0, 1000, out i) || Array.IndexOf(Settings.StreamRates, i) < 0) return Change.None; d.StreamFps = i; return Change.Video;
+                case "StreamBitrate": if (!Int(v, Settings.MinStreamBitrate, Settings.MaxStreamBitrateAny, out i)) return Change.None; d.StreamBitrate = i; return Change.Video;
+                // Clé saisie (texte vide : effacée) ; gardée chiffrée.
+                case "StreamKeyTwitch":
+                case "StreamKeyYoutube":
+                {
+                    if (text == null) return Change.None;
+                    text = text.Trim();
+                    if (text.Length > 0 && !StreamKey.Valid(text)) return Change.None;
+                    string stored = StreamKey.Protect(text);
+                    if (text.Length > 0 && stored.Length == 0) return Change.None;
+                    if (key == "StreamKeyTwitch") d.StreamKeyTwitch = stored; else d.StreamKeyYoutube = stored;
+                    return Change.Video;
+                }
                 case "VideoHotkey":
                     if (!Int(v, 0, 0xFFFFF, out i) || !Settings.ValidVideoHotkey(i >> 16, i & 0xFFFF)) return Change.None;
                     if (i != 0 && headsetHotkeys != null && Array.IndexOf(headsetHotkeys, i) >= 0) return Change.None;  // pris par le casque
