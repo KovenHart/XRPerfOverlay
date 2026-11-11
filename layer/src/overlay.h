@@ -271,6 +271,7 @@ class Overlay {
     // Fil de xrEndFrame : en Direct3D 11, le contexte du jeu n'est utilisé que depuis ce fil.
     std::atomic<DWORD> m_videoEndFrameThread{0};
     double m_videoSeconds = -1.0;  // dernière durée lue (témoin du panneau)
+    bool m_videoLive = false;
     bool m_videoCopiedFiltered = false;  // la copie en attente a été faite après les filtres d'image
 
     // Filtres d'image : périphérique du jeu (lié à la session), filtre créé au premier besoin.

@@ -309,7 +309,8 @@ class OpenVrBackend final : public VrBackend {
         releaseMirrors();
     }
 
-    double videoSeconds() override { return m_video ? m_video->recordingSeconds() : -1.0; }
+    double videoSeconds() override { return m_video ? m_video->recordingSeconds(&m_videoLiveFlag) : -1.0; }
+    bool videoLive() override { return m_videoLiveFlag; }
 
     bool videoBusy() override { return m_videoBusy; }
 
@@ -788,6 +789,7 @@ class OpenVrBackend final : public VrBackend {
     bool m_gpuErrorLogged = false;
     // Enregistrement vidéo.
     std::unique_ptr<VideoProducer> m_video;
+    bool m_videoLiveFlag = false;  // dernier témoin lu : direct
     ID3D11ShaderResourceView* m_mirror[2] = {};
     uint32_t m_videoFrameIndex = 0;
     bool m_videoBusy = false;

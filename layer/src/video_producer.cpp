@@ -423,9 +423,11 @@ void VideoProducer::publishPanel(const uint8_t* pixels, int width, int height, i
     b->panelSequence = (sequence | 1u) + 1u;
 }
 
-double VideoProducer::recordingSeconds() {
+double VideoProducer::recordingSeconds(bool* live) {
+    if (live) *live = false;
     if (!m_block && !openBlock()) return -1.0;
     volatile VideoShareHeader* b = m_block;
+    if (live) *live = b->recordKind == 1;
     const unsigned long long tick = GetTickCount64();
     const unsigned long long start = b->recordStartTickMs;
     const int64_t elapsed = VideoAge(tick, start);

@@ -92,7 +92,8 @@ class VideoProducer {
     // `stride` pixels.
     void publishPanel(const uint8_t* pixels, int width, int height, int stride);
     // Durée de l'enregistrement en cours, pour le témoin du panneau ; négative s'il n'y en a pas.
-    double recordingSeconds();
+    // `live` : direct (Twitch, YouTube) plutôt qu'un fichier.
+    double recordingSeconds(bool* live = nullptr);
     // Fin de session : rend la main (plus personne ne fournit d'images) et libère les textures.
     void shutdown();
     // Nom du jeu montré dans le nom du fichier (par défaut : l'exécutable de ce processus).

@@ -12,6 +12,8 @@
 // 4. Source OBS (option `obs`) : l'image finale (cadrée, filtres, panneau) est aussi recopiée dans une
 //    texture partagée que lit le plugin xrperf-obs.dll (obs/). Sans `encode`, rien n'est écrit : ni
 //    fichier, ni son, ni témoin REC dans le casque (image pour OBS seulement).
+// 5. Direct (`encode` = 2) : Twitch ou YouTube. Pas de fichier : l'encodeur matériel H.264 et l'encodeur
+//    AAC de Windows sont pilotés ici, leurs paquets partent par RTMP (rtmp.cpp) ; témoin LIVE dans le casque.
 //
 // Horloge commune : QueryPerformanceCounter. La vidéo a une cadence fixe : à chaque instant prévu, la
 // dernière image reçue est encodée (répétée si le jeu n'en a pas fourni de nouvelle).
@@ -43,12 +45,14 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "image_filter_source.h"
+#include "rtmp.h"
 #include "image_params.h"
 #include "shared_block.h"
 #include "video_math.h"
@@ -81,11 +85,13 @@ struct XrprOptions {
     int32_t imageMode, imageSharpen, imageSharpness, imageBrightness, imageContrast, imageSaturation;
     int32_t imageVibrance, imageGamma, imageShadows, imageTemperature, imageDeband, imageColorblind;
     int32_t imageHdr, imageSharpenLimit, imageSharpenRadius;
-    uint32_t encode;        // 1 : fichier MP4 (enregistrement) ; 0 : image pour OBS seulement
+    uint32_t encode;        // 1 : fichier MP4 (enregistrement) ; 2 : direct (RTMP) ; 0 : image pour OBS seulement
     uint32_t obs;           // 1 : image donnée à la source OBS (bloc Local\XRPerfOverlay.Obs)
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
     wchar_t captureDevice[256];  // micro ("" : celui par défaut)
+    char streamUrl[256];         // direct : serveur d'entrée rtmp://... (UTF-8)
+    char streamKey[256];         // direct : clé de stream (jamais écrite dans le journal)
 };
 
 struct XrprStatus {
@@ -101,6 +107,10 @@ struct XrprStatus {
     wchar_t file[260];
     wchar_t game[64];
     wchar_t encoder[64];
+    uint32_t streamState;       // direct : StreamState (rtmp.h)
+    uint32_t streamKbps;        // débit envoyé ces dernières secondes
+    uint32_t streamDropped;     // images perdues faute de débit (ou pendant une reconnexion)
+    uint32_t streamReconnects;
 };
 
 enum State : int32_t { kStopped = 0, kWaiting = 1, kRecording = 2, kFinishing = 3 };
@@ -121,6 +131,9 @@ enum Reason : int32_t {
     kAudioRejected = 24,   // ... un morceau de son
     kGameEnded = 30,       // le jeu s'est arrêté : fichier terminé
     kStoppedByUser = 31,
+    kStreamConnect = 40,   // direct : serveur injoignable
+    kStreamRefused = 41,   // ... joint, mais la publication est refusée (clé de stream)
+    kStreamLost = 42,      // ... connexion perdue, reconnexion impossible
 };
 
 template <typename T>
@@ -157,6 +170,9 @@ const GUID kRateControl = MakeGuid(STATIC_CODECAPI_AVEncCommonRateControlMode);
 const GUID kMeanBitRate = MakeGuid(STATIC_CODECAPI_AVEncCommonMeanBitRate);
 const GUID kGopSize = MakeGuid(STATIC_CODECAPI_AVEncMPVGOPSize);
 const GUID kQualityVsSpeed = MakeGuid(STATIC_CODECAPI_AVEncCommonQualityVsSpeed);
+const GUID kBFrames = MakeGuid(STATIC_CODECAPI_AVEncMPVDefaultBPictureCount);
+const GUID kLowLatency = MakeGuid(STATIC_CODECAPI_AVLowLatencyMode);
+const GUID kBufferSize = MakeGuid(STATIC_CODECAPI_AVEncCommonBufferSize);
 const GUID kSubtypeFloat = {0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};  // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT
 const GUID kSubtypePcm = {0x00000001, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};    // KSDATAFORMAT_SUBTYPE_PCM
 const PROPERTYKEY kFriendlyName = {{0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
@@ -626,7 +642,11 @@ class Recorder {
             options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f) ||
             options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f) ||
             !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2 ||
-            options.encode > 1 || options.obs > 1 || (!options.encode && !options.obs))
+            options.encode > 2 || options.obs > 1 || (!options.encode && !options.obs))
+            return kBadOptions;
+        if (options.encode == 2 && (options.codec != 0 || std::strncmp(options.streamUrl, "rtmp://", 7) != 0 || options.streamKey[0] == 0 ||
+                                    std::memchr(options.streamUrl, 0, sizeof(options.streamUrl)) == nullptr ||
+                                    std::memchr(options.streamKey, 0, sizeof(options.streamKey)) == nullptr))
             return kBadOptions;
         m_options = options;
         m_options.folder[259] = m_options.renderDevice[255] = m_options.captureDevice[255] = 0;
@@ -642,6 +662,7 @@ class Recorder {
         b->eye = options.eye == 1 ? 1 : 0;
         b->fps = static_cast<float>(options.fps);
         b->recordStartTickMs = 0;
+        b->recordKind = 0;
         b->overlay = options.overlay;
         b->recorderTickMs = GetTickCount64();
         b->session = b->session + 1;
@@ -693,6 +714,7 @@ class Recorder {
         volatile VideoShareHeader* b = m_block;
         b->wanted = 0;
         b->recordStartTickMs = 0;
+        b->recordKind = 0;
         b->overlay = kVideoOverlayOff;
         for (int i = 0; i < kVideoSlots; ++i) b->slotBusy[i] = 0;
         {
@@ -763,7 +785,7 @@ class Recorder {
         if (!got) return kNoTextures;
         openObs();
         if (m_options.encode) {
-            reason = setupWriter();
+            reason = m_options.encode == 2 ? setupStream() : setupWriter();
             if (reason != kOk) return reason;
         } else if (!m_obs) {
             return fail(kNoDevice, E_FAIL, "source OBS");  // rien à faire sans fichier ni OBS
@@ -786,7 +808,11 @@ class Recorder {
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.audio = audio;
         }
-        if (m_options.encode) m_block->recordStartTickMs = GetTickCount64();  // témoin REC dans le casque
+        if (m_options.encode) {  // témoin REC (ou LIVE) dans le casque
+            m_block->recordKind = m_options.encode == 2 ? 1 : 0;
+            MemoryBarrier();
+            m_block->recordStartTickMs = GetTickCount64();
+        }
         m_state = kRecording;
 
         // 3. Une image à chaque instant prévu.
@@ -853,7 +879,20 @@ class Recorder {
             const unsigned long long ms = GetTickCount64();
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.seconds = static_cast<double>(tick * period) / 1e7;
-            if (m_options.encode && ms - lastSizeCheck >= 1000) {
+            if (m_streamer && ms - lastSizeCheck >= 1000) {
+                lastSizeCheck = ms;
+                const StreamStats stats = m_streamer->stats();
+                m_status.bytes = stats.bytes;
+                m_status.streamState = stats.state;
+                m_status.streamKbps = stats.kbps;
+                m_status.streamDropped = stats.dropped;
+                m_status.streamReconnects = stats.reconnects;
+                if (stats.state == kStreamFailed) {
+                    RecordLog("Direct : connexion perdue (%s).", stats.error.c_str());
+                    reason = stats.refused ? kStreamRefused : kStreamLost;
+                    break;
+                }
+            } else if (m_options.encode == 1 && ms - lastSizeCheck >= 1000) {
                 lastSizeCheck = ms;
                 WIN32_FILE_ATTRIBUTE_DATA data;
                 if (GetFileAttributesExW(m_path.c_str(), GetFileExInfoStandard, &data))
@@ -894,6 +933,7 @@ class Recorder {
             m_status.file[0] = 0;
             m_status.bytes = 0;
         }
+        closeStream();
         m_allocator.reset();
         m_manager.reset();
         closeObs();
@@ -1513,14 +1553,7 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = m_writer->SetInputMediaType(m_audioStream, pcmType.get(), nullptr);
         if (FAILED(hr)) return fail(kNoEncoder, hr, "son AAC");
 
-        // Images NV12 réservées à l'encodeur : rendues à la réserve quand il n'en a plus besoin.
-        Ptr<IMFAttributes> pool;
-        hr = MFCreateVideoSampleAllocatorEx(__uuidof(IMFVideoSampleAllocatorEx), m_allocator.putVoid());
-        if (SUCCEEDED(hr)) hr = m_allocator->SetDirectXManager(m_manager.get());
-        if (SUCCEEDED(hr)) hr = MFCreateAttributes(pool.put(), 2);
-        if (SUCCEEDED(hr)) hr = pool->SetUINT32(MF_SA_D3D11_BINDFLAGS, D3D11_BIND_RENDER_TARGET);
-        if (SUCCEEDED(hr)) hr = pool->SetUINT32(MF_SA_D3D11_USAGE, D3D11_USAGE_DEFAULT);
-        if (SUCCEEDED(hr)) hr = m_allocator->InitializeSampleAllocatorEx(4, 16, pool.get(), in.get());
+        hr = setupAllocator(in.get());
         if (FAILED(hr)) return fail(kNoConversion, hr, "reserve d'images NV12");
 
         hr = m_writer->BeginWriting();
@@ -1536,6 +1569,443 @@ class Recorder {
                   static_cast<double>(m_options.stabilizeSeconds), m_options.level ? " et horizon droit" : "", m_options.eye,
                   Utf8(EncoderName(m_options.codec)).c_str(), m_privateWidth, m_privateHeight, static_cast<unsigned>(m_privateFormat), Utf8(m_path).c_str());
         return kOk;
+    }
+
+    // Images NV12 réservées à l'encodeur : rendues à la réserve quand il n'en a plus besoin.
+    HRESULT setupAllocator(IMFMediaType* type) {
+        Ptr<IMFAttributes> pool;
+        HRESULT hr = MFCreateVideoSampleAllocatorEx(__uuidof(IMFVideoSampleAllocatorEx), m_allocator.putVoid());
+        if (SUCCEEDED(hr)) hr = m_allocator->SetDirectXManager(m_manager.get());
+        if (SUCCEEDED(hr)) hr = MFCreateAttributes(pool.put(), 2);
+        if (SUCCEEDED(hr)) hr = pool->SetUINT32(MF_SA_D3D11_BINDFLAGS, D3D11_BIND_RENDER_TARGET);
+        if (SUCCEEDED(hr)) hr = pool->SetUINT32(MF_SA_D3D11_USAGE, D3D11_USAGE_DEFAULT);
+        if (SUCCEEDED(hr)) hr = m_allocator->InitializeSampleAllocatorEx(4, 16, pool.get(), type);
+        return hr;
+    }
+
+    // Type NV12 des images données à l'encodeur.
+    HRESULT nv12Type(Ptr<IMFMediaType>& in) {
+        const UINT64 size = (static_cast<UINT64>(m_width) << 32) | static_cast<UINT32>(m_height);
+        const UINT64 rate = (static_cast<UINT64>(m_options.fps) << 32) | 1u;
+        HRESULT hr = MFCreateMediaType(in.put());
+        if (SUCCEEDED(hr)) hr = in->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+        if (SUCCEEDED(hr)) hr = in->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
+        if (SUCCEEDED(hr)) hr = in->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+        if (SUCCEEDED(hr)) hr = in->SetUINT64(MF_MT_FRAME_SIZE, size);
+        if (SUCCEEDED(hr)) hr = in->SetUINT64(MF_MT_FRAME_RATE, rate);
+        if (SUCCEEDED(hr)) hr = in->SetUINT64(MF_MT_PIXEL_ASPECT_RATIO, (1ull << 32) | 1u);
+        if (SUCCEEDED(hr)) hr = in->SetUINT32(MF_MT_VIDEO_NOMINAL_RANGE, MFNominalRange_16_235);
+        if (SUCCEEDED(hr)) hr = in->SetUINT32(MF_MT_YUV_MATRIX, MFVideoTransferMatrix_BT709);
+        if (SUCCEEDED(hr)) hr = in->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709);
+        if (SUCCEEDED(hr)) hr = in->SetUINT32(MF_MT_TRANSFER_FUNCTION, MFVideoTransFunc_709);
+        return hr;
+    }
+
+    // --- Direct (encode = 2) ------------------------------------------------------------------------------
+    // Encodeur matériel H.264 (en général asynchrone : il demande ses images par des événements), encodeur
+    // AAC de Windows (synchrone), puis connexion au serveur. Débit constant, image clé toutes les 2 s, sans
+    // images B : ce que demandent Twitch et YouTube.
+    int setupStream() {
+        std::wstring game;
+        for (int i = 0; i < 63 && m_block->game[i]; ++i) game += static_cast<wchar_t>(m_block->game[i]);
+        if (game.empty()) game = L"VR";
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            wcsncpy_s(m_status.game, game.c_str(), _TRUNCATE);
+            wcsncpy_s(m_status.encoder, EncoderName(0).c_str(), _TRUNCATE);
+            m_status.streamState = kStreamConnecting;
+        }
+        UINT token = 0;
+        HRESULT hr = MFCreateDXGIDeviceManager(&token, m_manager.put());
+        if (SUCCEEDED(hr)) hr = m_manager->ResetDevice(m_device.get(), token);
+        if (FAILED(hr)) return fail(kNoDevice, hr);
+
+        // Encodeur vidéo.
+        MFT_REGISTER_TYPE_INFO h264 = {MFMediaType_Video, MFVideoFormat_H264};
+        IMFActivate** activates = nullptr;
+        UINT32 count = 0;
+        hr = MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER, nullptr, &h264, &activates, &count);
+        if (SUCCEEDED(hr) && count == 0) hr = MF_E_TOPO_CODEC_NOT_FOUND;
+        if (SUCCEEDED(hr)) {
+            hr = activates[0]->ActivateObject(__uuidof(IMFTransform), m_videoEncoder.putVoid());
+            if (SUCCEEDED(hr)) {
+                activates[0]->AddRef();
+                m_videoActivate.reset();
+                *m_videoActivate.put() = activates[0];
+            }
+        }
+        if (activates) {
+            for (UINT32 i = 0; i < count; ++i) activates[i]->Release();
+            CoTaskMemFree(activates);
+        }
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "encodeur H.264 materiel");
+        Ptr<IMFAttributes> attributes;
+        UINT32 async = 0, d3d = 0;
+        if (SUCCEEDED(m_videoEncoder->GetAttributes(attributes.put())) && attributes) {
+            attributes->GetUINT32(MF_TRANSFORM_ASYNC, &async);
+            if (async) attributes->SetUINT32(MF_TRANSFORM_ASYNC_UNLOCK, TRUE);
+            attributes->GetUINT32(MF_SA_D3D11_AWARE, &d3d);
+        }
+        if (!d3d) return fail(kNoEncoder, E_NOTIMPL, "encodeur sans Direct3D 11");
+        hr = m_videoEncoder->ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, reinterpret_cast<ULONG_PTR>(m_manager.get()));
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "carte graphique de l'encodeur");
+        DWORD inId = 0, outId = 0;
+        if (m_videoEncoder->GetStreamIDs(1, &inId, 1, &outId) == S_OK) {
+            m_videoIn = inId;
+            m_videoOut = outId;
+        } else {
+            m_videoIn = m_videoOut = 0;
+        }
+        const ULONG bitrate = m_options.bitrateKbps * 1000u;
+        Ptr<ICodecAPI> codec;
+        m_videoEncoder->QueryInterface(kICodecAPI, codec.putVoid());
+        auto setValue = [&](const GUID& key, ULONG v) {
+            if (!codec || codec->IsSupported(&key) != S_OK) return false;
+            VARIANT value = {};
+            value.vt = VT_UI4;
+            value.ulVal = v;
+            return SUCCEEDED(codec->SetValue(&key, &value));
+        };
+        auto applyCodec = [&]() {
+            setValue(kRateControl, eAVEncCommonRateControlMode_CBR);
+            setValue(kMeanBitRate, bitrate);
+            setValue(kBufferSize, bitrate);  // une seconde de débit : débit régulier
+            setValue(kGopSize, m_options.fps * 2);
+            setValue(kBFrames, 0);
+            if (codec && codec->IsSupported(&kLowLatency) == S_OK) {
+                VARIANT value = {};
+                value.vt = VT_BOOL;
+                value.boolVal = VARIANT_TRUE;
+                codec->SetValue(&kLowLatency, &value);
+            }
+            if (m_options.qualityVsSpeed > 0) m_qualityApplied = setValue(kQualityVsSpeed, m_options.qualityVsSpeed);
+        };
+        applyCodec();
+        const UINT64 size = (static_cast<UINT64>(m_width) << 32) | static_cast<UINT32>(m_height);
+        const UINT64 rate = (static_cast<UINT64>(m_options.fps) << 32) | 1u;
+        Ptr<IMFMediaType> out, in;
+        hr = MFCreateMediaType(out.put());
+        if (SUCCEEDED(hr)) hr = out->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+        if (SUCCEEDED(hr)) hr = out->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+        if (SUCCEEDED(hr)) hr = out->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
+        if (SUCCEEDED(hr)) hr = out->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+        if (SUCCEEDED(hr)) hr = out->SetUINT64(MF_MT_FRAME_SIZE, size);
+        if (SUCCEEDED(hr)) hr = out->SetUINT64(MF_MT_FRAME_RATE, rate);
+        if (SUCCEEDED(hr)) hr = out->SetUINT64(MF_MT_PIXEL_ASPECT_RATIO, (1ull << 32) | 1u);
+        if (SUCCEEDED(hr)) hr = out->SetUINT32(MF_MT_MPEG2_PROFILE, 100);  // High
+        if (SUCCEEDED(hr)) hr = m_videoEncoder->SetOutputType(m_videoOut, out.get(), 0);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "type video de sortie");
+        hr = nv12Type(in);
+        if (SUCCEEDED(hr)) hr = m_videoEncoder->SetInputType(m_videoIn, in.get(), 0);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "type video d'entree (encodeur)");
+        applyCodec();  // certains encodeurs ne prennent leurs réglages qu'une fois les types connus
+        MFT_OUTPUT_STREAM_INFO info = {};
+        m_videoEncoder->GetOutputStreamInfo(m_videoOut, &info);
+        m_videoProvides = (info.dwFlags & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES)) != 0;
+        m_videoOutputSize = info.cbSize;
+        hr = setupAllocator(in.get());
+        if (FAILED(hr)) return fail(kNoConversion, hr, "reserve d'images NV12");
+        if (async) {
+            hr = m_videoEncoder->QueryInterface(__uuidof(IMFMediaEventGenerator), m_videoEvents.putVoid());
+            if (FAILED(hr)) return fail(kNoEncoder, hr, "evenements de l'encodeur");
+        }
+        m_needInput = 0;
+        hr = m_videoEncoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
+        if (SUCCEEDED(hr)) hr = m_videoEncoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "demarrage de l'encodeur");
+
+        // Encodeur AAC (logiciel, celui de Windows).
+        MFT_REGISTER_TYPE_INFO pcm = {MFMediaType_Audio, MFAudioFormat_PCM};
+        MFT_REGISTER_TYPE_INFO aac = {MFMediaType_Audio, MFAudioFormat_AAC};
+        activates = nullptr;
+        count = 0;
+        hr = MFTEnumEx(MFT_CATEGORY_AUDIO_ENCODER, MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_LOCALMFT | MFT_ENUM_FLAG_SORTANDFILTER, &pcm, &aac, &activates, &count);
+        if (SUCCEEDED(hr) && count == 0) hr = MF_E_TOPO_CODEC_NOT_FOUND;
+        if (SUCCEEDED(hr)) hr = activates[0]->ActivateObject(__uuidof(IMFTransform), m_audioEncoder.putVoid());
+        if (activates) {
+            for (UINT32 i = 0; i < count; ++i) activates[i]->Release();
+            CoTaskMemFree(activates);
+        }
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "encodeur AAC");
+        Ptr<IMFMediaType> aacType, pcmType;
+        hr = MFCreateMediaType(aacType.put());
+        if (SUCCEEDED(hr)) hr = aacType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+        if (SUCCEEDED(hr)) hr = aacType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_AAC);
+        if (SUCCEEDED(hr)) hr = aacType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+        if (SUCCEEDED(hr)) hr = aacType->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, kAudioRate);
+        if (SUCCEEDED(hr)) hr = aacType->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 2);
+        if (SUCCEEDED(hr)) hr = aacType->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, 20000);  // 160 kbit/s
+        if (SUCCEEDED(hr)) hr = aacType->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE, 0);                 // trames brutes (FLV)
+        if (SUCCEEDED(hr)) hr = aacType->SetUINT32(MF_MT_AAC_AUDIO_PROFILE_LEVEL_INDICATION, 0x29);
+        if (SUCCEEDED(hr)) hr = MFCreateMediaType(pcmType.put());
+        if (SUCCEEDED(hr)) hr = pcmType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+        if (SUCCEEDED(hr)) hr = pcmType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
+        if (SUCCEEDED(hr)) hr = pcmType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+        if (SUCCEEDED(hr)) hr = pcmType->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, kAudioRate);
+        if (SUCCEEDED(hr)) hr = pcmType->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, 2);
+        if (SUCCEEDED(hr)) hr = pcmType->SetUINT32(MF_MT_AUDIO_BLOCK_ALIGNMENT, 4);
+        if (SUCCEEDED(hr)) hr = pcmType->SetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, kAudioRate * 4);
+        if (SUCCEEDED(hr)) {
+            // Ordre des types : l'entrée d'abord pour l'encodeur de Windows ; l'autre ordre en second essai.
+            hr = m_audioEncoder->SetInputType(0, pcmType.get(), 0);
+            if (SUCCEEDED(hr)) hr = m_audioEncoder->SetOutputType(0, aacType.get(), 0);
+            if (FAILED(hr)) {
+                hr = m_audioEncoder->SetOutputType(0, aacType.get(), 0);
+                if (SUCCEEDED(hr)) hr = m_audioEncoder->SetInputType(0, pcmType.get(), 0);
+            }
+        }
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "son AAC");
+        info = {};
+        m_audioEncoder->GetOutputStreamInfo(0, &info);
+        m_audioProvides = (info.dwFlags & MFT_OUTPUT_STREAM_PROVIDES_SAMPLES) != 0;
+        m_audioOutputSize = std::max<DWORD>(info.cbSize, 8192);
+        m_audioEncoder->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
+        m_audioEncoder->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
+
+        // Connexion (jusqu'à 10 s ; l'enregistreur reste signalé vivant pendant l'attente).
+        StreamConfig config;
+        config.url = m_options.streamUrl;
+        config.key = m_options.streamKey;
+        config.width = m_width;
+        config.height = m_height;
+        config.fps = static_cast<int>(m_options.fps);
+        config.videoKbps = static_cast<int>(m_options.bitrateKbps);
+        config.audioKbps = 160;
+        config.audioRate = kAudioRate;
+        config.channels = 2;
+        m_streamer.reset(new RtmpStreamer());
+        std::atomic<bool> done{false};
+        bool connected = false, refused = false;
+        std::string error;
+        RtmpStreamer* streamer = m_streamer.get();
+        std::thread connect([&] {
+            connected = streamer->start(config, 10000, error, refused);
+            done = true;
+        });
+        while (!done) {
+            alive();
+            Sleep(20);
+        }
+        connect.join();
+        RecordLog("Direct : H.264 %dx%d %u i/s %u kbit/s (debit constant), vitesse/qualite %u (%s), encodeur \"%s\" (%s), serveur \"%s\".", m_width, m_height,
+                  m_options.fps, m_options.bitrateKbps, m_options.qualityVsSpeed,
+                  m_options.qualityVsSpeed == 0 ? "encodeur" : m_qualityApplied ? "accepte" : "refuse", Utf8(EncoderName(0)).c_str(),
+                  async ? "asynchrone" : "synchrone", m_options.streamUrl);
+        if (!connected) {
+            RecordLog("Direct : %s (%s).", refused ? "publication refusee (cle de stream ?)" : "connexion impossible", error.c_str());
+            {
+                std::lock_guard<std::mutex> lock(m_statusMutex);
+                m_status.streamState = kStreamFailed;
+            }
+            return fail(refused ? kStreamRefused : kStreamConnect, E_FAIL, "connexion au serveur");
+        }
+        m_streamer->setAudioConfig(AacConfig(kAudioRate, 2));
+        m_videoConfigSent = false;
+        m_streaming = true;
+        m_writing = true;  // le son est encodé
+        m_audioWritten = 0;
+        m_videoSamples = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_status.streamState = kStreamLive;
+        }
+        RecordLog("Direct : connecte.");
+        return kOk;
+    }
+
+    void closeStream() {
+        if (m_videoEncoder) {
+            m_videoEncoder->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0);
+            m_videoEncoder->ProcessMessage(MFT_MESSAGE_COMMAND_FLUSH, 0);
+        }
+        if (m_streamer) {
+            m_streamer->stop();
+            const StreamStats stats = m_streamer->stats();
+            RecordLog("Direct : %llu octets envoyes, %u image(s) perdue(s), %u reconnexion(s).", static_cast<unsigned long long>(stats.bytes), stats.dropped,
+                      stats.reconnects);
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            m_status.bytes = stats.bytes;
+            m_status.streamDropped = stats.dropped;
+            m_status.streamReconnects = stats.reconnects;
+            m_status.streamState = kStreamIdle;
+        }
+        m_streamer.reset();
+        m_videoEvents.reset();
+        m_videoEncoder.reset();
+        if (m_videoActivate) m_videoActivate->ShutdownObject();
+        m_videoActivate.reset();
+        m_audioEncoder.reset();
+        m_streaming = false;
+    }
+
+    // Contenu d'un paquet encodé.
+    static bool SampleBytes(IMFSample* sample, std::vector<uint8_t>& bytes) {
+        Ptr<IMFMediaBuffer> buffer;
+        BYTE* data = nullptr;
+        DWORD length = 0;
+        if (FAILED(sample->ConvertToContiguousBuffer(buffer.put())) || FAILED(buffer->Lock(&data, nullptr, &length))) return false;
+        bytes.assign(data, data + length);
+        buffer->Unlock();
+        return length > 0;
+    }
+
+    static HRESULT OutputSample(DWORD bytes, Ptr<IMFSample>& sample) {
+        Ptr<IMFMediaBuffer> buffer;
+        HRESULT hr = MFCreateMemoryBuffer(bytes, buffer.put());
+        if (SUCCEEDED(hr)) hr = MFCreateSample(sample.put());
+        if (SUCCEEDED(hr)) hr = sample->AddBuffer(buffer.get());
+        return hr;
+    }
+
+    // Événements de l'encodeur vidéo asynchrone : demandes d'images, paquets prêts.
+    int pumpVideo() {
+        if (!m_videoEvents) return kOk;
+        for (int guard = 0; guard < 256; ++guard) {
+            Ptr<IMFMediaEvent> event;
+            const HRESULT hr = m_videoEvents->GetEvent(MF_EVENT_FLAG_NO_WAIT, event.put());
+            if (hr == MF_E_NO_EVENTS_AVAILABLE) break;
+            if (FAILED(hr)) return fail(kVideoRejected, hr, "evenements de l'encodeur");
+            MediaEventType type = MEUnknown;
+            event->GetType(&type);
+            if (type == METransformNeedInput) {
+                ++m_needInput;
+            } else if (type == METransformHaveOutput) {
+                bool produced = false;
+                const int r = videoOutput(produced);
+                if (r != kOk) return r;
+            } else if (type == MEError) {
+                HRESULT status = E_FAIL;
+                event->GetStatus(&status);
+                return fail(kVideoRejected, status, "encodeur");
+            }
+        }
+        return kOk;
+    }
+
+    int videoOutput(bool& produced) {
+        produced = false;
+        MFT_OUTPUT_DATA_BUFFER out = {};
+        out.dwStreamID = m_videoOut;
+        Ptr<IMFSample> own;
+        if (!m_videoProvides) {
+            const HRESULT hr = OutputSample(std::max<DWORD>(m_videoOutputSize, static_cast<DWORD>(m_width) * static_cast<DWORD>(m_height) * 2), own);
+            if (FAILED(hr)) return fail(kVideoRejected, hr, "paquet video");
+            out.pSample = own.get();
+        }
+        DWORD status = 0;
+        HRESULT hr = m_videoEncoder->ProcessOutput(0, 1, &out, &status);
+        if (out.pEvents) out.pEvents->Release();
+        IMFSample* sample = out.pSample;
+        if (hr == MF_E_TRANSFORM_STREAM_CHANGE) {  // l'encodeur précise son type de sortie
+            Ptr<IMFMediaType> type;
+            hr = m_videoEncoder->GetOutputAvailableType(m_videoOut, 0, type.put());
+            if (SUCCEEDED(hr)) hr = m_videoEncoder->SetOutputType(m_videoOut, type.get(), 0);
+            if (m_videoProvides && sample) sample->Release();
+            return SUCCEEDED(hr) ? kOk : fail(kVideoRejected, hr, "nouveau type de l'encodeur");
+        }
+        if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
+            if (m_videoProvides && sample) sample->Release();
+            return kOk;
+        }
+        if (FAILED(hr) || !sample) {
+            if (m_videoProvides && sample) sample->Release();
+            return FAILED(hr) ? fail(kVideoRejected, hr, "sortie de l'encodeur") : kOk;
+        }
+        produced = true;
+        sendVideo(sample);
+        if (m_videoProvides) sample->Release();
+        return kOk;
+    }
+
+    void sendVideo(IMFSample* sample) {
+        if (!SampleBytes(sample, m_packet)) return;
+        UINT32 clean = 0;
+        sample->GetUINT32(MFSampleExtension_CleanPoint, &clean);
+        bool key = clean != 0;
+        if (!key)
+            for (const auto& nal : SplitAnnexB(m_packet.data(), m_packet.size()))
+                if (nal.second > 0 && (nal.first[0] & 0x1f) == 5) key = true;
+        if (!m_videoConfigSent) {
+            std::vector<uint8_t> config;
+            bool ok = AvcConfig(m_packet.data(), m_packet.size(), config);
+            if (!ok) {  // SPS et PPS seulement dans le type de sortie
+                Ptr<IMFMediaType> type;
+                UINT32 length = 0;
+                if (SUCCEEDED(m_videoEncoder->GetOutputCurrentType(m_videoOut, type.put())) &&
+                    SUCCEEDED(type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &length)) && length > 0) {
+                    std::vector<uint8_t> header(length);
+                    if (SUCCEEDED(type->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, header.data(), length, nullptr)))
+                        ok = AvcConfig(header.data(), header.size(), config);
+                }
+            }
+            if (!ok || !key) return;  // attendre une image clé avec ses en-têtes
+            m_streamer->setVideoConfig(std::move(config));
+            m_videoConfigSent = true;
+            RecordLog("Direct : premiere image envoyee.");
+        }
+        std::vector<uint8_t> avcc;
+        if (!AnnexBToAvcc(m_packet.data(), m_packet.size(), avcc)) return;
+        LONGLONG time = 0;
+        sample->GetSampleTime(&time);
+        m_streamer->pushVideo(static_cast<uint32_t>(std::max<LONGLONG>(time, 0) / 10'000), key, std::move(avcc));
+    }
+
+    // Image NV12 donnée à l'encodeur du direct.
+    HRESULT streamVideo(IMFSample* sample) {
+        HRESULT hr = m_videoEncoder->ProcessInput(m_videoIn, sample, 0);
+        if (m_videoEvents) {
+            if (m_needInput > 0) --m_needInput;
+            return hr;
+        }
+        if (hr == MF_E_NOTACCEPTING) {  // encodeur synchrone plein : vidé, puis nouvel essai
+            bool produced = true;
+            while (produced && videoOutput(produced) == kOk) {
+            }
+            hr = m_videoEncoder->ProcessInput(m_videoIn, sample, 0);
+        }
+        if (SUCCEEDED(hr)) {
+            bool produced = true;
+            while (produced) {
+                if (videoOutput(produced) != kOk) return E_FAIL;
+            }
+        }
+        return hr;
+    }
+
+    // Son PCM donné à l'encodeur AAC ; ses trames partent aussitôt.
+    HRESULT streamAudio(IMFSample* sample) {
+        HRESULT hr = m_audioEncoder->ProcessInput(0, sample, 0);
+        if (hr == MF_E_NOTACCEPTING) {
+            drainAudio();
+            hr = m_audioEncoder->ProcessInput(0, sample, 0);
+        }
+        if (FAILED(hr)) return hr;
+        return drainAudio();
+    }
+
+    HRESULT drainAudio() {
+        for (int guard = 0; guard < 64; ++guard) {
+            MFT_OUTPUT_DATA_BUFFER out = {};
+            Ptr<IMFSample> own;
+            if (!m_audioProvides) {
+                const HRESULT hr = OutputSample(m_audioOutputSize, own);
+                if (FAILED(hr)) return hr;
+                out.pSample = own.get();
+            }
+            DWORD status = 0;
+            const HRESULT hr = m_audioEncoder->ProcessOutput(0, 1, &out, &status);
+            if (out.pEvents) out.pEvents->Release();
+            IMFSample* sample = out.pSample;
+            if (SUCCEEDED(hr) && sample && SampleBytes(sample, m_packet)) {
+                LONGLONG time = 0;
+                sample->GetSampleTime(&time);
+                m_streamer->pushAudio(static_cast<uint32_t>(std::max<LONGLONG>(time, 0) / 10'000), std::vector<uint8_t>(m_packet));
+            }
+            if (m_audioProvides && sample) sample->Release();
+            if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) return S_OK;
+            if (FAILED(hr)) return hr;
+        }
+        return S_OK;
     }
 
     static bool DiskFull(HRESULT hr) { return hr == HRESULT_FROM_WIN32(ERROR_DISK_FULL) || hr == HRESULT_FROM_WIN32(ERROR_HANDLE_DISK_FULL); }
@@ -1565,6 +2035,15 @@ class Recorder {
     // Image NV12 de l'instant `time` (100 ns), à partir de la dernière image reçue.
     int writeVideo(int64_t time, int64_t duration, bool fresh) {
         if (!m_hasFrame || !m_privateView) return kOk;
+        if (m_streaming) {
+            const int r = pumpVideo();
+            if (r != kOk) return r;
+            if (m_videoEvents && m_needInput <= 0) {  // encodeur en retard : instant sauté
+                std::lock_guard<std::mutex> lock(m_statusMutex);
+                ++m_status.dropped;
+                return kOk;
+            }
+        }
         Ptr<IMFSample> sample;
         HRESULT hr = m_allocator->AllocateSample(sample.put());
         if (hr == MF_E_SAMPLEALLOCATOR_EMPTY) {  // encodeur en retard : instant sauté
@@ -1593,8 +2072,12 @@ class Recorder {
             buffer->SetCurrentLength(static_cast<DWORD>(m_width) * static_cast<DWORD>(m_height) * 3 / 2);
         sample->SetSampleTime(time);
         sample->SetSampleDuration(duration);
-        hr = m_writer->WriteSample(m_videoStream, sample.get());
+        hr = m_streaming ? streamVideo(sample.get()) : m_writer->WriteSample(m_videoStream, sample.get());
         if (FAILED(hr)) return fail(DiskFull(hr) ? kWriteFailed : kVideoRejected, hr, "image video");
+        if (m_streaming) {
+            const int r = pumpVideo();
+            if (r != kOk) return r;
+        }
         ++m_videoSamples;
         std::lock_guard<std::mutex> lock(m_statusMutex);
         ++m_status.frames;
@@ -1996,7 +2479,7 @@ class Recorder {
             if (SUCCEEDED(hr)) hr = sample->AddBuffer(buffer.get());
             if (SUCCEEDED(hr)) hr = sample->SetSampleTime(m_audioWritten * 10'000'000 / kAudioRate);
             if (SUCCEEDED(hr)) hr = sample->SetSampleDuration(frames * 10'000'000 / kAudioRate);
-            if (SUCCEEDED(hr)) hr = m_writer->WriteSample(m_audioStream, sample.get());
+            if (SUCCEEDED(hr)) hr = m_streaming ? streamAudio(sample.get()) : m_writer->WriteSample(m_audioStream, sample.get());
             if (FAILED(hr)) return fail(DiskFull(hr) ? kWriteFailed : kAudioRejected, hr, "son");
             m_audioWritten += frames;
         }
@@ -2099,6 +2582,18 @@ class Recorder {
     int64_t m_audioWritten = 0;
     std::vector<float> m_mix;
     std::unique_ptr<AudioSource> m_gameSound, m_micSound;
+    // Direct.
+    Ptr<IMFActivate> m_videoActivate;
+    Ptr<IMFTransform> m_videoEncoder, m_audioEncoder;
+    Ptr<IMFMediaEventGenerator> m_videoEvents;
+    std::unique_ptr<RtmpStreamer> m_streamer;
+    DWORD m_videoIn = 0, m_videoOut = 0;
+    DWORD m_videoOutputSize = 0, m_audioOutputSize = 0;
+    bool m_videoProvides = false, m_audioProvides = false;
+    int m_needInput = 0;          // images demandées par l'encodeur asynchrone
+    bool m_streaming = false;
+    bool m_videoConfigSent = false;
+    std::vector<uint8_t> m_packet;
 };
 
 Recorder g_recorder;
