@@ -174,6 +174,8 @@ namespace XRPerfSensors
         }
 
         // Compromis vitesse / qualité de l'encodeur (CODECAPI_AVEncCommonQualityVsSpeed) ; à la main : celui de l'encodeur.
+        private const uint StreamMaxQualityVsSpeed = 70;
+
         private static int QualityVsSpeedOf(string quality)
         {
             return quality == "light" ? 33 : quality == "balanced" ? 50 : quality == "high" ? 70 : quality == "max" ? 100 : 0;
@@ -449,6 +451,9 @@ namespace XRPerfSensors
                 options.BitrateKbps = (uint)s.StreamBitrateFor(s.StreamService);
                 options.StreamUrl = Utf8Z(Settings.StreamUrl(s.StreamService));
                 options.StreamKey = Utf8Z(key);
+                // En direct, l'encodeur doit suivre en temps réel : réglage le plus lent écarté (images sautées
+                // en 1440p60 constatées à 100, presque aucune à 70). Les enregistrements gardent le choix.
+                if (options.QualityVsSpeed == 0 || options.QualityVsSpeed > StreamMaxQualityVsSpeed) options.QualityVsSpeed = StreamMaxQualityVsSpeed;
             }
             _streaming = stream;
             int result;
