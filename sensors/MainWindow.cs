@@ -476,6 +476,10 @@ namespace XRPerfSensors
                 w.WriteNumber("streamKbps", st.StreamKbps);
                 w.WriteNumber("streamDropped", st.StreamDropped);
                 w.WriteNumber("streamReconnects", st.StreamReconnects);
+                w.WriteNumber("stream2State", st.Stream2State);
+                w.WriteNumber("stream2Kbps", st.Stream2Kbps);
+                w.WriteNumber("stream2Dropped", st.Stream2Dropped);
+                w.WriteNumber("stream2Reconnects", st.Stream2Reconnects);
             }));
         }
 

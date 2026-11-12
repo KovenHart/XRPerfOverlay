@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.13.0
+
+- **Live on Twitch and YouTube at the same time**: "Service" *Twitch*, *YouTube* or *Both*. Each service has its own settings (key, format, resolution, bitrate) and its own encode: for example Twitch in H.264 1080p at 6000 kbps and YouTube in AV1 1440p at 18,000 kbps. The image is composed once, at the larger of the two sizes. If one service drops or refuses the key, the other keeps going; the Video page shows each one's status and bitrate. The frame rate (30 or 60 fps) is shared.
+
 ## 1.12.0
 
 - **Live on Twitch and YouTube, without OBS**: the headset video (image, panel, game menus, filters, game sound and microphone) goes live, encoded in H.264 by the graphics card at a constant bitrate. Video page: "Output" *MP4 file* or *Live* (one or the other), service, stream key (kept encrypted for your Windows account, never shown again), resolution 720p to 1440p, 30 or 60 fps, bitrate (capped at 8000 kbps for Twitch). The video hotkey, the button or the tray menu starts the stream; **LIVE** and the duration show in the headset; upload rate, lost frames and reconnections on the Video page. Automatic reconnection for one minute after a drop. OpenXR and SteamVR games.

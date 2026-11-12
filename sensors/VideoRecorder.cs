@@ -61,6 +61,11 @@ namespace XRPerfSensors
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string CaptureDevice;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] StreamUrl;  // direct : UTF-8, terminé par un zéro
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] StreamKey;
+            public uint StreamCount;      // 1 ou 2 (Twitch et YouTube en même temps)
+            public uint Stream1Height;    // 0 : celle de la vidéo
+            public uint Stream2Codec, Stream2Height, Stream2Bitrate;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Stream2Url;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Stream2Key;
         }
 
         // États du direct (StreamState, layer/src/rtmp.h).
@@ -85,6 +90,7 @@ namespace XRPerfSensors
             public uint StreamKbps;       // débit envoyé ces dernières secondes
             public uint StreamDropped;    // images perdues faute de débit
             public uint StreamReconnects;
+            public uint Stream2State, Stream2Kbps, Stream2Dropped, Stream2Reconnects;  // seconde sortie (les deux services)
         }
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -416,8 +422,17 @@ namespace XRPerfSensors
         public string Start(Settings s, OverlaySettings image, bool obs = false)
         {
             bool stream = s.VideoTarget == "stream";
-            string key = stream ? StreamKey.Unprotect(s.StreamKeyStored(s.StreamService)) : "";
-            string service = s.StreamService == "youtube" ? "YouTube" : "Twitch";
+            // Direct : chaque service (un ou deux), sa clé en clair, la première qui manque ou est illisible.
+            string[] targets = stream ? s.StreamTargets() : new string[0];
+            var keys = new string[targets.Length];
+            string missing = null, unreadable = null, noEncoder = null;
+            for (int i = 0; i < targets.Length; i++)
+            {
+                keys[i] = StreamKey.Unprotect(s.StreamKeyStored(targets[i]));
+                if (s.StreamKeyStored(targets[i]).Length == 0) { if (missing == null) missing = Settings.ServiceName(targets[i]); }
+                else if (keys[i].Length == 0 && unreadable == null) unreadable = Settings.ServiceName(targets[i]);
+                if (_codecs >= 0 && (_codecs & CodecBit(s.StreamCodecFor(targets[i]))) == 0 && noEncoder == null) noEncoder = s.StreamCodecFor(targets[i]);
+            }
             StopObsOnly();  // l'image pour OBS seule laisse la place à l'enregistrement (qui la donne aussi)
             _message = "";
             if (!Available)
@@ -427,14 +442,14 @@ namespace XRPerfSensors
                 _message = Loc.T("XRPerfRecord.dll illisible : réinstallez XR Perf Overlay.", "XRPerfRecord.dll is unreadable: reinstall XR Perf Overlay.");
             else if (_stopping != null && !_stopping.IsCompleted)
                 _message = Loc.T("Le fichier précédent est en cours de finalisation, un instant.", "The previous file is being finalized, one moment.");
-            else if (stream && s.StreamKeyStored(s.StreamService).Length == 0)
-                _message = string.Format(Loc.T("Direct : saisissez votre clé de stream {0} (page Vidéo).", "Live: enter your {0} stream key (Video page)."), service);
-            else if (stream && key.Length == 0)
+            else if (missing != null)
+                _message = string.Format(Loc.T("Direct : saisissez votre clé de stream {0} (page Vidéo).", "Live: enter your {0} stream key (Video page)."), missing);
+            else if (unreadable != null)
                 _message = string.Format(Loc.T("Direct : la clé de stream {0} enregistrée est illisible, saisissez-la à nouveau (page Vidéo).",
-                                               "Live: the saved {0} stream key cannot be read, enter it again (Video page)."), service);
-            else if (stream && _codecs >= 0 && (_codecs & CodecBit(s.StreamCodecFor(s.StreamService))) == 0)
+                                               "Live: the saved {0} stream key cannot be read, enter it again (Video page)."), unreadable);
+            else if (noEncoder != null)
                 _message = string.Format(Loc.T("Direct : pas d'encodeur matériel {0} sur ce PC : choisissez un autre format.", "Live: no {0} hardware encoder on this PC: choose another format."),
-                                         CodecName(s.StreamCodecFor(s.StreamService)));
+                                         CodecName(noEncoder));
             else if (!stream && _codecs >= 0 && (_codecs & CodecBit(s.VideoCodec)) == 0)
                 _message = string.Format(Loc.T("Pas d'encodeur matériel {0} sur ce PC : choisissez un autre format.", "No {0} hardware encoder on this PC: choose another format."), CodecName(s.VideoCodec));
             if (_message.Length > 0) return _message;
@@ -443,14 +458,27 @@ namespace XRPerfSensors
             options.Obs = obs ? 1u : 0u;
             if (stream)
             {
-                // Débit constant, codec, résolution et cadence du direct (H.265 et AV1 : YouTube seulement).
+                // Débit constant, codec, résolution de chaque service (H.265 et AV1 : YouTube seulement), cadence
+                // commune. L'image est composée à la plus grande des deux tailles, réduite pour l'autre.
                 options.Encode = 2;
-                options.Codec = (uint)Math.Max(0, Array.IndexOf(Settings.VideoCodecs, s.StreamCodecFor(s.StreamService)));
-                options.Height = (uint)s.StreamHeight;
                 options.Fps = (uint)s.StreamFps;
-                options.BitrateKbps = (uint)s.StreamBitrateFor(s.StreamService);
-                options.StreamUrl = Utf8Z(Settings.StreamUrl(s.StreamService));
-                options.StreamKey = Utf8Z(key);
+                int height = 0;
+                foreach (string t in targets) height = Math.Max(height, s.StreamHeightFor(t));
+                options.Height = (uint)height;
+                options.StreamCount = (uint)targets.Length;
+                options.Codec = (uint)Math.Max(0, Array.IndexOf(Settings.VideoCodecs, s.StreamCodecFor(targets[0])));
+                options.Stream1Height = (uint)s.StreamHeightFor(targets[0]);
+                options.BitrateKbps = (uint)s.StreamBitrateFor(targets[0]);
+                options.StreamUrl = Utf8Z(Settings.StreamUrl(targets[0]));
+                options.StreamKey = Utf8Z(keys[0]);
+                if (targets.Length > 1)
+                {
+                    options.Stream2Codec = (uint)Math.Max(0, Array.IndexOf(Settings.VideoCodecs, s.StreamCodecFor(targets[1])));
+                    options.Stream2Height = (uint)s.StreamHeightFor(targets[1]);
+                    options.Stream2Bitrate = (uint)s.StreamBitrateFor(targets[1]);
+                    options.Stream2Url = Utf8Z(Settings.StreamUrl(targets[1]));
+                    options.Stream2Key = Utf8Z(keys[1]);
+                }
                 // En direct, l'encodeur doit suivre en temps réel : réglage le plus lent écarté (images sautées
                 // en 1440p60 constatées à 100, presque aucune à 70). Les enregistrements gardent le choix.
                 if (options.QualityVsSpeed == 0 || options.QualityVsSpeed > StreamMaxQualityVsSpeed) options.QualityVsSpeed = StreamMaxQualityVsSpeed;
@@ -507,6 +535,8 @@ namespace XRPerfSensors
                 CaptureDevice = s.VideoCaptureDevice ?? "",
                 StreamUrl = new byte[256],
                 StreamKey = new byte[256],
+                Stream2Url = new byte[256],
+                Stream2Key = new byte[256],
             };
             int[] values = image.ImageValues();
             options.ImageMode = values[0]; options.ImageSharpen = values[1]; options.ImageSharpness = values[2]; options.ImageBrightness = values[3];

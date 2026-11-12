@@ -130,9 +130,11 @@ namespace XRPerfSensors
             w.WriteNumber("VideoHotkey", d.VideoKey == 0 ? 0 : (d.VideoMods << 16) | d.VideoKey);  // modificateurs << 16 | touche
             w.WriteString("VideoTarget", d.VideoTarget);
             w.WriteString("StreamService", d.StreamService);
-            w.WriteNumber("StreamHeight", d.StreamHeight);
             w.WriteNumber("StreamFps", d.StreamFps);
-            w.WriteNumber("StreamBitrate", d.StreamBitrate);
+            w.WriteNumber("StreamTwitchHeight", d.StreamTwitchHeight);
+            w.WriteNumber("StreamTwitchBitrate", d.StreamTwitchBitrate);
+            w.WriteNumber("StreamYoutubeHeight", d.StreamYoutubeHeight);
+            w.WriteNumber("StreamYoutubeBitrate", d.StreamYoutubeBitrate);
             w.WriteString("StreamCodec", d.StreamCodec);
             // Clés : seulement si elles sont enregistrées (jamais leur texte).
             w.WriteBoolean("StreamKeyTwitchSet", d.StreamKeyTwitch.Length > 0);
@@ -342,9 +344,11 @@ namespace XRPerfSensors
                 case "VideoTarget": if (Array.IndexOf(Settings.VideoTargets, text) < 0) return Change.None; d.VideoTarget = text; return Change.Video;
                 case "StreamCodec": if (Array.IndexOf(Settings.VideoCodecs, text) < 0) return Change.None; d.StreamCodec = text; return Change.Video;
                 case "StreamService": if (Array.IndexOf(Settings.StreamServices, text) < 0) return Change.None; d.StreamService = text; return Change.Video;
-                case "StreamHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.StreamHeights, i) < 0) return Change.None; d.StreamHeight = i; return Change.Video;
+                case "StreamTwitchHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.StreamHeights, i) < 0) return Change.None; d.StreamTwitchHeight = i; return Change.Video;
+                case "StreamYoutubeHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.StreamHeights, i) < 0) return Change.None; d.StreamYoutubeHeight = i; return Change.Video;
                 case "StreamFps": if (!Int(v, 0, 1000, out i) || Array.IndexOf(Settings.StreamRates, i) < 0) return Change.None; d.StreamFps = i; return Change.Video;
-                case "StreamBitrate": if (!Int(v, Settings.MinStreamBitrate, Settings.MaxStreamBitrateAny, out i)) return Change.None; d.StreamBitrate = i; return Change.Video;
+                case "StreamTwitchBitrate": if (!Int(v, Settings.MinStreamBitrate, Settings.MaxStreamBitrateAny, out i)) return Change.None; d.StreamTwitchBitrate = i; return Change.Video;
+                case "StreamYoutubeBitrate": if (!Int(v, Settings.MinStreamBitrate, Settings.MaxStreamBitrateAny, out i)) return Change.None; d.StreamYoutubeBitrate = i; return Change.Video;
                 // Clé saisie (texte vide : effacée) ; gardée chiffrée.
                 case "StreamKeyTwitch":
                 case "StreamKeyYoutube":

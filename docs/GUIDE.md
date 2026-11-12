@@ -258,9 +258,11 @@ XRPerfSensors peut diffuser la vidéo du casque en direct sur **Twitch** ou **Yo
 **Mise en place** (page **Vidéo**) :
 
 1. « Sortie » : **Direct**.
-2. « Direct (Twitch, YouTube) » : choisissez le service et collez votre **clé de stream**, puis **Enregistrer**. Twitch : Tableau de bord des créateurs, Paramètres, Stream. YouTube : YouTube Studio, Créer, Passer au direct (le direct doit être programmé ou ouvert côté YouTube). La clé est gardée chiffrée pour votre compte Windows (DPAPI) dans `XRPerfSensors.ini`, n'est jamais réaffichée et n'apparaît pas dans les journaux.
+2. « Direct (Twitch, YouTube) » : choisissez le service (**Twitch**, **YouTube** ou **Les deux** en même temps) et la cadence. Puis, dans la partie de chaque service utilisé, collez votre **clé de stream**, puis **Enregistrer**. Twitch : Tableau de bord des créateurs, Paramètres, Stream. YouTube : YouTube Studio, Créer, Passer au direct (le direct doit être programmé ou ouvert côté YouTube). La clé est gardée chiffrée pour votre compte Windows (DPAPI) dans `XRPerfSensors.ini`, n'est jamais réaffichée et n'apparaît pas dans les journaux.
 3. Format (YouTube seulement) : **H.264**, **H.265** ou **AV1**. À débit égal, H.265 et AV1 donnent une image plus fine ; l'AV1 demande une GeForce RTX 40 ou plus récente, une Radeon RX 7000 ou une Intel Arc. Twitch n'accepte que le H.264 pour un direct.
 4. Résolution (720p à 1440p), 30 ou 60 images par seconde, débit en kbit/s. Twitch : 6000 kbit/s en 900p ou 1080p à 60 images/s (8000 au plus, plafond appliqué). YouTube : 4500 à 9000 kbit/s en 1080p, 9000 à 18000 en 1440p. Votre connexion doit envoyer ce débit avec de la marge.
+
+**Les deux en même temps.** Chaque service a ses propres réglages (format, résolution, débit) et son propre encodage par la carte graphique ; l'image est composée une fois, à la plus grande des deux tailles, puis réduite pour l'autre. Votre connexion doit envoyer la somme des deux débits, avec de la marge. Si un service décroche ou refuse la clé, l'autre continue ; la page Vidéo indique l'état et le débit de chacun.
 
 **Démarrer et arrêter** : le raccourci de la vidéo (`Ctrl+Alt+V` par défaut), le bouton **Démarrer le direct** ou le menu de l'icône. Le direct commence dès qu'un jeu VR envoie des images. Le casque affiche **LIVE** et la durée (un rond rouge au lieu du carré de VID) ; la page Vidéo montre le débit envoyé, les images perdues et les reconnexions.
 
@@ -268,7 +270,7 @@ XRPerfSensors peut diffuser la vidéo du casque en direct sur **Twitch** ou **Yo
 
 **Essayer sans être vu.** Twitch : ajoutez `?bandwidthtest=true` à la fin de la clé (le direct n'est pas montré aux spectateurs). YouTube : un direct programmé en « Non répertorié ».
 
-**Limites de cette version.** Twitch et YouTube seulement, en RTMP (sans chiffrement, accepté par les deux). Pour des scènes, des alertes ou plusieurs services, gardez OBS et la source « XR Perf (casque) ». En cas de souci, le détail est dans `XRPerfRecord.log` (dossier `%LOCALAPPDATA%\XRPerfOverlay`).
+**Limites de cette version.** Twitch et YouTube seulement, en RTMP (sans chiffrement, accepté par les deux). Pour des scènes, des alertes ou d'autres services, gardez OBS et la source « XR Perf (casque) ». En cas de souci, le détail est dans `XRPerfRecord.log` (dossier `%LOCALAPPDATA%\XRPerfOverlay`).
 
 ## Filtres d'image
 

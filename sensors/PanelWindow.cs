@@ -583,8 +583,9 @@ namespace XRPerfSensors
         // (VideoTarget). Réglages de l'image communs (œil, cadrage, panneau, filtres, son) ; résolution, cadence
         // et débit propres au direct (H.264, débit constant). Clés gardées chiffrées (StreamKey.cs).
         public static readonly string[] VideoTargets = { "file", "stream" };
-        public static readonly string[] StreamServices = { "twitch", "youtube" };
+        public static readonly string[] StreamServices = { "twitch", "youtube", "both" };  // both : les deux en même temps
         public static readonly int[] StreamHeights = { 720, 900, 1080, 1440 };
+        public const int MaxTwitchHeight = 1080;
         public static readonly int[] StreamRates = { 30, 60 };
         public const int MinStreamBitrate = 1500, MaxStreamBitrateAny = 30000; // kbit/s
         /// <summary>Débit maximal accepté par le service (kbit/s) : Twitch limite les chaînes à environ 8000.</summary>
@@ -593,9 +594,9 @@ namespace XRPerfSensors
         public static string StreamUrl(string service) { return service == "youtube" ? "rtmp://a.rtmp.youtube.com/live2" : "rtmp://live.twitch.tv/app"; }
         public string VideoTarget = "file";
         public string StreamService = "twitch";
-        public int StreamHeight = 900;
-        public int StreamFps = 60;
-        public int StreamBitrate = 6000;
+        public int StreamFps = 60;                 // commune aux deux services
+        public int StreamTwitchHeight = 900, StreamTwitchBitrate = 6000;
+        public int StreamYoutubeHeight = 1080, StreamYoutubeBitrate = 9000;
         public string StreamCodec = "h264";    // YouTube : h264, hevc ou av1 (Enhanced RTMP) ; Twitch : toujours H.264
         /// <summary>Codec du direct pour ce service : Twitch n'accepte que le H.264.</summary>
         public string StreamCodecFor(string service) { return service == "youtube" ? StreamCodec : "h264"; }
@@ -603,7 +604,11 @@ namespace XRPerfSensors
         public string StreamKeyYoutube = "";
 
         public string StreamKeyStored(string service) { return service == "youtube" ? StreamKeyYoutube : StreamKeyTwitch; }
-        public int StreamBitrateFor(string service) { return Math.Min(StreamBitrate, MaxStreamBitrate(service)); }
+        /// <summary>Services du direct : un, ou les deux (Twitch puis YouTube).</summary>
+        public string[] StreamTargets() { return StreamService == "both" ? new[] { "twitch", "youtube" } : new[] { StreamService == "youtube" ? "youtube" : "twitch" }; }
+        public int StreamHeightFor(string service) { return service == "youtube" ? StreamYoutubeHeight : Math.Min(StreamTwitchHeight, MaxTwitchHeight); }
+        public int StreamBitrateFor(string service) { return Math.Min(service == "youtube" ? StreamYoutubeBitrate : StreamTwitchBitrate, MaxStreamBitrate(service)); }
+        public static string ServiceName(string service) { return service == "youtube" ? "YouTube" : "Twitch"; }
 
         /// <summary>
         /// Raccourci possible : une touche ordinaire (pas un modificateur seul) avec au moins un modificateur, ou
@@ -705,9 +710,14 @@ namespace XRPerfSensors
                         case "video_mic": settings.VideoMic = value != 0; break;
                         case "video_key": if (value >= 0 && value <= 0xFE) settings.VideoKey = value; break;
                         case "video_mods": if (value >= 0 && value <= 0xF) settings.VideoMods = value; break;
-                        case "stream_height": if (Array.IndexOf(StreamHeights, value) >= 0) settings.StreamHeight = value; break;
+                        // stream_height et stream_bitrate : réglages communs de la 1.12.0, repris pour les deux services.
+                        case "stream_height": if (Array.IndexOf(StreamHeights, value) >= 0) settings.StreamTwitchHeight = settings.StreamYoutubeHeight = value; break;
+                        case "stream_bitrate": if (value >= MinStreamBitrate && value <= MaxStreamBitrateAny) settings.StreamTwitchBitrate = settings.StreamYoutubeBitrate = value; break;
+                        case "stream_twitch_height": if (Array.IndexOf(StreamHeights, value) >= 0) settings.StreamTwitchHeight = value; break;
+                        case "stream_twitch_bitrate": if (value >= MinStreamBitrate && value <= MaxStreamBitrateAny) settings.StreamTwitchBitrate = value; break;
+                        case "stream_youtube_height": if (Array.IndexOf(StreamHeights, value) >= 0) settings.StreamYoutubeHeight = value; break;
+                        case "stream_youtube_bitrate": if (value >= MinStreamBitrate && value <= MaxStreamBitrateAny) settings.StreamYoutubeBitrate = value; break;
                         case "stream_fps": if (Array.IndexOf(StreamRates, value) >= 0) settings.StreamFps = value; break;
-                        case "stream_bitrate": if (value >= MinStreamBitrate && value <= MaxStreamBitrateAny) settings.StreamBitrate = value; break;
                     }
                 }
             }
@@ -795,9 +805,11 @@ namespace XRPerfSensors
                     "video_mods=" + VideoMods.ToString(CultureInfo.InvariantCulture),
                     "video_target=" + VideoTarget,
                     "stream_service=" + StreamService,
-                    "stream_height=" + StreamHeight.ToString(CultureInfo.InvariantCulture),
                     "stream_fps=" + StreamFps.ToString(CultureInfo.InvariantCulture),
-                    "stream_bitrate=" + StreamBitrate.ToString(CultureInfo.InvariantCulture),
+                    "stream_twitch_height=" + StreamTwitchHeight.ToString(CultureInfo.InvariantCulture),
+                    "stream_twitch_bitrate=" + StreamTwitchBitrate.ToString(CultureInfo.InvariantCulture),
+                    "stream_youtube_height=" + StreamYoutubeHeight.ToString(CultureInfo.InvariantCulture),
+                    "stream_youtube_bitrate=" + StreamYoutubeBitrate.ToString(CultureInfo.InvariantCulture),
                     "stream_codec=" + StreamCodec,
                     "stream_key_twitch=" + OneLine(StreamKeyTwitch),
                     "stream_key_youtube=" + OneLine(StreamKeyYoutube),
