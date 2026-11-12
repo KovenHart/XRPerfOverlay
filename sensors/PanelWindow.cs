@@ -596,6 +596,9 @@ namespace XRPerfSensors
         public int StreamHeight = 900;
         public int StreamFps = 60;
         public int StreamBitrate = 6000;
+        public string StreamCodec = "h264";    // YouTube : h264, hevc ou av1 (Enhanced RTMP) ; Twitch : toujours H.264
+        /// <summary>Codec du direct pour ce service : Twitch n'accepte que le H.264.</summary>
+        public string StreamCodecFor(string service) { return service == "youtube" ? StreamCodec : "h264"; }
         public string StreamKeyTwitch = "";    // chiffrées (DPAPI), en base64
         public string StreamKeyYoutube = "";
 
@@ -664,6 +667,7 @@ namespace XRPerfSensors
                     if (key == "video_overlay_corner") { if (Array.IndexOf(VideoCorners, text) >= 0) settings.VideoOverlayCorner = text; continue; }
                     if (key == "video_target") { if (Array.IndexOf(VideoTargets, text) >= 0) settings.VideoTarget = text; continue; }
                     if (key == "stream_service") { if (Array.IndexOf(StreamServices, text) >= 0) settings.StreamService = text; continue; }
+                    if (key == "stream_codec") { if (Array.IndexOf(VideoCodecs, text) >= 0) settings.StreamCodec = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
                     {
@@ -794,6 +798,7 @@ namespace XRPerfSensors
                     "stream_height=" + StreamHeight.ToString(CultureInfo.InvariantCulture),
                     "stream_fps=" + StreamFps.ToString(CultureInfo.InvariantCulture),
                     "stream_bitrate=" + StreamBitrate.ToString(CultureInfo.InvariantCulture),
+                    "stream_codec=" + StreamCodec,
                     "stream_key_twitch=" + OneLine(StreamKeyTwitch),
                     "stream_key_youtube=" + OneLine(StreamKeyYoutube),
                 });

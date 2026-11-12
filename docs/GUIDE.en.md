@@ -253,13 +253,14 @@ To stream with OBS Studio (30 or later), XR Perf Overlay adds an **"XR Perf (hea
 
 ## Live on Twitch and YouTube
 
-XRPerfSensors can stream the headset video live to **Twitch** or **YouTube**, without OBS: the same image as the recorded video (eye, format, crop, stabilization, level horizon, panel, game menus, filters) and the same sound (game sound, microphone), encoded in H.264 by the graphics card and sent to the service. OpenXR and SteamVR games. It is one or the other: a live stream does not write a file at the same time.
+XRPerfSensors can stream the headset video live to **Twitch** or **YouTube**, without OBS: the same image as the recorded video (eye, format, crop, stabilization, level horizon, panel, game menus, filters) and the same sound (game sound, microphone), encoded by the graphics card (H.264; H.265 or AV1 for YouTube) and sent to the service. OpenXR and SteamVR games. It is one or the other: a live stream does not write a file at the same time.
 
 **Setup** (**Video** page):
 
 1. "Output": **Live**.
 2. "Live (Twitch, YouTube)": choose the service and paste your **stream key**, then **Save**. Twitch: Creator Dashboard, Settings, Stream. YouTube: YouTube Studio, Create, Go live (the stream must be scheduled or open on YouTube's side). The key is kept encrypted for your Windows account (DPAPI) in `XRPerfSensors.ini`, is never shown again and does not appear in the logs.
-3. Resolution (720p to 1440p), 30 or 60 frames per second, bitrate in kbps. Twitch: 6000 kbps at 900p or 1080p 60 fps (8000 at most, cap applied). YouTube: 4500 to 9000 kbps at 1080p, 9000 to 18000 at 1440p. Your connection must upload this rate with room to spare.
+3. Format (YouTube only): **H.264**, **H.265** or **AV1**. At the same bitrate, H.265 and AV1 give a finer image; AV1 needs a GeForce RTX 40 or newer, a Radeon RX 7000 or an Intel Arc. Twitch only accepts H.264 for a live stream.
+4. Resolution (720p to 1440p), 30 or 60 frames per second, bitrate in kbps. Twitch: 6000 kbps at 900p or 1080p 60 fps (8000 at most, cap applied). YouTube: 4500 to 9000 kbps at 1080p, 9000 to 18000 at 1440p. Your connection must upload this rate with room to spare.
 
 **Start and stop**: the video hotkey (`Ctrl+Alt+V` by default), the **Go live** button or the tray icon menu. The stream starts as soon as a VR game sends images. The headset shows **LIVE** and the duration (a red dot instead of VID's square); the Video page shows the upload rate, lost frames and reconnections.
 
@@ -267,7 +268,7 @@ XRPerfSensors can stream the headset video live to **Twitch** or **YouTube**, wi
 
 **Testing without viewers.** Twitch: add `?bandwidthtest=true` at the end of the key (the stream is not shown to viewers). YouTube: a scheduled "Unlisted" stream.
 
-**Limits of this version.** Twitch and YouTube only, over RTMP (unencrypted, accepted by both), H.264. For scenes, alerts or several services, keep OBS and the "XR Perf (headset)" source. If something goes wrong, details are in `XRPerfRecord.log` (`%LOCALAPPDATA%\XRPerfOverlay` folder).
+**Limits of this version.** Twitch and YouTube only, over RTMP (unencrypted, accepted by both). For scenes, alerts or several services, keep OBS and the "XR Perf (headset)" source. If something goes wrong, details are in `XRPerfRecord.log` (`%LOCALAPPDATA%\XRPerfOverlay` folder).
 
 ## Image filters
 

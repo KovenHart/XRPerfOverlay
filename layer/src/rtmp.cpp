@@ -254,6 +254,346 @@ bool AnnexBToAvcc(const uint8_t* data, size_t size, std::vector<uint8_t>& out) {
     return !out.empty();
 }
 
+// --- H.265 et AV1 -------------------------------------------------------------------------------------------
+
+namespace {
+
+// Lecture bit à bit (MSB d'abord), avec codes Exp-Golomb ; `ok` faux si on dépasse la fin.
+class BitReader {
+  public:
+    BitReader(const uint8_t* data, size_t size) : m_data(data), m_size(size) {}
+    uint32_t bits(int n) {
+        uint32_t v = 0;
+        for (int i = 0; i < n; ++i) {
+            if (m_pos >= m_size * 8) {
+                ok = false;
+                return 0;
+            }
+            v = (v << 1) | ((m_data[m_pos >> 3] >> (7 - (m_pos & 7))) & 1u);
+            ++m_pos;
+        }
+        return v;
+    }
+    void skip(size_t n) {
+        m_pos += n;
+        if (m_pos > m_size * 8) ok = false;
+    }
+    uint32_t ue() {
+        int zeros = 0;
+        while (ok && bits(1) == 0 && zeros < 32) ++zeros;
+        if (zeros >= 32) ok = false;
+        return zeros ? ((1u << zeros) - 1 + bits(zeros)) : 0;
+    }
+    bool ok = true;
+
+  private:
+    const uint8_t* m_data;
+    size_t m_size;
+    size_t m_pos = 0;
+};
+
+// Charge utile d'une unité NAL sans les octets anti-émulation (00 00 03).
+std::vector<uint8_t> Rbsp(const uint8_t* data, size_t size) {
+    std::vector<uint8_t> out;
+    out.reserve(size);
+    int zeros = 0;
+    for (size_t i = 0; i < size; ++i) {
+        if (zeros >= 2 && data[i] == 3) {
+            zeros = 0;
+            continue;
+        }
+        zeros = data[i] == 0 ? zeros + 1 : 0;
+        out.push_back(data[i]);
+    }
+    return out;
+}
+
+int HevcType(const uint8_t* nal) { return (nal[0] >> 1) & 0x3F; }
+
+// leb128 (tailles des OBU AV1).
+bool ReadLeb128(const uint8_t* data, size_t size, size_t& pos, uint64_t& value) {
+    value = 0;
+    for (int i = 0; i < 8; ++i) {
+        if (pos >= size) return false;
+        const uint8_t b = data[pos++];
+        value |= static_cast<uint64_t>(b & 0x7F) << (7 * i);
+        if (!(b & 0x80)) return true;
+    }
+    return false;
+}
+
+void PutLeb128(std::vector<uint8_t>& v, uint64_t x) {
+    do {
+        uint8_t b = x & 0x7F;
+        x >>= 7;
+        if (x) b |= 0x80;
+        v.push_back(b);
+    } while (x);
+}
+
+struct Obu {
+    int type = 0;
+    uint8_t header = 0, extension = 0;
+    bool hasExtension = false;
+    const uint8_t* payload = nullptr;
+    size_t size = 0;
+};
+
+// OBU d'une image (format « low overhead » : chacun porte sa taille, sauf parfois le dernier).
+bool SplitObus(const uint8_t* data, size_t size, std::vector<Obu>& obus) {
+    obus.clear();
+    size_t pos = 0;
+    while (pos < size) {
+        Obu o;
+        o.header = data[pos++];
+        if (o.header & 0x80) return false;  // bit interdit
+        o.type = (o.header >> 3) & 0xF;
+        o.hasExtension = (o.header & 0x04) != 0;
+        if (o.hasExtension) {
+            if (pos >= size) return false;
+            o.extension = data[pos++];
+        }
+        uint64_t length = size - pos;
+        if (o.header & 0x02 && !ReadLeb128(data, size, pos, length)) return false;
+        if (length > size - pos) return false;
+        o.payload = data + pos;
+        o.size = static_cast<size_t>(length);
+        pos += o.size;
+        obus.push_back(o);
+    }
+    return !obus.empty();
+}
+
+void PutObu(std::vector<uint8_t>& out, const Obu& o) {
+    out.push_back(static_cast<uint8_t>(o.header | 0x02));  // avec sa taille
+    if (o.hasExtension) out.push_back(o.extension);
+    PutLeb128(out, o.size);
+    out.insert(out.end(), o.payload, o.payload + o.size);
+}
+
+constexpr int kObuSequenceHeader = 1, kObuTemporalDelimiter = 2, kObuPadding = 15;
+
+}  // namespace
+
+bool HevcConfig(const uint8_t* annexB, size_t size, std::vector<uint8_t>& config) {
+    std::pair<const uint8_t*, size_t> vps = {nullptr, 0}, sps = {nullptr, 0}, pps = {nullptr, 0};
+    for (const auto& unit : SplitAnnexB(annexB, size)) {
+        if (unit.second < 3) continue;
+        const int type = HevcType(unit.first);
+        if (type == 32 && !vps.first) vps = unit;
+        if (type == 33 && !sps.first) sps = unit;
+        if (type == 34 && !pps.first) pps = unit;
+    }
+    if (!vps.first || !sps.first || !pps.first) return false;
+    // SPS : profil, palier et niveau, format de chroma, profondeurs.
+    const std::vector<uint8_t> rbsp = Rbsp(sps.first + 2, sps.second - 2);
+    BitReader r(rbsp.data(), rbsp.size());
+    r.bits(4);  // sps_video_parameter_set_id
+    const uint32_t maxSubLayers = r.bits(3);
+    const uint32_t temporalIdNesting = r.bits(1);
+    const uint32_t profileSpace = r.bits(2), tier = r.bits(1), profile = r.bits(5);
+    const uint32_t compatibility = r.bits(32);
+    const uint32_t constraintHigh = r.bits(16), constraintLow = r.bits(32);
+    const uint32_t level = r.bits(8);
+    bool subProfile[8] = {}, subLevel[8] = {};
+    for (uint32_t i = 0; i < maxSubLayers; ++i) {
+        subProfile[i] = r.bits(1) != 0;
+        subLevel[i] = r.bits(1) != 0;
+    }
+    if (maxSubLayers > 0)
+        for (uint32_t i = maxSubLayers; i < 8; ++i) r.bits(2);
+    for (uint32_t i = 0; i < maxSubLayers; ++i) {
+        if (subProfile[i]) r.skip(88);
+        if (subLevel[i]) r.skip(8);
+    }
+    r.ue();  // sps_seq_parameter_set_id
+    const uint32_t chroma = r.ue();
+    if (chroma == 3) r.bits(1);
+    r.ue();  // largeur
+    r.ue();  // hauteur
+    if (r.bits(1)) {  // fenêtre de conformité
+        r.ue();
+        r.ue();
+        r.ue();
+        r.ue();
+    }
+    const uint32_t depthLuma = r.ue(), depthChroma = r.ue();
+    if (!r.ok || chroma > 3 || depthLuma > 7 || depthChroma > 7) return false;
+    config.clear();
+    config.push_back(1);
+    config.push_back(static_cast<uint8_t>((profileSpace << 6) | (tier << 5) | profile));
+    Put32(config, compatibility);
+    Put16(config, constraintHigh);
+    Put32(config, constraintLow);
+    config.push_back(static_cast<uint8_t>(level));
+    config.push_back(0xF0);  // min_spatial_segmentation_idc = 0
+    config.push_back(0x00);
+    config.push_back(0xFC);  // parallelismType inconnu
+    config.push_back(static_cast<uint8_t>(0xFC | chroma));
+    config.push_back(static_cast<uint8_t>(0xF8 | depthLuma));
+    config.push_back(static_cast<uint8_t>(0xF8 | depthChroma));
+    Put16(config, 0);  // avgFrameRate
+    config.push_back(static_cast<uint8_t>(((maxSubLayers + 1) << 3) | (temporalIdNesting << 2) | 3));  // tailles sur 4 octets
+    config.push_back(3);
+    for (const auto& unit : {vps, sps, pps}) {
+        config.push_back(static_cast<uint8_t>(0x80 | HevcType(unit.first)));  // array_completeness
+        Put16(config, 1);
+        Put16(config, static_cast<uint32_t>(unit.second));
+        config.insert(config.end(), unit.first, unit.first + unit.second);
+    }
+    return true;
+}
+
+bool Av1Config(const uint8_t* data, size_t size, std::vector<uint8_t>& config) {
+    std::vector<Obu> obus;
+    if (!SplitObus(data, size, obus)) return false;
+    const Obu* seq = nullptr;
+    for (const Obu& o : obus)
+        if (o.type == kObuSequenceHeader) seq = &o;
+    if (!seq) return false;
+    BitReader r(seq->payload, seq->size);
+    const uint32_t profile = r.bits(3);
+    r.bits(1);  // still_picture
+    const uint32_t reduced = r.bits(1);
+    uint32_t level0 = 0, tier0 = 0;
+    bool decoderModel = false;
+    uint32_t delayLength = 0;
+    if (reduced) {
+        level0 = r.bits(5);
+    } else {
+        if (r.bits(1)) {  // timing_info
+            r.bits(32);
+            r.bits(32);
+            if (r.bits(1)) {  // equal_picture_interval : uvlc
+                int zeros = 0;
+                while (r.ok && r.bits(1) == 0 && zeros < 32) ++zeros;
+                if (zeros < 32) r.bits(zeros);
+            }
+            decoderModel = r.bits(1) != 0;
+            if (decoderModel) {
+                delayLength = r.bits(5) + 1;
+                r.bits(32);
+                r.bits(5);
+                r.bits(5);
+            }
+        }
+        const bool initialDelay = r.bits(1) != 0;
+        const uint32_t points = r.bits(5) + 1;
+        for (uint32_t i = 0; i < points; ++i) {
+            r.bits(12);
+            const uint32_t level = r.bits(5);
+            const uint32_t tier = level > 7 ? r.bits(1) : 0;
+            if (i == 0) {
+                level0 = level;
+                tier0 = tier;
+            }
+            if (decoderModel && r.bits(1)) {
+                r.skip(delayLength * 2);
+                r.bits(1);
+            }
+            if (initialDelay && r.bits(1)) r.bits(4);
+        }
+    }
+    const uint32_t widthBits = r.bits(4) + 1, heightBits = r.bits(4) + 1;
+    r.skip(widthBits + heightBits);
+    if (!reduced && r.bits(1)) r.bits(7);  // frame_id_numbers_present
+    r.bits(3);                             // 128x128, filter intra, intra edge
+    bool orderHint = false;
+    if (!reduced) {
+        r.bits(4);  // interintra, masked, warped, dual filter
+        orderHint = r.bits(1) != 0;
+        if (orderHint) r.bits(2);
+        uint32_t screenTools = 2;
+        if (!r.bits(1)) screenTools = r.bits(1);
+        if (screenTools > 0 && !r.bits(1)) r.bits(1);  // seq_choose_integer_mv, seq_force_integer_mv
+        if (orderHint) r.bits(3);
+    }
+    r.bits(3);  // superres, cdef, restoration
+    // color_config
+    const uint32_t highBitdepth = r.bits(1);
+    uint32_t twelveBit = 0, mono = 0, subX = 1, subY = 1, position = 0;
+    if (profile == 2 && highBitdepth) twelveBit = r.bits(1);
+    if (profile != 1) mono = r.bits(1);
+    uint32_t primaries = 2, transfer = 2, matrix = 2;
+    if (r.bits(1)) {
+        primaries = r.bits(8);
+        transfer = r.bits(8);
+        matrix = r.bits(8);
+    }
+    if (mono) {
+        r.bits(1);
+    } else if (primaries == 1 && transfer == 13 && matrix == 0) {
+        subX = subY = 0;
+    } else {
+        r.bits(1);  // color_range
+        if (profile == 1) {
+            subX = subY = 0;
+        } else if (profile == 2) {
+            if (twelveBit) {
+                subX = r.bits(1);
+                subY = subX ? r.bits(1) : 0;
+            } else {
+                subX = 1;
+                subY = 0;
+            }
+        }
+        if (subX && subY) position = r.bits(2);
+    }
+    if (!r.ok) return false;
+    config.clear();
+    config.push_back(0x81);  // marqueur, version 1
+    config.push_back(static_cast<uint8_t>((profile << 5) | level0));
+    config.push_back(static_cast<uint8_t>((tier0 << 7) | (highBitdepth << 6) | (twelveBit << 5) | (mono << 4) | (subX << 3) | (subY << 2) | position));
+    config.push_back(0);  // pas de délai de présentation initial
+    PutObu(config, *seq);
+    return true;
+}
+
+bool Av1Frame(const uint8_t* data, size_t size, std::vector<uint8_t>& out) {
+    out.clear();
+    std::vector<Obu> obus;
+    if (!SplitObus(data, size, obus)) return false;
+    for (const Obu& o : obus)
+        if (o.type != kObuTemporalDelimiter && o.type != kObuPadding) PutObu(out, o);
+    return !out.empty();
+}
+
+bool VideoConfig(int codec, const uint8_t* data, size_t size, std::vector<uint8_t>& config) {
+    if (codec == kCodecHevc) return HevcConfig(data, size, config);
+    if (codec == kCodecAv1) return Av1Config(data, size, config);
+    return AvcConfig(data, size, config);
+}
+
+bool VideoPacket(int codec, const uint8_t* data, size_t size, std::vector<uint8_t>& out) {
+    if (codec == kCodecAv1) return Av1Frame(data, size, out);
+    if (codec != kCodecHevc) return AnnexBToAvcc(data, size, out);
+    out.clear();
+    out.reserve(size + 16);
+    for (const auto& unit : SplitAnnexB(data, size)) {
+        if (unit.second < 2) continue;
+        const int type = HevcType(unit.first);
+        if (type >= 32 && type <= 35) continue;  // VPS, SPS, PPS (dans l'en-tête), délimiteur
+        Put32(out, static_cast<uint32_t>(unit.second));
+        out.insert(out.end(), unit.first, unit.first + unit.second);
+    }
+    return !out.empty();
+}
+
+bool VideoKeyframe(int codec, const uint8_t* data, size_t size) {
+    if (codec == kCodecAv1) {  // image clé : précédée de l'en-tête de séquence
+        std::vector<Obu> obus;
+        if (!SplitObus(data, size, obus)) return false;
+        for (const Obu& o : obus)
+            if (o.type == kObuSequenceHeader) return true;
+        return false;
+    }
+    for (const auto& unit : SplitAnnexB(data, size)) {
+        if (unit.second < 1) continue;
+        if (codec == kCodecHevc ? (HevcType(unit.first) >= 16 && HevcType(unit.first) <= 21) : (unit.first[0] & 0x1F) == 5) return true;
+    }
+    return false;
+}
+
 std::vector<uint8_t> AacConfig(int sampleRate, int channels) {
     static const int kRates[] = {96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350};
     int index = 3;
@@ -273,6 +613,7 @@ class RtmpConnection {
     // Connexion, poignée de main et publication. `refused` : le serveur a refusé la publication.
     bool open(const StreamConfig& config, int timeoutMs, std::string& error, bool& refused) {
         refused = false;
+        m_codec = config.codec;
         const uint64_t deadline = NowMs() + static_cast<uint64_t>(timeoutMs);
         std::string host, app, port = "1935";
         if (!parseUrl(config.url, host, port, app)) {
@@ -303,6 +644,12 @@ class RtmpConnection {
             AmfString(m, tcUrl);
             AmfKey(m, "tcUrl");
             AmfString(m, tcUrl);
+            if (m_codec != kCodecH264) {  // Enhanced RTMP : codecs annoncés
+                AmfKey(m, "fourCcList");
+                m.push_back(0x0A);  // tableau strict
+                Put32(m, 1);
+                AmfString(m, FourCc());
+            }
             AmfObjectEnd(m);
             if (!sendMessage(3, 0, 20, 0, m)) return fail(error, "envoi impossible");
         }
@@ -354,7 +701,12 @@ class RtmpConnection {
             AmfKey(m, "framerate");
             AmfNumber(m, config.fps);
             AmfKey(m, "videocodecid");
-            AmfNumber(m, 7);
+            if (m_codec == kCodecH264) {
+                AmfNumber(m, 7);
+            } else {  // Enhanced RTMP : le FourCC lu comme un entier
+                const std::string f = FourCc();
+                AmfNumber(m, static_cast<double>((uint32_t(uint8_t(f[0])) << 24) | (uint32_t(uint8_t(f[1])) << 16) | (uint32_t(uint8_t(f[2])) << 8) | uint8_t(f[3])));
+            }
             AmfKey(m, "videodatarate");
             AmfNumber(m, config.videoKbps);
             AmfKey(m, "audiocodecid");
@@ -375,6 +727,8 @@ class RtmpConnection {
         return true;
     }
 
+    std::string FourCc() const { return m_codec == kCodecHevc ? "hvc1" : "av01"; }
+
     void close() {
         if (m_socket != kNoSocket) CloseSocket(m_socket);
         m_socket = kNoSocket;
@@ -383,9 +737,18 @@ class RtmpConnection {
     bool sendVideo(uint32_t time, bool key, bool header, const std::vector<uint8_t>& data) {
         std::vector<uint8_t>& m = m_scratch;
         m.clear();
-        m.push_back(static_cast<uint8_t>((key ? 0x10 : 0x20) | 7));
-        m.push_back(header ? 0 : 1);
-        Put24(m, 0);  // pas d'images B : décalage d'affichage nul
+        if (m_codec == kCodecH264) {
+            m.push_back(static_cast<uint8_t>((key ? 0x10 : 0x20) | 7));
+            m.push_back(header ? 0 : 1);
+            Put24(m, 0);  // pas d'images B : décalage d'affichage nul
+        } else {
+            // Enhanced RTMP : en-tête étendu (bit 7), type d'image, type de paquet, FourCC. Paquets d'images
+            // « CodedFramesX » (3, sans décalage d'affichage) en H.265, « CodedFrames » (1) en AV1.
+            const uint8_t packetType = header ? 0 : m_codec == kCodecHevc ? 3 : 1;
+            m.push_back(static_cast<uint8_t>(0x80 | ((key || header) ? 0x10 : 0x20) | packetType));
+            const std::string f = FourCc();
+            m.insert(m.end(), f.begin(), f.end());
+        }
         m.insert(m.end(), data.begin(), data.end());
         return sendMessage(6, time, 9, m_stream, m);
     }
@@ -678,6 +1041,7 @@ class RtmpConnection {
 
     SocketHandle m_socket = kNoSocket;
     uint32_t m_stream = 1;
+    int m_codec = kCodecH264;
     std::vector<uint8_t> m_in, m_out, m_scratch;
     InChunk m_chunks[64];
     uint32_t m_inChunkSize = 128;

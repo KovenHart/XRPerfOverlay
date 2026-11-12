@@ -12,7 +12,8 @@
 // 4. Source OBS (option `obs`) : l'image finale (cadrée, filtres, panneau) est aussi recopiée dans une
 //    texture partagée que lit le plugin xrperf-obs.dll (obs/). Sans `encode`, rien n'est écrit : ni
 //    fichier, ni son, ni témoin REC dans le casque (image pour OBS seulement).
-// 5. Direct (`encode` = 2) : Twitch ou YouTube. Pas de fichier : l'encodeur matériel H.264 et l'encodeur
+// 5. Direct (`encode` = 2) : Twitch ou YouTube. Pas de fichier : l'encodeur matériel (H.264 ; H.265 ou AV1
+//    pour YouTube, par Enhanced RTMP) et l'encodeur
 //    AAC de Windows sont pilotés ici, leurs paquets partent par RTMP (rtmp.cpp) ; témoin LIVE dans le casque.
 //
 // Horloge commune : QueryPerformanceCounter. La vidéo a une cadence fixe : à chaque instant prévu, la
@@ -644,7 +645,7 @@ class Recorder {
             !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2 ||
             options.encode > 2 || options.obs > 1 || (!options.encode && !options.obs))
             return kBadOptions;
-        if (options.encode == 2 && (options.codec != 0 || std::strncmp(options.streamUrl, "rtmp://", 7) != 0 || options.streamKey[0] == 0 ||
+        if (options.encode == 2 && (options.codec > 2 || std::strncmp(options.streamUrl, "rtmp://", 7) != 0 || options.streamKey[0] == 0 ||
                                     std::memchr(options.streamUrl, 0, sizeof(options.streamUrl)) == nullptr ||
                                     std::memchr(options.streamKey, 0, sizeof(options.streamKey)) == nullptr))
             return kBadOptions;
@@ -1612,7 +1613,7 @@ class Recorder {
         {
             std::lock_guard<std::mutex> lock(m_statusMutex);
             wcsncpy_s(m_status.game, game.c_str(), _TRUNCATE);
-            wcsncpy_s(m_status.encoder, EncoderName(0).c_str(), _TRUNCATE);
+            wcsncpy_s(m_status.encoder, EncoderName(m_options.codec).c_str(), _TRUNCATE);
             m_status.streamState = kStreamConnecting;
         }
         UINT token = 0;
@@ -1621,10 +1622,10 @@ class Recorder {
         if (FAILED(hr)) return fail(kNoDevice, hr);
 
         // Encodeur vidéo.
-        MFT_REGISTER_TYPE_INFO h264 = {MFMediaType_Video, MFVideoFormat_H264};
+        MFT_REGISTER_TYPE_INFO videoType = {MFMediaType_Video, CodecSubtype(m_options.codec)};
         IMFActivate** activates = nullptr;
         UINT32 count = 0;
-        hr = MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER, nullptr, &h264, &activates, &count);
+        hr = MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER, nullptr, &videoType, &activates, &count);
         if (SUCCEEDED(hr) && count == 0) hr = MF_E_TOPO_CODEC_NOT_FOUND;
         if (SUCCEEDED(hr)) {
             hr = activates[0]->ActivateObject(__uuidof(IMFTransform), m_videoEncoder.putVoid());
@@ -1638,7 +1639,7 @@ class Recorder {
             for (UINT32 i = 0; i < count; ++i) activates[i]->Release();
             CoTaskMemFree(activates);
         }
-        if (FAILED(hr)) return fail(kNoEncoder, hr, "encodeur H.264 materiel");
+        if (FAILED(hr)) return fail(kNoEncoder, hr, "encodeur video materiel");
         Ptr<IMFAttributes> attributes;
         UINT32 async = 0, d3d = 0;
         if (SUCCEEDED(m_videoEncoder->GetAttributes(attributes.put())) && attributes) {
@@ -1686,13 +1687,14 @@ class Recorder {
         Ptr<IMFMediaType> out, in;
         hr = MFCreateMediaType(out.put());
         if (SUCCEEDED(hr)) hr = out->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-        if (SUCCEEDED(hr)) hr = out->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+        if (SUCCEEDED(hr)) hr = out->SetGUID(MF_MT_SUBTYPE, CodecSubtype(m_options.codec));
         if (SUCCEEDED(hr)) hr = out->SetUINT32(MF_MT_AVG_BITRATE, bitrate);
         if (SUCCEEDED(hr)) hr = out->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
         if (SUCCEEDED(hr)) hr = out->SetUINT64(MF_MT_FRAME_SIZE, size);
         if (SUCCEEDED(hr)) hr = out->SetUINT64(MF_MT_FRAME_RATE, rate);
         if (SUCCEEDED(hr)) hr = out->SetUINT64(MF_MT_PIXEL_ASPECT_RATIO, (1ull << 32) | 1u);
-        if (SUCCEEDED(hr)) hr = out->SetUINT32(MF_MT_MPEG2_PROFILE, 100);  // High
+        if (SUCCEEDED(hr) && m_options.codec == 0) hr = out->SetUINT32(MF_MT_MPEG2_PROFILE, 100);  // H.264 High
+        if (SUCCEEDED(hr) && m_options.codec == 1) hr = out->SetUINT32(MF_MT_MPEG2_PROFILE, 1);    // HEVC Main
         if (SUCCEEDED(hr)) hr = m_videoEncoder->SetOutputType(m_videoOut, out.get(), 0);
         if (FAILED(hr)) return fail(kNoEncoder, hr, "type video de sortie");
         hr = nv12Type(in);
@@ -1766,6 +1768,7 @@ class Recorder {
         StreamConfig config;
         config.url = m_options.streamUrl;
         config.key = m_options.streamKey;
+        config.codec = static_cast<int>(m_options.codec);
         config.width = m_width;
         config.height = m_height;
         config.fps = static_cast<int>(m_options.fps);
@@ -1787,9 +1790,10 @@ class Recorder {
             Sleep(20);
         }
         connect.join();
-        RecordLog("Direct : H.264 %dx%d %u i/s %u kbit/s (debit constant), vitesse/qualite %u (%s), encodeur \"%s\" (%s), serveur \"%s\".", m_width, m_height,
+        RecordLog("Direct : %s %dx%d %u i/s %u kbit/s (debit constant), vitesse/qualite %u (%s), encodeur \"%s\" (%s), serveur \"%s\".",
+                  m_options.codec == 1 ? "H.265" : m_options.codec == 2 ? "AV1" : "H.264", m_width, m_height,
                   m_options.fps, m_options.bitrateKbps, m_options.qualityVsSpeed,
-                  m_options.qualityVsSpeed == 0 ? "encodeur" : m_qualityApplied ? "accepte" : "refuse", Utf8(EncoderName(0)).c_str(),
+                  m_options.qualityVsSpeed == 0 ? "encodeur" : m_qualityApplied ? "accepte" : "refuse", Utf8(EncoderName(m_options.codec)).c_str(),
                   async ? "asynchrone" : "synchrone", m_options.streamUrl);
         if (!connected) {
             RecordLog("Direct : %s (%s).", refused ? "publication refusee (cle de stream ?)" : "connexion impossible", error.c_str());
@@ -1801,6 +1805,7 @@ class Recorder {
         }
         m_streamer->setAudioConfig(AacConfig(kAudioRate, 2));
         m_videoConfigSent = false;
+        m_packetWarned = false;
         m_streaming = true;
         m_writing = true;  // le son est encodé
         m_audioWritten = 0;
@@ -1921,30 +1926,37 @@ class Recorder {
         if (!SampleBytes(sample, m_packet)) return;
         UINT32 clean = 0;
         sample->GetUINT32(MFSampleExtension_CleanPoint, &clean);
-        bool key = clean != 0;
-        if (!key)
-            for (const auto& nal : SplitAnnexB(m_packet.data(), m_packet.size()))
-                if (nal.second > 0 && (nal.first[0] & 0x1f) == 5) key = true;
+        const int codec = static_cast<int>(m_options.codec);
+        const bool key = clean != 0 || VideoKeyframe(codec, m_packet.data(), m_packet.size());
         if (!m_videoConfigSent) {
             std::vector<uint8_t> config;
-            bool ok = AvcConfig(m_packet.data(), m_packet.size(), config);
-            if (!ok) {  // SPS et PPS seulement dans le type de sortie
+            bool ok = VideoConfig(codec, m_packet.data(), m_packet.size(), config);
+            if (!ok) {  // en-têtes (SPS et PPS, ou en-tête de séquence AV1) seulement dans le type de sortie
                 Ptr<IMFMediaType> type;
                 UINT32 length = 0;
                 if (SUCCEEDED(m_videoEncoder->GetOutputCurrentType(m_videoOut, type.put())) &&
                     SUCCEEDED(type->GetBlobSize(MF_MT_MPEG_SEQUENCE_HEADER, &length)) && length > 0) {
                     std::vector<uint8_t> header(length);
                     if (SUCCEEDED(type->GetBlob(MF_MT_MPEG_SEQUENCE_HEADER, header.data(), length, nullptr)))
-                        ok = AvcConfig(header.data(), header.size(), config);
+                        ok = VideoConfig(codec, header.data(), header.size(), config);
                 }
             }
-            if (!ok || !key) return;  // attendre une image clé avec ses en-têtes
+            if (!ok || !key) {  // attendre une image clé avec ses en-têtes
+                if (!m_packetWarned && key) RecordLog("Direct : en-tete du flux introuvable dans l'image cle (%u octets).", static_cast<unsigned>(m_packet.size()));
+                if (key) m_packetWarned = true;
+                return;
+            }
+            m_lastConfigSize = config.size();
             m_streamer->setVideoConfig(std::move(config));
             m_videoConfigSent = true;
-            RecordLog("Direct : premiere image envoyee.");
+            RecordLog("Direct : premiere image envoyee (en-tete de %u octets).", static_cast<unsigned>(m_lastConfigSize));
         }
         std::vector<uint8_t> avcc;
-        if (!AnnexBToAvcc(m_packet.data(), m_packet.size(), avcc)) return;
+        if (!VideoPacket(codec, m_packet.data(), m_packet.size(), avcc)) {
+            if (!m_packetWarned) RecordLog("Direct : image encodee illisible (%u octets), ignoree.", static_cast<unsigned>(m_packet.size()));
+            m_packetWarned = true;
+            return;
+        }
         LONGLONG time = 0;
         sample->GetSampleTime(&time);
         m_streamer->pushVideo(static_cast<uint32_t>(std::max<LONGLONG>(time, 0) / 10'000), key, std::move(avcc));
@@ -2593,6 +2605,8 @@ class Recorder {
     int m_needInput = 0;          // images demandées par l'encodeur asynchrone
     bool m_streaming = false;
     bool m_videoConfigSent = false;
+    bool m_packetWarned = false;  // journal : un seul avertissement par direct
+    size_t m_lastConfigSize = 0;
     std::vector<uint8_t> m_packet;
 };
 

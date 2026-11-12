@@ -43,7 +43,7 @@
     Language: params.get("lang") || "auto",
     VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30, VideoStabilize: "light", VideoLevel: false, VideoObs: true,
     VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoHotkey: (3 << 16) | 86,
-    VideoTarget: params.get("video") === "live" ? "stream" : "file", StreamService: "twitch", StreamHeight: 900, StreamFps: 60, StreamBitrate: 6000,
+    VideoTarget: params.get("video") === "live" ? "stream" : "file", StreamService: params.get("service") || "twitch", StreamHeight: 900, StreamFps: 60, StreamBitrate: 6000, StreamCodec: "av1",
     StreamKeyTwitchSet: params.get("key") !== "none", StreamKeyYoutubeSet: false,
   };
   // Enregistrement vidéo simulé : ?video=rec (en cours), wait (en attente d'un jeu), error (dernière fin sur erreur), off.

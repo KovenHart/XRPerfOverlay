@@ -129,7 +129,7 @@ layer/src/image_filter_entry.hlsli  passe plein cadre des filtres (HLSL) ; les d
 layer/src/image_params.h      réglages des filtres, bornes, valeurs passées au shader
 sensors/ImagePresets.cs       presets d'image fournis et ceux de l'utilisateur (ImagePresets.json)
 layer/src/video_record.cpp    XRPerfRecord.dll : textures partagées -> image cadrée + panneau -> NV12 (shaders) -> encodeur matériel, son du PC et micro, MP4 ; image finale aussi donnée à la source OBS (texture partagée)
-layer/src/rtmp.cpp            direct : client RTMP (H.264 et AAC en FLV, file bornée, reconnexion), testé par tests/rtmp_test.sh contre ffmpeg
+layer/src/rtmp.cpp            direct : client RTMP (H.264, ou H.265 et AV1 par Enhanced RTMP, et AAC en FLV, file bornée, reconnexion), testé par tests/rtmp_test.sh contre ffmpeg
 layer/obs/xrperf_obs.cpp      xrperf-obs.dll : source OBS « XR Perf (casque) » (cmake -DXRPO_OBS_DIR=<sources d'OBS Studio 30>/libobs ; sinon pas construite)
 sensors/VideoRecorder.cs      vidéo : mémoire partagée, pilotage de XRPerfRecord.dll, raccourci global (RegisterHotKey)
 sensors/WindowCapture.cs      choix de la fenêtre, mémoire partagée, pilotage de la capture
