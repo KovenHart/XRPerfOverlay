@@ -1779,8 +1779,9 @@ class Recorder {
                       m_options.qualityVsSpeed == 0 ? "encodeur" : o.qualityApplied ? "accepte" : "refuse", Utf8(EncoderName(o.codec)).c_str(),
                       o.events ? "asynchrone" : "synchrone", o.url.c_str());
             if (!results[i].ok) {
-                RecordLog("Direct %d : %s (%s).", o.index, results[i].refused ? "publication refusee (cle de stream ?)" : "connexion impossible",
-                          results[i].error.c_str());
+                // Le texte d'erreur dit déjà ce qui s'est passé (refus, serveur injoignable...).
+                RecordLog("Direct %d : %s.", o.index,
+                          results[i].error.empty() ? (results[i].refused ? "publication refusee (cle de stream ?)" : "connexion impossible") : results[i].error.c_str());
                 reason = results[i].refused ? kStreamRefused : kStreamConnect;
                 stopOutput(o);
                 continue;
