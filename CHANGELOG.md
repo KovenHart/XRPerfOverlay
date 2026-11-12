@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.13.0
+
+- **Direct sur Twitch et YouTube en même temps** : « Service » *Twitch*, *YouTube* ou *Les deux*. Chaque service a ses réglages (clé, format, résolution, débit) et son propre encodage : par exemple Twitch en H.264 1080p à 6000 kbit/s et YouTube en AV1 1440p à 18 000 kbit/s. L'image est composée une fois, à la plus grande des deux tailles. Si un service décroche ou refuse la clé, l'autre continue ; la page Vidéo montre l'état et le débit de chacun. La cadence (30 ou 60 images/s) est commune aux deux.
+
 ## 1.12.0
 
 - **Direct sur Twitch et YouTube, sans OBS** : la vidéo du casque (image, panneau, menus du jeu, filtres, son du jeu et micro) part en direct, encodée en H.264 par la carte graphique à débit constant. Page Vidéo : « Sortie » *Fichier MP4* ou *Direct* (l'un ou l'autre), service, clé de stream (gardée chiffrée pour votre compte Windows, jamais réaffichée), résolution 720p à 1440p, 30 ou 60 images/s, débit (plafonné à 8000 kbit/s pour Twitch). Le raccourci de la vidéo, le bouton ou le menu de l'icône lancent le direct ; **LIVE** et la durée s'affichent dans le casque ; débit envoyé, images perdues et reconnexions dans la page Vidéo. Reconnexion automatique pendant une minute après une coupure. Jeux OpenXR et SteamVR.

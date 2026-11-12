@@ -555,7 +555,8 @@ namespace XRPerfSensors
         {
             string videoKey = _settings.VideoKey != 0 ? " (" + VideoHotkeyText + ")" : "";
             if (_settings.VideoTarget == "stream")
-                return string.Format(Loc.T("Direct sur {0}", "Go live on {0}"), _settings.StreamService == "youtube" ? "YouTube" : "Twitch") + videoKey;
+                return string.Format(Loc.T("Direct sur {0}", "Go live on {0}"),
+                                     _settings.StreamService == "both" ? Loc.T("Twitch et YouTube", "Twitch and YouTube") : Settings.ServiceName(_settings.StreamService)) + videoKey;
             return Loc.T("Enregistrer la vidéo du casque", "Record headset video") + videoKey;
         }
 
