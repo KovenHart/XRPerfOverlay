@@ -1,5 +1,5 @@
-// Direct vers Twitch et YouTube : envoi RTMP (le protocole de leurs serveurs d'entrée) d'une vidéo H.264 et
-// d'un son AAC déjà encodés, en paquets FLV.
+// Direct vers Twitch et YouTube : envoi RTMP (le protocole de leurs serveurs d'entrée) d'une vidéo H.264
+// (ou H.265 et AV1 par « Enhanced RTMP », acceptés par YouTube) et d'un son AAC déjà encodés, en paquets FLV.
 //
 // Portable (Winsock sous Windows, sockets POSIX ailleurs) : testé dans tests/rtmp_test.cpp contre ffmpeg
 // en serveur. L'enregistreur (video_record.cpp) encode et pousse les paquets ; un fil d'envoi les transmet
@@ -31,6 +31,20 @@ bool AvcConfig(const uint8_t* annexB, size_t size, std::vector<uint8_t>& config)
 // Image Annex B -> unités préfixées de leur taille sur 4 octets (FLV), sans SPS, PPS ni délimiteur
 // (déjà dans l'en-tête). Retourne false si rien ne reste.
 bool AnnexBToAvcc(const uint8_t* data, size_t size, std::vector<uint8_t>& out);
+// H.265 : HEVCDecoderConfigurationRecord (VPS, SPS et PPS d'une image Annex B).
+bool HevcConfig(const uint8_t* annexB, size_t size, std::vector<uint8_t>& config);
+// AV1 : AV1CodecConfigurationRecord (en-tête de séquence d'une image en OBU « low overhead »).
+bool Av1Config(const uint8_t* obus, size_t size, std::vector<uint8_t>& config);
+// AV1 : image -> OBU tous avec leur taille, sans délimiteur temporel ni remplissage.
+bool Av1Frame(const uint8_t* obus, size_t size, std::vector<uint8_t>& out);
+
+// Codec de la vidéo (mêmes numéros que l'enregistreur).
+enum VideoCodec : int { kCodecH264 = 0, kCodecHevc = 1, kCodecAv1 = 2 };
+// Selon le codec : en-tête tiré d'une image, paquet FLV d'une image, image clé.
+bool VideoConfig(int codec, const uint8_t* data, size_t size, std::vector<uint8_t>& config);
+bool VideoPacket(int codec, const uint8_t* data, size_t size, std::vector<uint8_t>& out);
+bool VideoKeyframe(int codec, const uint8_t* data, size_t size);
+
 // AudioSpecificConfig de l'AAC-LC (en-tête du son dans FLV).
 std::vector<uint8_t> AacConfig(int sampleRate, int channels);
 
@@ -47,6 +61,7 @@ enum StreamState : uint32_t {
 struct StreamConfig {
     std::string url;  // rtmp://serveur[:port]/application
     std::string key;  // clé de stream (nom du flux publié)
+    int codec = kCodecH264;  // H.265 et AV1 : Enhanced RTMP
     int width = 0, height = 0, fps = 0;
     int videoKbps = 0, audioKbps = 0;
     int audioRate = 48000, channels = 2;

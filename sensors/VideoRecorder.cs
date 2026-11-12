@@ -174,6 +174,8 @@ namespace XRPerfSensors
         }
 
         // Compromis vitesse / qualité de l'encodeur (CODECAPI_AVEncCommonQualityVsSpeed) ; à la main : celui de l'encodeur.
+        private const uint StreamMaxQualityVsSpeed = 70;
+
         private static int QualityVsSpeedOf(string quality)
         {
             return quality == "light" ? 33 : quality == "balanced" ? 50 : quality == "high" ? 70 : quality == "max" ? 100 : 0;
@@ -430,8 +432,9 @@ namespace XRPerfSensors
             else if (stream && key.Length == 0)
                 _message = string.Format(Loc.T("Direct : la clé de stream {0} enregistrée est illisible, saisissez-la à nouveau (page Vidéo).",
                                                "Live: the saved {0} stream key cannot be read, enter it again (Video page)."), service);
-            else if (stream && _codecs >= 0 && (_codecs & 1) == 0)
-                _message = Loc.T("Direct : pas d'encodeur matériel H.264 sur ce PC.", "Live: no H.264 hardware encoder on this PC.");
+            else if (stream && _codecs >= 0 && (_codecs & CodecBit(s.StreamCodecFor(s.StreamService))) == 0)
+                _message = string.Format(Loc.T("Direct : pas d'encodeur matériel {0} sur ce PC : choisissez un autre format.", "Live: no {0} hardware encoder on this PC: choose another format."),
+                                         CodecName(s.StreamCodecFor(s.StreamService)));
             else if (!stream && _codecs >= 0 && (_codecs & CodecBit(s.VideoCodec)) == 0)
                 _message = string.Format(Loc.T("Pas d'encodeur matériel {0} sur ce PC : choisissez un autre format.", "No {0} hardware encoder on this PC: choose another format."), CodecName(s.VideoCodec));
             if (_message.Length > 0) return _message;
@@ -440,14 +443,17 @@ namespace XRPerfSensors
             options.Obs = obs ? 1u : 0u;
             if (stream)
             {
-                // H.264 à débit constant, résolution et cadence du direct.
+                // Débit constant, codec, résolution et cadence du direct (H.265 et AV1 : YouTube seulement).
                 options.Encode = 2;
-                options.Codec = 0;
+                options.Codec = (uint)Math.Max(0, Array.IndexOf(Settings.VideoCodecs, s.StreamCodecFor(s.StreamService)));
                 options.Height = (uint)s.StreamHeight;
                 options.Fps = (uint)s.StreamFps;
                 options.BitrateKbps = (uint)s.StreamBitrateFor(s.StreamService);
                 options.StreamUrl = Utf8Z(Settings.StreamUrl(s.StreamService));
                 options.StreamKey = Utf8Z(key);
+                // En direct, l'encodeur doit suivre en temps réel : réglage le plus lent écarté (images sautées
+                // en 1440p60 constatées à 100, presque aucune à 70). Les enregistrements gardent le choix.
+                if (options.QualityVsSpeed == 0 || options.QualityVsSpeed > StreamMaxQualityVsSpeed) options.QualityVsSpeed = StreamMaxQualityVsSpeed;
             }
             _streaming = stream;
             int result;

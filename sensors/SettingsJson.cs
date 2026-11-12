@@ -133,6 +133,7 @@ namespace XRPerfSensors
             w.WriteNumber("StreamHeight", d.StreamHeight);
             w.WriteNumber("StreamFps", d.StreamFps);
             w.WriteNumber("StreamBitrate", d.StreamBitrate);
+            w.WriteString("StreamCodec", d.StreamCodec);
             // Clés : seulement si elles sont enregistrées (jamais leur texte).
             w.WriteBoolean("StreamKeyTwitchSet", d.StreamKeyTwitch.Length > 0);
             w.WriteBoolean("StreamKeyYoutubeSet", d.StreamKeyYoutube.Length > 0);
@@ -339,6 +340,7 @@ namespace XRPerfSensors
                 case "VideoRenderDevice": if (text == null || text.Length > 250) return Change.None; d.VideoRenderDevice = text; return Change.Video;
                 case "VideoCaptureDevice": if (text == null || text.Length > 250) return Change.None; d.VideoCaptureDevice = text; return Change.Video;
                 case "VideoTarget": if (Array.IndexOf(Settings.VideoTargets, text) < 0) return Change.None; d.VideoTarget = text; return Change.Video;
+                case "StreamCodec": if (Array.IndexOf(Settings.VideoCodecs, text) < 0) return Change.None; d.StreamCodec = text; return Change.Video;
                 case "StreamService": if (Array.IndexOf(Settings.StreamServices, text) < 0) return Change.None; d.StreamService = text; return Change.Video;
                 case "StreamHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.StreamHeights, i) < 0) return Change.None; d.StreamHeight = i; return Change.Video;
                 case "StreamFps": if (!Int(v, 0, 1000, out i) || Array.IndexOf(Settings.StreamRates, i) < 0) return Change.None; d.StreamFps = i; return Change.Video;

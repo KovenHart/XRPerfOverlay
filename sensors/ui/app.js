@@ -1315,6 +1315,8 @@ window.App = (function () {
       group(t("vid.stream"), t("vid.stream.help"), [
         segRow("desktop", "StreamService", t("vid.stream.service"), null, ["twitch", "youtube"].map(x => ({ value: x, label: t("vid.stream.service." + x) }))),
         streamKeyRow(),
+        liveHelp(selectRow("desktop", "StreamCodec", t("vid.codec"), " ", codecOptions, { enabled: () => streamService() === "youtube" }),
+          () => t(streamService() === "youtube" ? "vid.stream.codec.help" : "vid.stream.codec.twitch")),
         selectRow("desktop", "StreamHeight", t("vid.resolution"), null, [720, 900, 1080, 1440].map(x => ({ value: x, label: x + "p" }))),
         segRow("desktop", "StreamFps", t("vid.fps"), null, [30, 60].map(x => ({ value: x, label: String(x) }))),
         liveHelp(sliderRow("desktop", "StreamBitrate", t("vid.bitrate"), " ", 1500, 30000, x => num(Math.min(x, streamMax())) + " " + t("unit.kbps"), { step: 250 }),
@@ -1390,7 +1392,7 @@ window.App = (function () {
       title = (ss === 3 ? t("vid.live.reconnecting") : "LIVE") + " " + clock(v.seconds);
       const audio = v.audio || 0;
       const sound = (audio & 3) === 3 ? t("vid.audio.both") : audio & 1 ? t("vid.audio.game") : audio & 2 ? t("vid.audio.mic") : t("vid.audio.none");
-      detail = [t("vid.stream.service." + streamService()), num(v.streamKbps || 0) + " " + t("unit.kbps"), v.encoder || "H.264", sound].filter(Boolean);
+      detail = [t("vid.stream.service." + streamService()), num(v.streamKbps || 0) + " " + t("unit.kbps"), v.encoder || "", sound].filter(Boolean);
       if (audio & 4) notes.push(t("vid.audio.gameFailed"));
       if (audio & 8) notes.push(t("vid.audio.micFailed"));
       if (v.streamDropped > 0) notes.push(t("vid.live.dropped", { n: num(v.streamDropped) }));
