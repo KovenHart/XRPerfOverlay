@@ -1111,8 +1111,12 @@ void Overlay::sample(double now) {
     // Témoin d'enregistrement vidéo (XRPerfSensors).
     {
         std::unique_lock<std::mutex> videoLock(m_videoMutex, std::try_to_lock);
-        if (videoLock.owns_lock()) m_videoSeconds = m_video ? m_video->recordingSeconds() : -1.0;
+        if (videoLock.owns_lock()) {
+            m_videoLive = false;
+            m_videoSeconds = m_video ? m_video->recordingSeconds(&m_videoLive) : -1.0;
+        }
         data.videoSeconds = m_videoSeconds;
+        data.videoLive = m_videoLive;
     }
     if ((data.statusElements & kWatchBattery) && m_hands) {
         for (int hand = 0; hand < 2; ++hand) {

@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.12.0
+
+- **Direct sur Twitch et YouTube, sans OBS** : la vidéo du casque (image, panneau, menus du jeu, filtres, son du jeu et micro) part en direct, encodée en H.264 par la carte graphique à débit constant. Page Vidéo : « Sortie » *Fichier MP4* ou *Direct* (l'un ou l'autre), service, clé de stream (gardée chiffrée pour votre compte Windows, jamais réaffichée), résolution 720p à 1440p, 30 ou 60 images/s, débit (plafonné à 8000 kbit/s pour Twitch). Le raccourci de la vidéo, le bouton ou le menu de l'icône lancent le direct ; **LIVE** et la durée s'affichent dans le casque ; débit envoyé, images perdues et reconnexions dans la page Vidéo. Reconnexion automatique pendant une minute après une coupure. Jeux OpenXR et SteamVR.
+
 ## 1.11.0
 
 - **Source OBS pour le streaming** : OBS Studio (30 ou plus) gagne une source **« XR Perf (casque) »** qui reçoit l'image de la vidéo du casque (œil, format, résolution, recadrage, stabilisation, panneau, filtres) directement par la carte graphique, sans double encodage. Elle tourne dès que la source est affichée dans OBS, sans enregistrer (ni fichier, ni son, ni témoin REC), et continue pendant un enregistrement. Jeux OpenXR et SteamVR. `Installer.bat` l'ajoute à OBS s'il est installé ; réglage et état dans la page Vidéo (« Source OBS »).

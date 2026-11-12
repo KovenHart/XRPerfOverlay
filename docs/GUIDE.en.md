@@ -251,6 +251,24 @@ To stream with OBS Studio (30 or later), XR Perf Overlay adds an **"XR Perf (hea
 
 **Limit.** OBS and the VR game must use the same graphics card (otherwise the OBS log says so: set OBS to the headset's card).
 
+## Live on Twitch and YouTube
+
+XRPerfSensors can stream the headset video live to **Twitch** or **YouTube**, without OBS: the same image as the recorded video (eye, format, crop, stabilization, level horizon, panel, game menus, filters) and the same sound (game sound, microphone), encoded in H.264 by the graphics card and sent to the service. OpenXR and SteamVR games. It is one or the other: a live stream does not write a file at the same time.
+
+**Setup** (**Video** page):
+
+1. "Output": **Live**.
+2. "Live (Twitch, YouTube)": choose the service and paste your **stream key**, then **Save**. Twitch: Creator Dashboard, Settings, Stream. YouTube: YouTube Studio, Create, Go live (the stream must be scheduled or open on YouTube's side). The key is kept encrypted for your Windows account (DPAPI) in `XRPerfSensors.ini`, is never shown again and does not appear in the logs.
+3. Resolution (720p to 1440p), 30 or 60 frames per second, bitrate in kbps. Twitch: 6000 kbps at 900p or 1080p 60 fps (8000 at most, cap applied). YouTube: 4500 to 9000 kbps at 1080p, 9000 to 18000 at 1440p. Your connection must upload this rate with room to spare.
+
+**Start and stop**: the video hotkey (`Ctrl+Alt+V` by default), the **Go live** button or the tray icon menu. The stream starts as soon as a VR game sends images. The headset shows **LIVE** and the duration (a red dot instead of VID's square); the Video page shows the upload rate, lost frames and reconnections.
+
+**Connection.** If the network cannot keep up, frames are skipped until the next keyframe (every 2 seconds) rather than falling behind: lower the bitrate. A dropped connection is resumed automatically for one minute; after that, the stream stops. A refused key stops it at once ("check the stream key").
+
+**Testing without viewers.** Twitch: add `?bandwidthtest=true` at the end of the key (the stream is not shown to viewers). YouTube: a scheduled "Unlisted" stream.
+
+**Limits of this version.** Twitch and YouTube only, over RTMP (unencrypted, accepted by both), H.264. For scenes, alerts or several services, keep OBS and the "XR Perf (headset)" source. If something goes wrong, details are in `XRPerfRecord.log` (`%LOCALAPPDATA%\XRPerfOverlay` folder).
+
 ## Image filters
 
 The **Image** page of XRPerfSensors sets filters applied to each eye's image. They are all neutral by default, and the *Off* mode turns them all off.

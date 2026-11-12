@@ -319,12 +319,15 @@ void drawHeader(Canvas& cv, const PanelData& d) {
     if (d.videoSeconds >= 0.0 && indicatorX < Panel::kWidth - 120) {
         const int side = 9;
         const int top = topLine + (kFontLabel.cellH - side) / 2;
-        cv.fillRoundRect(indicatorX, top, side, side, 1.5f, th.bad, 255);
+        if (d.videoLive)  // direct : rond (comme le témoin « en direct » des plateformes)
+            cv.fillRoundRect(indicatorX, top, side, side, side * 0.5f, th.bad, 255);
+        else
+            cv.fillRoundRect(indicatorX, top, side, side, 1.5f, th.bad, 255);
         const int seconds = static_cast<int>(d.videoSeconds);
         if (seconds < 3600)
-            std::snprintf(buf, sizeof(buf), "VID %02d:%02d", seconds / 60, seconds % 60);
+            std::snprintf(buf, sizeof(buf), "%s %02d:%02d", d.videoLive ? "LIVE" : "VID", seconds / 60, seconds % 60);
         else
-            std::snprintf(buf, sizeof(buf), "VID %dh%02d", seconds / 3600, (seconds / 60) % 60);
+            std::snprintf(buf, sizeof(buf), "%s %dh%02d", d.videoLive ? "LIVE" : "VID", seconds / 3600, (seconds / 60) % 60);
         cv.text(kFontLabel, indicatorX + side + 6, topLine, buf, th.text);
     }
 

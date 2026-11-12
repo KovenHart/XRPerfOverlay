@@ -489,7 +489,7 @@ window.App = (function () {
     const v = state.video;
     const rec = v && (v.state === 1 || v.state === 2 || v.state === 3)
       ? h("button", { class: "pill rec" + (v.state === 2 ? " on" : ""), type: "button", title: t("nav.video"), onclick: () => go("video") }, h("i", { class: "dot" }),
-          v.state === 2 ? "REC " + clock(v.seconds) : t(v.state === 1 ? "vid.pill.waiting" : "vid.pill.finishing"))
+          v.state === 2 ? (v.streaming ? "LIVE " : "REC ") + clock(v.seconds) : t(v.state === 1 ? "vid.pill.waiting" : "vid.pill.finishing"))
       : null;
     bar.replaceChildren(h("h1", { text: t("nav." + state.page) }), h("div", { class: "actions" }, rec, pill, fs));
   }
@@ -1257,6 +1257,43 @@ window.App = (function () {
 
   function fillDevices() { document.querySelectorAll("select[data-devices]").forEach(fillDevice); }
 
+  // Direct (Twitch, YouTube) : sortie choisie, débit plafonné selon le service (Settings.MaxStreamBitrate).
+  const streaming = () => get("desktop", "VideoTarget") === "stream";
+  const streamService = () => get("desktop", "StreamService") === "youtube" ? "youtube" : "twitch";
+  const streamMax = () => streamService() === "youtube" ? 30000 : 8000;
+  const streamKeyName = () => streamService() === "youtube" ? "StreamKeyYoutube" : "StreamKeyTwitch";
+
+  // Clé de stream : jamais renvoyée par XRPerfSensors, seulement « enregistrée ou non ». Saisie gardée chiffrée.
+  function streamKeyRow() {
+    const input = h("input", { class: "text-input", style: { width: "260px" }, type: "password", maxlength: "200", spellcheck: "false", autocomplete: "off",
+      "aria-label": t("vid.stream.key") });
+    const save = h("button", { class: "btn", type: "button", text: t("vid.stream.key.save"), disabled: true });
+    const clear = h("button", { class: "btn", type: "button", text: t("vid.stream.key.clear") });
+    const status = () => !!get("desktop", streamKeyName() + "Set");
+    const store = value => {
+      send("set", { scope: "desktop", key: streamKeyName(), value });
+      state.desktop[streamKeyName() + "Set"] = value.length > 0;
+      input.value = "";
+      refreshers.forEach(f => f());
+    };
+    input.addEventListener("input", () => { save.disabled = input.value.trim().length < 8; });
+    input.addEventListener("keydown", e => { if (e.key === "Enter" && !save.disabled) store(input.value.trim()); });
+    save.addEventListener("click", () => store(input.value.trim()));
+    clear.addEventListener("click", () => store(""));
+    const r = row(t("vid.stream.key"), " ", h("div", { class: "row-buttons" }, input, save, clear));
+    const help = r.querySelector(".row-help");
+    const f = () => {
+      const set = status();
+      help.textContent = t(set ? "vid.stream.key.set" : "vid.stream.key.none", { service: t("vid.stream.service." + streamService()) });
+      input.placeholder = t(set ? "vid.stream.key.replace" : "vid.stream.key.placeholder");
+      clear.hidden = !set;
+      save.disabled = input.value.trim().length < 8;
+    };
+    refreshers.push(f);
+    f();
+    return r;
+  }
+
   function renderVideoPage(page) {
     refreshers = [];
     const v = state.video || {};
@@ -1269,18 +1306,29 @@ window.App = (function () {
     const form = [
       group(t("vid.title"), null, [
         switchCtl("overlay", "VideoCapture", t("vid.enable"), t("vid.enable.help")),
+        liveHelp(segRow("desktop", "VideoTarget", t("vid.target"), " ", [{ value: "file", label: t("vid.target.file") }, { value: "stream", label: t("vid.target.stream") }],
+          { enabled: videoEnabled }), () => t(streaming() ? "vid.target.help.stream" : "vid.target.help.file")),
         h("div", { class: "video-card", id: "video-card", "aria-live": "polite" }),
         segRow("overlay", "VideoSource", t("vid.source"), t("vid.source.help"), [{ value: "final", label: t("vid.source.final") }, { value: "game", label: t("vid.source.game") }],
           { enabled: videoEnabled }),
       ]),
+      group(t("vid.stream"), t("vid.stream.help"), [
+        segRow("desktop", "StreamService", t("vid.stream.service"), null, ["twitch", "youtube"].map(x => ({ value: x, label: t("vid.stream.service." + x) }))),
+        streamKeyRow(),
+        selectRow("desktop", "StreamHeight", t("vid.resolution"), null, [720, 900, 1080, 1440].map(x => ({ value: x, label: x + "p" }))),
+        segRow("desktop", "StreamFps", t("vid.fps"), null, [30, 60].map(x => ({ value: x, label: String(x) }))),
+        liveHelp(sliderRow("desktop", "StreamBitrate", t("vid.bitrate"), " ", 1500, 30000, x => num(Math.min(x, streamMax())) + " " + t("unit.kbps"), { step: 250 }),
+          () => t(get("desktop", "StreamBitrate") > streamMax() ? "vid.stream.bitrate.capped" : "vid.stream.bitrate.help." + streamService(), { max: num(streamMax()) })),
+      ], () => videoEnabled() && streaming()),
       group(t("vid.image"), t("vid.image.help"), [
-        selectRow("desktop", "VideoCodec", t("vid.codec"), t("vid.codec.help"), codecOptions),
-        selectRow("desktop", "VideoHeight", t("vid.resolution"), null, [720, 1080, 1440, 2160].map(x => ({ value: x, label: x === 2160 ? "2160p (4K)" : x + "p" }))),
-        segRow("desktop", "VideoFps", t("vid.fps"), t("vid.fps.help"), [30, 60, 72, 90].map(x => ({ value: x, label: String(x) }))),
+        selectRow("desktop", "VideoCodec", t("vid.codec"), t("vid.codec.help"), codecOptions, { enabled: () => !streaming() }),
+        selectRow("desktop", "VideoHeight", t("vid.resolution"), null, [720, 1080, 1440, 2160].map(x => ({ value: x, label: x === 2160 ? "2160p (4K)" : x + "p" })),
+          { enabled: () => !streaming() }),
+        segRow("desktop", "VideoFps", t("vid.fps"), t("vid.fps.help"), [30, 60, 72, 90].map(x => ({ value: x, label: String(x) })), { enabled: () => !streaming() }),
         liveHelp(selectRow("desktop", "VideoQuality", t("vid.quality"), " ", VIDEO_QUALITIES.map(q => ({ value: q, label: t("vid.quality." + q) }))),
           () => t(get("desktop", "VideoQuality") === "custom" ? "vid.quality.helpCustom" : "vid.quality.help", { mbps: num(videoBitrate()), size: perMinute(videoBitrate()) })),
         sliderRow("desktop", "VideoBitrate", t("vid.bitrate"), t("vid.bitrate.help"), 2, 150, x => num(x) + " " + t("unit.mbps"),
-          { enabled: () => get("desktop", "VideoQuality") === "custom" }),
+          { enabled: () => get("desktop", "VideoQuality") === "custom" && !streaming() }),
         segRow("desktop", "VideoEye", t("vid.eye"), null, [{ value: 0, label: t("vid.eye.left") }, { value: 1, label: t("vid.eye.right") }]),
         segRow("desktop", "VideoAspect", t("vid.aspect"), null, ["16:9", "4:3", "1:1"].map(a => ({ value: a, label: a }))),
         sliderRow("desktop", "VideoField", t("vid.field"), t("vid.field.help"), 40, 100, pct),
@@ -1336,6 +1384,20 @@ window.App = (function () {
     const notes = [];
     if (!v.available) {
       title = t("vid.state.missing");
+    } else if (v.state === 2 && v.streaming) {
+      cls = " on";
+      const ss = v.streamState || 0;
+      title = (ss === 3 ? t("vid.live.reconnecting") : "LIVE") + " " + clock(v.seconds);
+      const audio = v.audio || 0;
+      const sound = (audio & 3) === 3 ? t("vid.audio.both") : audio & 1 ? t("vid.audio.game") : audio & 2 ? t("vid.audio.mic") : t("vid.audio.none");
+      detail = [t("vid.stream.service." + streamService()), num(v.streamKbps || 0) + " " + t("unit.kbps"), v.encoder || "H.264", sound].filter(Boolean);
+      if (audio & 4) notes.push(t("vid.audio.gameFailed"));
+      if (audio & 8) notes.push(t("vid.audio.micFailed"));
+      if (v.streamDropped > 0) notes.push(t("vid.live.dropped", { n: num(v.streamDropped) }));
+      if (v.streamReconnects > 0) notes.push(t("vid.live.reconnects", { n: num(v.streamReconnects) }));
+    } else if (v.state === 1 && v.streaming && v.streamState === 1) {
+      cls = " wait";
+      title = t("vid.live.connecting");
     } else if (v.state === 2) {
       cls = " on";
       title = "REC " + clock(v.seconds);
@@ -1352,16 +1414,19 @@ window.App = (function () {
     } else if (v.state === 3) {
       title = t("vid.state.finishing");
     } else {
-      title = enabled ? t("vid.state.ready") : t("vid.state.off");
-      if (enabled) detail = [hotkey ? t("vid.state.ready.key", { key: hotkey }) : t("vid.state.ready.nokey")];
+      const live = streaming();
+      title = enabled ? t(live ? "vid.live.ready" : "vid.state.ready", { service: t("vid.stream.service." + streamService()) }) : t("vid.state.off");
+      if (enabled) detail = [hotkey ? t(live ? "vid.live.ready.key" : "vid.state.ready.key", { key: hotkey }) : t(live ? "vid.live.ready.nokey" : "vid.state.ready.nokey")];
+      if (enabled && live && !get("desktop", streamKeyName() + "Set")) notes.push(t("vid.live.nokey", { service: t("vid.stream.service." + streamService()) }));
       if (v.reason) notes.push(v.reason);
-      else if (v.file) detail.push(t("vid.last", { file: v.file.split("\\").pop() }));
+      else if (v.file && !v.streaming) detail.push(t("vid.last", { file: v.file.split("\\").pop() }));
     }
     if (enabled && key && v.hotkeyOk === false) notes.push(t("vid.key.taken", { key: hotkey }));
     const recording = v.state === 1 || v.state === 2;
     const button = recording
       ? h("button", { class: "btn danger", type: "button", onclick: () => send("videoStop") }, t("vid.stop"))
-      : h("button", { class: "btn primary", type: "button", disabled: !enabled || !v.available || v.state === 3, onclick: () => send("videoStart") }, icon("video"), t("vid.start"));
+      : h("button", { class: "btn primary", type: "button", disabled: !enabled || !v.available || v.state === 3, onclick: () => send("videoStart") }, icon("video"),
+          t(streaming() ? "vid.live.start" : "vid.start"));
     card.className = "video-card" + cls;
     card.replaceChildren(
       h("div", { class: "video-state" }, h("i", { class: "rec-dot" }), h("div", null, h("div", { class: "video-title", text: title }),

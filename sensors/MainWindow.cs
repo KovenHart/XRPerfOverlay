@@ -470,6 +470,12 @@ namespace XRPerfSensors
                 w.WriteBoolean("obsPlugin", VideoRecorder.ObsPluginInstalled);
                 w.WriteBoolean("obsShown", video != null && video.ObsSourceAgeMs < 3000);
                 w.WriteBoolean("obsFed", video != null && video.ObsFed);
+                // Direct : dernier départ, état, débit envoyé, images perdues, reconnexions.
+                w.WriteBoolean("streaming", video != null && video.Streaming);
+                w.WriteNumber("streamState", st.StreamState);
+                w.WriteNumber("streamKbps", st.StreamKbps);
+                w.WriteNumber("streamDropped", st.StreamDropped);
+                w.WriteNumber("streamReconnects", st.StreamReconnects);
             }));
         }
 

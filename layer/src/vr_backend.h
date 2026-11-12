@@ -82,6 +82,7 @@ class VrBackend {
     virtual void videoStop() {}
     // Durée de l'enregistrement en cours (témoin du panneau), négative s'il n'y en a pas.
     virtual double videoSeconds() { return -1.0; }
+    virtual bool videoLive() { return false; }  // ... en direct (Twitch, YouTube)
     // Des images sont fournies en ce moment : la boucle de XRPerfVR tourne plus vite.
     virtual bool videoBusy() { return false; }
 };

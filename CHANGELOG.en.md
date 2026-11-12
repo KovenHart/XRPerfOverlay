@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.12.0
+
+- **Live on Twitch and YouTube, without OBS**: the headset video (image, panel, game menus, filters, game sound and microphone) goes live, encoded in H.264 by the graphics card at a constant bitrate. Video page: "Output" *MP4 file* or *Live* (one or the other), service, stream key (kept encrypted for your Windows account, never shown again), resolution 720p to 1440p, 30 or 60 fps, bitrate (capped at 8000 kbps for Twitch). The video hotkey, the button or the tray menu starts the stream; **LIVE** and the duration show in the headset; upload rate, lost frames and reconnections on the Video page. Automatic reconnection for one minute after a drop. OpenXR and SteamVR games.
+
 ## 1.11.0
 
 - **OBS source for streaming**: OBS Studio (30 or later) gets an **"XR Perf (headset)"** source that receives the headset video image (eye, format, resolution, crop, stabilization, panel, filters) straight through the graphics card, with no double encoding. It runs as soon as the source is shown in OBS, without recording (no file, no sound, no REC indicator), and keeps going during a recording. OpenXR and SteamVR games. `Installer.bat` adds it to OBS if it is installed; setting and status on the Video page ("OBS source").
