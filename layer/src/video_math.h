@@ -50,6 +50,63 @@ class FrameThrottle {
     double m_interval = 0.0;  // durée moyenne d'une image du jeu
 };
 
+// --- Moment où l'enregistreur prend l'image --------------------------------------------------------
+//
+// La vidéo a une cadence fixe : à chaque instant prévu, l'enregistreur encode la dernière image publiée
+// par le jeu. Si le jeu rend à la même cadence que la vidéo (72 images par seconde pour une vidéo à 72),
+// et que ses images arrivent juste autour des instants prévus, le moindre écart de quelques dixièmes de
+// milliseconde fait tomber deux images du jeu dans le même intervalle : l'une est perdue, et l'image
+// d'avant est répétée à l'instant suivant. La vidéo saccade alors qu'aucune image n'a manqué au casque.
+//
+// CapturePhase observe à quel moment de l'intervalle les images du jeu sont publiées (moyenne circulaire)
+// et décale l'instant de prise d'une demi-image après ce moment : chaque intervalle reçoit exactement une
+// image neuve, même avec des écarts allant jusqu'à une demi-image. L'horodatage des images vidéo ne change
+// pas (seul le moment de la prise bouge, à l'intérieur de l'intervalle) : la synchronisation avec le son
+// est intacte. Si les publications n'ont pas de phase stable (jeu à une autre cadence que la vidéo), pas
+// de décalage : comportement d'origine.
+class CapturePhase {
+  public:
+    // Une image publiée à l'instant `publish` (unités de 100 ns, même horloge que `origin`).
+    void observe(int64_t publish, int64_t origin, int64_t period) {
+        if (period <= 0) return;
+        const double kTwoPi = 6.283185307179586;
+        int64_t rel = (publish - origin) % period;
+        if (rel < 0) rel += period;
+        const double angle = kTwoPi * static_cast<double>(rel) / static_cast<double>(period);
+        const double a = m_count < 20 ? 1.0 / static_cast<double>(m_count + 1) : 0.05;
+        m_x += (std::cos(angle) - m_x) * a;
+        m_y += (std::sin(angle) - m_y) * a;
+        ++m_count;
+        // Phase assez régulière (vecteur moyen long) : on prend l'image une demi-période après les publications.
+        const double length = std::sqrt(m_x * m_x + m_y * m_y);
+        m_locked = m_count >= 10 && length > (m_locked ? 0.25 : 0.4);  // hystérésis : pas de bascule permanente
+        if (m_locked) {
+            // Décalage visé, en fraction de période : une demi-image après les publications. On le suit sans
+            // saut (pas de passage brutal de 0,99 à 0,01 période), et on ne le replie que s'il dépasse
+            // trois quarts de période : il reste borné, donc l'instant de prise ne s'écarte jamais de plus
+            // d'une image de l'horodatage de l'image vidéo.
+            const double target = std::atan2(m_y, m_x) / kTwoPi + 0.5;
+            double d = target - m_fraction;
+            d -= std::floor(d + 0.5);
+            m_fraction += d;
+            if (m_fraction > 0.75) m_fraction -= 1.0;
+            if (m_fraction < -0.75) m_fraction += 1.0;
+        } else {
+            m_fraction = 0.0;
+        }
+        m_offset = static_cast<int64_t>(m_fraction * static_cast<double>(period));
+    }
+    // Décalage à ajouter à chaque instant prévu (de -3/4 à +3/4 de période).
+    int64_t offset() const { return m_offset; }
+    bool locked() const { return m_locked; }
+
+  private:
+    double m_x = 0.0, m_y = 0.0, m_fraction = 0.0;
+    int m_count = 0;
+    bool m_locked = false;
+    int64_t m_offset = 0;
+};
+
 // --- Direction « droit devant » ----------------------------------------------------------------------
 //
 // Sur un casque aux écrans inclinés (Pimax), chaque œil regarde un peu vers l'extérieur : le centre de

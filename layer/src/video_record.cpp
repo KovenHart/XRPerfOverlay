@@ -17,7 +17,10 @@
 //    AAC de Windows sont pilotés ici, leurs paquets partent par RTMP (rtmp.cpp) ; témoin LIVE dans le casque.
 //
 // Horloge commune : QueryPerformanceCounter. La vidéo a une cadence fixe : à chaque instant prévu, la
-// dernière image reçue est encodée (répétée si le jeu n'en a pas fourni de nouvelle).
+// dernière image reçue est encodée (répétée si le jeu n'en a pas fourni de nouvelle). Quand le jeu rend à
+// la même cadence que la vidéo, l'instant de prise est calé une demi-image après les publications du jeu
+// (CapturePhase, video_math.h) : sans cela, des images publiées juste autour des instants prévus seraient
+// tour à tour perdues et répétées.
 
 #include <windows.h>
 
@@ -205,11 +208,15 @@ int64_t QpcFrequency() {
 }
 
 // Instant présent en unités de 100 ns (même échelle que les positions des paquets WASAPI).
+int64_t Qpc100ns(int64_t qpc) {
+    const int64_t f = QpcFrequency();
+    return (qpc / f) * 10'000'000 + (qpc % f) * 10'000'000 / f;
+}
+
 int64_t Now100ns() {
     LARGE_INTEGER c;
     QueryPerformanceCounter(&c);
-    const int64_t f = QpcFrequency();
-    return (c.QuadPart / f) * 10'000'000 + (c.QuadPart % f) * 10'000'000 / f;
+    return Qpc100ns(c.QuadPart);
 }
 
 #ifndef XRPO_VERSION_TEXT
@@ -841,9 +848,28 @@ class Recorder {
         int64_t tick = 0;
         double lastFresh = static_cast<double>(m_origin) / 1e7;
         unsigned long long lastSizeCheck = 0;
+        CapturePhase phase;          // moment de la prise, calé sur les publications du jeu
+        uint64_t phaseLatest = 0;
+        bool phaseLogged = false;
         reason = kStoppedByUser;
         while (!m_stop) {
-            const int64_t due = m_origin + tick * period;
+            // Image publiée depuis le dernier passage : son instant affine le calage.
+            {
+                const uint64_t latest = m_block->latest;
+                MemoryBarrier();
+                const uint64_t published = m_block->latestQpc;
+                if (latest != 0 && latest != phaseLatest && published != 0) {
+                    phaseLatest = latest;
+                    phase.observe(Qpc100ns(static_cast<int64_t>(published)), m_origin, period);
+                    if (phase.locked() != phaseLogged) {
+                        phaseLogged = phase.locked();
+                        RecordLog(phaseLogged ? "Prise calee sur les images du jeu (%.1f ms apres l'instant prevu)."
+                                              : "Prise non calee : le jeu ne rend pas a la cadence de la video (%.1f ms).",
+                                  static_cast<double>(phase.offset()) / 10'000.0);
+                    }
+                }
+            }
+            const int64_t due = m_origin + tick * period + phase.offset();
             const int64_t wait = due - Now100ns();
             if (wait > 0) {
                 if (timer) {

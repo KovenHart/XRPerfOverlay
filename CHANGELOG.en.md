@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.13.1
+
+- **Smooth video at 72 fps**: when the game renders at the video's frame rate (72 for 72, 90 for 90...), the recorder now takes each frame half a frame after the game publishes it. Before, if the game's frames arrived right around the scheduled instants, the slightest offset of a fraction of a millisecond made one frame be lost and the previous one repeated: up to one frame in four duplicated, and a stuttering video while the headset was smooth. Frame timestamps are unchanged: sound stays in sync. The recorder log shows "Prise calee sur les images du jeu".
+
 ## 1.13.0
 
 - **Live on Twitch and YouTube at the same time**: "Service" *Twitch*, *YouTube* or *Both*. Each service has its own settings (key, format, resolution, bitrate) and its own encode: for example Twitch in H.264 1080p at 6000 kbps and YouTube in AV1 1440p at 18,000 kbps. The image is composed once, at the larger of the two sizes. If one service drops or refuses the key, the other keeps going; the Video page shows each one's status and bitrate. The frame rate (30 or 60 fps) is shared.

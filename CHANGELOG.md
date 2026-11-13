@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.13.1
+
+- **Vidéo sans saccades à 72 images/s** : quand le jeu rend à la même cadence que la vidéo (72 pour 72, 90 pour 90...), l'enregistreur prend maintenant chaque image une demi-image après sa publication par le jeu. Avant, si les images du jeu arrivaient juste autour des instants prévus, le moindre écart d'une fraction de milliseconde en faisait perdre une et répéter la précédente : jusqu'à une image sur quatre en double, et une vidéo saccadée alors que le casque était fluide. L'horodatage des images ne change pas : le son reste synchronisé. Le journal de l'enregistreur indique « Prise calée sur les images du jeu ».
+
 ## 1.13.0
 
 - **Direct sur Twitch et YouTube en même temps** : « Service » *Twitch*, *YouTube* ou *Les deux*. Chaque service a ses réglages (clé, format, résolution, débit) et son propre encodage : par exemple Twitch en H.264 1080p à 6000 kbit/s et YouTube en AV1 1440p à 18 000 kbit/s. L'image est composée une fois, à la plus grande des deux tailles. Si un service décroche ou refuse la clé, l'autre continue ; la page Vidéo montre l'état et le débit de chacun. La cadence (30 ou 60 images/s) est commune aux deux.
