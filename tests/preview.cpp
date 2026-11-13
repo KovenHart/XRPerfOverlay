@@ -1133,6 +1133,51 @@ static void testVideo() {
         assert(n >= 29 && n <= 31);
     }
 
+    // Moment de la prise : jeu à 72 Hz, vidéo à 72 images par seconde, images du jeu publiées juste autour
+    // des instants prévus avec un écart de 1 ms. Sans calage, environ une image sur quatre est répétée (et
+    // une autre perdue) ; calé, presque aucune. Jeu à 90 Hz pour une vidéo à 72 : pas de calage.
+    {
+        auto simulate = [](double gameHz, double fps, double phase, bool useLock, int& repeated, bool& locked) {
+            uint32_t seed = 12345;
+            auto noise = [&seed]() {  // écart pseudo-aléatoire de -1,7 à +1,7 ms (écart type 1 ms environ)
+                double sum = 0;
+                for (int k = 0; k < 3; ++k) {
+                    seed = seed * 1664525u + 1013904223u;
+                    sum += static_cast<double>(seed >> 8) / 16777216.0 - 0.5;
+                }
+                return sum * 1.7 / 1.5 * 10'000.0;
+            };
+            const int64_t period = static_cast<int64_t>(10'000'000.0 / fps);
+            std::vector<int64_t> publish;
+            for (int i = 0; i < 1500; ++i) publish.push_back(static_cast<int64_t>(phase * period + i * 10'000'000.0 / gameHz + noise()));
+            std::sort(publish.begin(), publish.end());
+            CapturePhase cp;
+            size_t next = 0;
+            int64_t taken = -1;
+            repeated = 0;
+            for (int64_t tick = 1; tick * period < publish.back() - 2 * period; ++tick) {
+                const int64_t due = tick * period + (useLock ? cp.offset() : 0);
+                while (next < publish.size() && publish[next] <= due) {
+                    if (useLock) cp.observe(publish[next], 0, period);
+                    ++next;
+                }
+                const int64_t latest = static_cast<int64_t>(next) - 1;
+                if (latest == taken) ++repeated;
+                taken = latest;
+            }
+            locked = cp.locked();
+        };
+        int before = 0, after = 0, other = 0;
+        bool locked = false;
+        simulate(72, 72, 0.0, false, before, locked);
+        simulate(72, 72, 0.0, true, after, locked);
+        assert(before > 200 && after < 10 && locked);
+        simulate(72, 72, 0.5, true, after, locked);  // déjà bien placé : rien ne se dégrade
+        assert(after < 10);
+        simulate(90, 72, 0.0, true, other, locked);
+        assert(!locked && other < 5);
+    }
+
     // Cadrage : image symétrique, 16:9, tout le champ.
     {
         const CropBox b = ComputeCrop(2000, 2000, -1.f, 1.f, 1.f, -1.f, 0.f, 0.f, 16.f / 9.f, 1.f);
