@@ -1,6 +1,6 @@
 # XR Perf Overlay
 
-*Français : [README.md](README.md)*
+**🇫🇷 [Version française](README.md)** · 🇬🇧 English
 
 A performance panel shown in the headset for every OpenXR game (including games run with UEVR), and also for SteamVR games that don't go through OpenXR (OpenVR):
 
@@ -8,7 +8,7 @@ A performance panel shown in the headset for every OpenXR game (including games 
 - **CPU**: load, frame time, temperature, clock
 - **GPU**: load, frame time, temperature, clock, VRAM
 
-Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves. The Video page records what you see in the headset (H.264, H.265 or AV1 on the graphics card, with game sound and microphone, optional panel and stabilization), without OBS. The Image page adds optional sharpening (CAS, RCAS, LumaSharpen), color adjustments, fake HDR, debanding and a colorblind mode, with presets, in the headset or in the video. Every hotkey can be changed. For streaming, an "XR Perf (headset)" OBS source receives the same image, with no double encoding. The Configuration page diagnoses the PC for VR: OpenXR runtime, installed layers (to turn on, off or reorder), hardware, Windows settings.
+Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves. The Video page records what you see in the headset (H.264, H.265 or AV1 on the graphics card, with game sound and microphone, optional panel and stabilization), without OBS. The Image page adds optional sharpening (CAS, RCAS, LumaSharpen), color adjustments, fake HDR, debanding and a colorblind mode, with presets, in the headset or in the video. Every hotkey can be changed. For streaming, go live without OBS on **Twitch**, **YouTube** or both at once (H.264, plus H.265 or AV1 for YouTube); or an "XR Perf (headset)" OBS source receives the same image, with no double encoding. The Configuration page diagnoses the PC for VR: OpenXR runtime, installed layers (to turn on, off or reorder), hardware, Windows settings.
 
 ![Panel preview](docs/apercu.png)
 
@@ -52,7 +52,10 @@ Start a VR game: the panel appears in the headset. Double-click the XRPerfSensor
 | `Ctrl + Alt + Home` / `End` | Panel more opaque / more transparent |
 | `Ctrl + Alt + F` | Show / hide the desktop window |
 | `Ctrl + Alt + G` | Place the desktop window in front of you |
+| `Ctrl + Alt + V` | Video: start / stop recording or the live stream |
 | `Ctrl + Alt + S` | Manual report mode: start / stop recording |
+
+Every hotkey can be changed in the XRPerfSensors window.
 
 ## Learn more
 

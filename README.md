@@ -1,6 +1,6 @@
 # XR Perf Overlay
 
-*English: [README.en.md](README.en.md)*
+**🇬🇧 [English version](README.en.md)** · 🇫🇷 Français
 
 Un panneau de performances affiché dans le casque pour tous les jeux OpenXR (dont les jeux lancés avec UEVR), et aussi pour les jeux SteamVR qui ne passent pas par OpenXR (OpenVR) :
 
@@ -8,7 +8,7 @@ Un panneau de performances affiché dans le casque pour tous les jeux OpenXR (do
 - **CPU** : charge, frametime, température, fréquence
 - **GPU** : charge, frametime, température, fréquence, VRAM
 
-En option : une montre au poignet, et une fenêtre du bureau (le chat d'un stream, Discord...) affichée dans le casque. Un rapport est écrit à chaque session de jeu (ou au raccourci `Ctrl+Alt+S`), avec son analyse et ses courbes. La page Vidéo enregistre ce que vous voyez dans le casque (H.264, H.265 ou AV1 par la carte graphique, avec le son du jeu et le micro, le panneau et la stabilisation en option), sans OBS. La page Image ajoute en option netteté (CAS, RCAS, LumaSharpen), réglages des couleurs, faux HDR, débandage et mode daltonien, avec des presets, dans le casque ou dans la vidéo. Tous les raccourcis sont modifiables. Pour streamer, une source OBS « XR Perf (casque) » reçoit cette même image, sans double encodage. La page Configuration fait le diagnostic du PC pour la VR : runtime OpenXR, layers installées (à activer, désactiver ou réordonner), matériel, réglages de Windows.
+En option : une montre au poignet, et une fenêtre du bureau (le chat d'un stream, Discord...) affichée dans le casque. Un rapport est écrit à chaque session de jeu (ou au raccourci `Ctrl+Alt+S`), avec son analyse et ses courbes. La page Vidéo enregistre ce que vous voyez dans le casque (H.264, H.265 ou AV1 par la carte graphique, avec le son du jeu et le micro, le panneau et la stabilisation en option), sans OBS. La page Image ajoute en option netteté (CAS, RCAS, LumaSharpen), réglages des couleurs, faux HDR, débandage et mode daltonien, avec des presets, dans le casque ou dans la vidéo. Tous les raccourcis sont modifiables. Pour streamer, le direct part sans OBS sur **Twitch**, **YouTube** ou les deux en même temps (H.264, et H.265 ou AV1 pour YouTube) ; ou une source OBS « XR Perf (casque) » reçoit cette même image, sans double encodage. La page Configuration fait le diagnostic du PC pour la VR : runtime OpenXR, layers installées (à activer, désactiver ou réordonner), matériel, réglages de Windows.
 
 ![Aperçu du panneau](docs/apercu.png)
 
@@ -52,7 +52,10 @@ Lancez un jeu VR : le panneau apparaît dans le casque. Double-cliquez sur l'ic�
 | `Ctrl + Alt + Début` / `Fin` | Panneau plus opaque / plus transparent |
 | `Ctrl + Alt + F` | Afficher / masquer la fenêtre du bureau |
 | `Ctrl + Alt + G` | Poser la fenêtre du bureau devant soi |
+| `Ctrl + Alt + V` | Vidéo : démarrer / arrêter l'enregistrement ou le direct |
 | `Ctrl + Alt + S` | Rapport en mode manuel : démarrer / arrêter l'enregistrement |
+
+Tous ces raccourcis se changent dans la fenêtre de XRPerfSensors.
 
 ## En savoir plus
 
