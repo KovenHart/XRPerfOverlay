@@ -66,6 +66,7 @@ namespace XRPerfSensors
             public uint Stream2Codec, Stream2Height, Stream2Bitrate;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Stream2Url;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Stream2Key;
+            public int ImageBlack, ImageWhite, ImageClarity;  // point noir, point blanc, clarté
         }
 
         // États du direct (StreamState, layer/src/rtmp.h).
@@ -545,6 +546,9 @@ namespace XRPerfSensors
             options.ImageHdr = values[12];
             options.ImageSharpenLimit = image.ImageSharpenLimit;
             options.ImageSharpenRadius = image.ImageSharpenRadius;
+            options.ImageBlack = image.ImageBlack;
+            options.ImageWhite = image.ImageWhite;
+            options.ImageClarity = image.ImageClarity;
             return options;
         }
 

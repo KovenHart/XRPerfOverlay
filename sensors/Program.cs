@@ -755,7 +755,8 @@ namespace XRPerfSensors
             UpdateCapture();
             UpdateVideoHotkey();
             // Filtres d'image changés : l'image pour OBS seule les reprend.
-            string image = string.Join(",", _overlay.ImageValues()) + "," + _overlay.ImageSharpenLimit + "," + _overlay.ImageSharpenRadius;
+            string image = string.Join(",", _overlay.ImageValues()) + "," + _overlay.ImageSharpenLimit + "," + _overlay.ImageSharpenRadius + "," +
+                           _overlay.ImageBlack + "," + _overlay.ImageWhite + "," + _overlay.ImageClarity;
             if (image != _obsImage)
             {
                 _obsImage = image;

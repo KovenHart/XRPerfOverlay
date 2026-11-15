@@ -121,6 +121,9 @@ inline void ApplySettings(Config& c, const SettingsBlock& s) {
     im.hdr = s.imageHdr;
     im.sharpenLimit = s.imageSharpenLimit;
     im.sharpenRadius = s.imageSharpenRadius;
+    im.black = s.imageBlack;
+    im.white = s.imageWhite;
+    im.clarity = s.imageClarity;
     im.clamp();
     // Raccourcis (un invalide garde le précédent).
     for (int i = 0; i < Config::kHotkeyCount; ++i) {

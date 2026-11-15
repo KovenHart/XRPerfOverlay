@@ -866,7 +866,7 @@ static void testReportControl(const std::string& dir) {
     assert(offsetof(ObsShare, consumerTickMs) == 8 && offsetof(ObsShare, producerTickMs) == 16 && offsetof(ObsShare, handle) == 24 &&
            offsetof(ObsShare, adapterLuid) == 40 && sizeof(ObsShare) == 128);
     assert(offsetof(SettingsBlock, imageHdr) == 248 && offsetof(SettingsBlock, hotkeys) == 252 && offsetof(SettingsBlock, imageSharpenLimit) == 296 &&
-           sizeof(SettingsBlock) == 304);
+           offsetof(SettingsBlock, imageBlack) == 304 && offsetof(SettingsBlock, imageClarity) == 312 && sizeof(SettingsBlock) == 320);
     // Raccourcis : touche seule refusée sauf F1 à F24 ; un invalide reçu de XRPerfSensors garde le précédent.
     assert(NormalizeHotkey((3 << 16) | 'O') == ((3 << 16) | 'O') && NormalizeHotkey(0) == 0);
     assert(NormalizeHotkey('O') == -1 && NormalizeHotkey(0x78) == 0x78);  // O seul refusé, F9 seul accepté
@@ -1011,7 +1011,7 @@ static void testImageFilters() {
     };
     const auto identity = [](float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float sharpen, float amount,
                              float limit = 0.035f) {
-        return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, e, e, sharpen, amount, limit, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
+        return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, e, e, sharpen, amount, limit, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
     };
     // Réglages neutres : image inchangée (y compris des couleurs extrêmes).
     const float3 samples[] = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {0.2f, 0.5f, 0.9f}, {0.73f, 0.11f, 0.04f}, {0.5f, 0.5f, 0.5f}};
@@ -1090,18 +1090,45 @@ static void testImageFilters() {
     const float3 red = Daltonize(float3(0.8f, 0.2f, 0.2f), 2.f), green = Daltonize(float3(0.2f, 0.6f, 0.2f), 2.f);
     assert(std::fabs(red.z - green.z) > 0.1f);
     // Faux HDR : force nulle, rien ; un pixel plus clair que son entourage s'éclaircit davantage qu'en zone
-    // unie, un plus sombre s'assombrit davantage ; noir, blanc et teinte gardés.
+    // unie, un plus sombre s'assombrit davantage ; noir et blanc gardés ; ombres plus profondes, couleurs
+    // plus riches.
     {
         const float3 mid(0.6f, 0.6f, 0.6f), lower(0.4f, 0.4f, 0.4f), higher(0.8f, 0.8f, 0.8f);
-        assert(near(FilterPixel(mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, 0.f, lower, lower, 0.f, 0.f, 0.035f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
-                                1.f, 0.f, 0.f, 0.f),
+        assert(near(FilterPixel(mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, 0.f, lower, lower, 0.f, 0.f, 0.035f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f,
+                                0.f, 1.f, 0.f, 0.f, 0.f),
                     mid, 1e-6f));
         const float3 flatHdr = FakeHdr(mid, mid, mid, 1.f);
         assert(FakeHdr(mid, lower, lower, 1.f).x > flatHdr.x && FakeHdr(mid, higher, higher, 1.f).x < flatHdr.x);
         assert(near(FakeHdr(float3(0.f, 0.f, 0.f), mid, mid, 1.f), float3(0.f, 0.f, 0.f), 1e-6f));
         assert(near(FakeHdr(float3(1.f, 1.f, 1.f), lower, lower, 1.f), float3(1.f, 1.f, 1.f), 1e-6f));
-        const float3 hue(0.5f, 0.3f, 0.2f), hued = FakeHdr(hue, lower, higher, 0.7f);
-        assert(std::fabs(hued.x / hued.z - hue.x / hue.z) < 1e-3f);
+        const float3 hue(0.5f, 0.3f, 0.2f), hued = FakeHdr(hue, hue, hue, 0.6f);
+        assert(hued.x - hued.z > hue.x - hue.z);
+        const float3 shadow(0.25f, 0.25f, 0.25f);
+        assert(FakeHdr(shadow, shadow, shadow, 0.6f).x < shadow.x);
+        assert(near(FakeHdr(hue, lower, higher, 0.f), hue, 1e-6f));
+        // Clarté : rien à force nulle ni en zone unie ; un pixel plus sombre que son entourage s'assombrit,
+        // plus qu'un pixel plus clair ne s'éclaircit ; noir et blanc gardés ; teinte gardée.
+        assert(near(Clarity(mid, lower, higher, 0.f), mid, 1e-6f));
+        assert(near(Clarity(mid, mid, mid, 1.f), mid, 1e-6f));
+        const float3 darker = Clarity(mid, higher, higher, 1.f), lighter = Clarity(mid, lower, lower, 1.f);
+        assert(darker.x < mid.x && lighter.x > mid.x && mid.x - darker.x > lighter.x - mid.x);
+        assert(near(Clarity(float3(0.f, 0.f, 0.f), mid, mid, 1.f), float3(0.f, 0.f, 0.f), 1e-6f));
+        assert(near(Clarity(float3(1.f, 1.f, 1.f), lower, lower, 1.f), float3(1.f, 1.f, 1.f), 1e-6f));
+        const float3 clear = Clarity(hue, higher, higher, 1.f);
+        assert(std::fabs(clear.x / clear.z - hue.x / hue.z) < 1e-3f);
+        // Niveaux : noir sous le point noir, blanc au-dessus du point blanc, étirement entre les deux.
+        assert(near(Levels(float3(0.05f, 0.05f, 0.05f), 0.08f, 1.f), float3(0.f, 0.f, 0.f), 1e-6f));
+        assert(near(Levels(float3(0.95f, 0.95f, 0.95f), 0.f, 0.92f), float3(1.f, 1.f, 1.f), 1e-6f));
+        assert(near(Levels(float3(0.54f, 0.54f, 0.54f), 0.08f, 1.f), float3(0.5f, 0.5f, 0.5f), 1e-5f));
+        assert(near(Levels(mid, 0.f, 1.f), mid, 1e-6f));
+        ImageSettings levels;
+        levels.black = 40;
+        levels.white = 10;
+        levels.clamp();
+        assert(levels.black == 25 && levels.white == 75 && levels.changesImage());
+        const ImageFilterParams lp = ImageParamsFrom(levels);
+        assert(std::fabs(lp.black - 0.25f) < 1e-6f && std::fabs(lp.white - 0.75f) < 1e-6f);
+        assert(ImageParamsFrom(ImageSettings()).white == 1.f && !ImageSettings().changesImage());
         ImageSettings settings;
         settings.hdr = 140;
         assert(settings.changesImage() && ImageParamsFrom(settings).hdr == 1.f);

@@ -32,6 +32,10 @@ inline float saturate(float a) { return std::min(1.f, std::max(0.f, a)); }
 inline float3 saturate(float3 a) { return {saturate(a.x), saturate(a.y), saturate(a.z)}; }
 inline float clamp(float a, float lo, float hi) { return std::min(hi, std::max(lo, a)); }
 inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
+inline float smoothstep(float e0, float e1, float x) {
+    const float t = saturate((x - e0) / (e1 - e0));
+    return t * t * (3.f - 2.f * t);
+}
 inline float3 lerp(float3 a, float3 b, float t) { return a + (b - a) * t; }
 inline float dot(float3 a, float3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 inline float3 sqrt(float3 a) { return {std::sqrt(a.x), std::sqrt(a.y), std::sqrt(a.z)}; }

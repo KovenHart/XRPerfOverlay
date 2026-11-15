@@ -17,7 +17,7 @@ namespace XRPerfSensors
         public static readonly string[] Keys =
         {
             "ImageSharpen", "ImageSharpness", "ImageSharpenLimit", "ImageSharpenRadius", "ImageBrightness", "ImageContrast", "ImageSaturation", "ImageVibrance",
-            "ImageGamma", "ImageShadows", "ImageTemperature", "ImageDeband", "ImageColorblind", "ImageHdr",
+            "ImageGamma", "ImageShadows", "ImageTemperature", "ImageDeband", "ImageColorblind", "ImageHdr", "ImageBlack", "ImageWhite", "ImageClarity",
         };
 
         public const int MaxName = 40;
@@ -36,10 +36,17 @@ namespace XRPerfSensors
             new Preset { Id = "lowres", Values = "{\"ImageSharpen\":\"rcas\",\"ImageSharpness\":70}" },
             new Preset { Id = "crisp", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":60,\"ImageSharpenLimit\":6}" },
             new Preset { Id = "vivid", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageContrast\":5,\"ImageSaturation\":10,\"ImageVibrance\":40}" },
-            new Preset { Id = "hdr", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageVibrance\":25,\"ImageHdr\":60}" },
+            new Preset { Id = "hdr", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageVibrance\":10,\"ImageHdr\":60}" },
             new Preset { Id = "cinema", Values = "{\"ImageContrast\":10,\"ImageSaturation\":-10,\"ImageVibrance\":15,\"ImageTemperature\":12,\"ImageHdr\":20}" },
             new Preset { Id = "dark", Values = "{\"ImageBrightness\":6,\"ImageGamma\":85,\"ImageShadows\":25}" },
-            new Preset { Id = "oled", Values = "{\"ImageShadows\":35,\"ImageDeband\":60}" },
+            // Noirs profonds et OLED : d'après les presets du fork UEVR de wyerdev (LevelsPlus, Clarity, FakeHDR...),
+            // avec la netteté LumaSharpen 100 % / 0,10 / 1 px.
+            new Preset { Id = "deep", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":100,\"ImageSharpenLimit\":10,\"ImageBlack\":8,\"ImageWhite\":92,\"ImageVibrance\":35}" },
+            new Preset { Id = "oled", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":100,\"ImageSharpenLimit\":10,\"ImageClarity\":35,\"ImageDeband\":50}" },
+            new Preset { Id = "oledvivid", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":100,\"ImageSharpenLimit\":10,\"ImageClarity\":45,\"ImageBlack\":2,\"ImageHdr\":20,\"ImageVibrance\":20}" },
+            new Preset { Id = "oledcontrast", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":100,\"ImageSharpenLimit\":10,\"ImageClarity\":30,\"ImageContrast\":15}" },
+            new Preset { Id = "oledcolor", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":100,\"ImageSharpenLimit\":10,\"ImageVibrance\":25,\"ImageSaturation\":10}" },
+            new Preset { Id = "oleddeep", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":100,\"ImageSharpenLimit\":10,\"ImageClarity\":55,\"ImageHdr\":16}" },
         };
 
         private static List<Preset> _user;
@@ -107,7 +114,7 @@ namespace XRPerfSensors
             o.ImageBrightness = fresh.ImageBrightness; o.ImageContrast = fresh.ImageContrast; o.ImageSaturation = fresh.ImageSaturation;
             o.ImageVibrance = fresh.ImageVibrance; o.ImageGamma = fresh.ImageGamma; o.ImageShadows = fresh.ImageShadows;
             o.ImageTemperature = fresh.ImageTemperature; o.ImageDeband = fresh.ImageDeband; o.ImageColorblind = fresh.ImageColorblind;
-            o.ImageHdr = fresh.ImageHdr;
+            o.ImageHdr = fresh.ImageHdr; o.ImageBlack = fresh.ImageBlack; o.ImageWhite = fresh.ImageWhite; o.ImageClarity = fresh.ImageClarity;
         }
 
         private static void Load(OverlaySettings o, string values)
@@ -136,6 +143,9 @@ namespace XRPerfSensors
             w.WriteNumber("ImageDeband", o.ImageDeband);
             w.WriteString("ImageColorblind", o.ImageColorblind);
             w.WriteNumber("ImageHdr", o.ImageHdr);
+            w.WriteNumber("ImageBlack", o.ImageBlack);
+            w.WriteNumber("ImageWhite", o.ImageWhite);
+            w.WriteNumber("ImageClarity", o.ImageClarity);
             w.WriteEndObject();
         }
 

@@ -1543,6 +1543,9 @@ window.App = (function () {
       group(t("img.colors"), t("img.colors.help"), [
         sliderRow("overlay", "ImageBrightness", t("img.brightness"), null, -50, 50, signed),
         sliderRow("overlay", "ImageContrast", t("img.contrast"), null, -50, 50, signed),
+        sliderRow("overlay", "ImageBlack", t("img.black"), t("img.black.help"), 0, 25, pct),
+        sliderRow("overlay", "ImageWhite", t("img.white"), t("img.white.help"), 75, 100, pct),
+        sliderRow("overlay", "ImageClarity", t("img.clarity"), t("img.clarity.help"), 0, 100, num),
         sliderRow("overlay", "ImageHdr", t("img.hdr"), t("img.hdr.help"), 0, 100, num),
         sliderRow("overlay", "ImageSaturation", t("img.saturation"), null, -100, 100, signed),
         sliderRow("overlay", "ImageVibrance", t("img.vibrance"), t("img.vibrance.help"), 0, 100, num),

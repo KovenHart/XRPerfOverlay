@@ -88,17 +88,46 @@ float3 Deband(float3 original, float3 current, float3 s1, float3 s2, float3 s3, 
 }
 
 // --- Faux HDR ------------------------------------------------------------------------------------
-// Contraste local : l'écart du pixel à la luminosité moyenne de son entourage (deux anneaux, proche et
-// lointain) est amplifié, puis les tons moyens sont approfondis, comme le FakeHDR de ReShade. Les couleurs
-// gardent leur teinte (seule la luminosité change). `strength` : 0 à 1.
+// L'aspect « HDR » des effets de ce nom (ReShade, fork UEVR) : une courbe appliquée à chaque canal, qui
+// approfondit les ombres, pousse les hautes lumières et rend les couleurs plus riches (les canaux s'écartent
+// entre eux), plus un peu de contraste local (écart du pixel à la moyenne de deux anneaux, proche et
+// lointain) pour garder du détail. `strength` : 0 à 1 ; vers 0,6, l'aspect habituel de ces effets.
 float3 FakeHdr(float3 c, float3 nearRing, float3 farRing, float strength) {
     float s = saturate(strength);
+    float gain = 0.13f * s;
+    float power = 1.0f + 0.5f * s;
+    float3 lifted = c * (1.0f + gain);
+    float3 curved = pow(lifted, float3(power, power, power)) + c * gain;
+    float detail = (Luma(c) - 0.5f * (Luma(nearRing) + Luma(farRing))) * (0.5f * s);
+    return saturate(curved + float3(detail, detail, detail));
+}
+
+// --- Clarté ---------------------------------------------------------------------------------------
+// Contraste local à grande échelle sur les tons moyens : l'écart du pixel à la luminosité de son entourage
+// (surtout l'anneau lointain) est accentué, davantage quand le pixel est plus sombre que son entourage
+// (relief, profondeur) que quand il est plus clair (pas de halo lumineux). Rien près du noir ni du blanc.
+// Les couleurs gardent leur teinte. `strength` : 0 à 1.
+float3 Clarity(float3 c, float3 nearRing, float3 farRing, float strength) {
+    float s = saturate(strength);
     float l = Luma(c);
-    float local = 0.5f * (Luma(nearRing) + Luma(farRing));
-    float target = saturate(l + (l - local) * (1.5f * s));
-    target = pow(target, 1.0f + 0.3f * s);
-    float ratio = min(target / max(l, 0.0001f), 4.0f);
+    float around = 0.25f * Luma(nearRing) + 0.75f * Luma(farRing);
+    float detail = l - around;
+    detail = detail < 0.0f ? detail : detail * 0.35f;
+    float midtones = smoothstep(0.06f, 0.22f, l) * (1.0f - smoothstep(0.78f, 0.95f, l));
+    float target = l + detail * (1.2f * s * midtones);
+    // Effet borné : un pixel n'est jamais assombri ou éclairci de plus de 40 % (pas de trou noir à côté d'une
+    // zone très claire).
+    float ratio = clamp(target / max(l, 0.0001f), 0.6f, 1.4f);
     return saturate(c * ratio);
+}
+
+// --- Niveaux --------------------------------------------------------------------------------------
+// Point noir et point blanc : ce qui est sous `black` devient noir, ce qui est au-dessus de `white` devient
+// blanc, le reste est étiré entre les deux. Corrige le « noir gris » des jeux réglés pour un écran (noirs
+// plus profonds, surtout sur un casque OLED). black : 0 à 0,25 ; white : 0,75 à 1.
+float3 Levels(float3 c, float black, float white) {
+    float range = max(white - black, 0.05f);
+    return saturate((c - float3(black, black, black)) / range);
 }
 
 // --- Couleurs -------------------------------------------------------------------------------------
@@ -147,11 +176,11 @@ float3 Daltonize(float3 c, float mode) {
 
 // --- Tout, pour un pixel --------------------------------------------------------------------------
 // sharpenMode : 0 aucune, 1 CAS, 2 RCAS, 3 LumaSharpen. far1 à far4 : échantillons lointains (débandage),
-// noise : -0,5 à 0,5 (tramage, avec le débandage). nearRing, farRing : moyennes des anneaux (faux HDR).
-// colorblind : 0 à 3.
+// noise : -0,5 à 0,5 (tramage, avec le débandage). nearRing, farRing : moyennes des anneaux (faux HDR,
+// clarté). colorblind : 0 à 3. black, white : niveaux (0 et 1 : inchangés) ; clarity : 0 à 1.
 float3 FilterPixel(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float3 far1, float3 far2, float3 far3,
                    float3 far4, float noise, float3 nearRing, float3 farRing, float sharpenMode, float sharpenAmount, float sharpenLimit, float deband,
-                   float hdr,
+                   float hdr, float clarity, float black, float white,
                    float brightness, float contrast, float saturation, float vibrance, float gammaInverse, float shadows, float temperature,
                    float colorblind) {
     float3 color = e;
@@ -163,7 +192,9 @@ float3 FilterPixel(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, f
         color = SharpenCas(a, b, c, d, e, f, g, h, i, sharpenAmount);
     }
     if (deband > 0.0f) color = Deband(e, color, far1, far2, far3, far4, deband);
+    if (clarity > 0.0f) color = Clarity(color, nearRing, farRing, clarity);
     if (hdr > 0.0f) color = FakeHdr(color, nearRing, farRing, hdr);
+    if (black > 0.0f || white < 1.0f) color = Levels(color, black, white);
     color = AdjustColor(color, brightness, contrast, saturation, vibrance, gammaInverse, shadows, temperature);
     if (colorblind > 0.5f) color = Daltonize(color, colorblind);
     if (deband > 0.0f) color = saturate(color + float3(noise, noise, noise) / 255.0f);
