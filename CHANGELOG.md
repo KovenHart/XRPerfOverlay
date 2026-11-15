@@ -4,8 +4,11 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
-## 1.13.2
+## 1.14.0
 
+- **Noirs plus profonds** (point noir) et **point blanc**, page Image : corrige le « noir gris » des jeux réglés pour un écran, surtout sur un casque OLED.
+- **Clarté** : contraste local des tons moyens, plus de relief et de profondeur sans toucher au noir, au blanc ni aux couleurs.
+- **Presets Noirs profonds et OLED** (*OLED naturel*, *vif*, *contraste*, *couleurs*, *profond*), d'après ceux du fork UEVR de wyerdev, avec la netteté LumaSharpen 100 % / 0,10 / 1 px. *OLED naturel* remplace l'ancien preset *OLED*, qui éclaircissait les ombres.
 - **Faux HDR revu** : l'aspect des effets « Fake HDR » (ReShade, fork UEVR) : ombres plus profondes, hautes lumières plus vives et couleurs plus riches, avec un peu de contraste local. Avant, seul le contraste local changeait, sans toucher aux couleurs : l'effet était terne. Vers 60 %, l'aspect habituel de ces effets. Le preset *Faux HDR* ajoute moins de vibrance, l'effet en apportant déjà.
 
 ## 1.13.1

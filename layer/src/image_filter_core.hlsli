@@ -102,6 +102,34 @@ float3 FakeHdr(float3 c, float3 nearRing, float3 farRing, float strength) {
     return saturate(curved + float3(detail, detail, detail));
 }
 
+// --- Clarté ---------------------------------------------------------------------------------------
+// Contraste local à grande échelle sur les tons moyens : l'écart du pixel à la luminosité de son entourage
+// (surtout l'anneau lointain) est accentué, davantage quand le pixel est plus sombre que son entourage
+// (relief, profondeur) que quand il est plus clair (pas de halo lumineux). Rien près du noir ni du blanc.
+// Les couleurs gardent leur teinte. `strength` : 0 à 1.
+float3 Clarity(float3 c, float3 nearRing, float3 farRing, float strength) {
+    float s = saturate(strength);
+    float l = Luma(c);
+    float around = 0.25f * Luma(nearRing) + 0.75f * Luma(farRing);
+    float detail = l - around;
+    detail = detail < 0.0f ? detail : detail * 0.35f;
+    float midtones = smoothstep(0.06f, 0.22f, l) * (1.0f - smoothstep(0.78f, 0.95f, l));
+    float target = l + detail * (1.2f * s * midtones);
+    // Effet borné : un pixel n'est jamais assombri ou éclairci de plus de 40 % (pas de trou noir à côté d'une
+    // zone très claire).
+    float ratio = clamp(target / max(l, 0.0001f), 0.6f, 1.4f);
+    return saturate(c * ratio);
+}
+
+// --- Niveaux --------------------------------------------------------------------------------------
+// Point noir et point blanc : ce qui est sous `black` devient noir, ce qui est au-dessus de `white` devient
+// blanc, le reste est étiré entre les deux. Corrige le « noir gris » des jeux réglés pour un écran (noirs
+// plus profonds, surtout sur un casque OLED). black : 0 à 0,25 ; white : 0,75 à 1.
+float3 Levels(float3 c, float black, float white) {
+    float range = max(white - black, 0.05f);
+    return saturate((c - float3(black, black, black)) / range);
+}
+
 // --- Couleurs -------------------------------------------------------------------------------------
 // brightness, contrast : -0,5 à 0,5 ; saturation : -1 à 1 ; vibrance, shadows : 0 à 1 ; gammaInverse :
 // 1 / gamma ; temperature : -1 (froid) à 1 (chaud).
@@ -148,11 +176,11 @@ float3 Daltonize(float3 c, float mode) {
 
 // --- Tout, pour un pixel --------------------------------------------------------------------------
 // sharpenMode : 0 aucune, 1 CAS, 2 RCAS, 3 LumaSharpen. far1 à far4 : échantillons lointains (débandage),
-// noise : -0,5 à 0,5 (tramage, avec le débandage). nearRing, farRing : moyennes des anneaux (faux HDR).
-// colorblind : 0 à 3.
+// noise : -0,5 à 0,5 (tramage, avec le débandage). nearRing, farRing : moyennes des anneaux (faux HDR,
+// clarté). colorblind : 0 à 3. black, white : niveaux (0 et 1 : inchangés) ; clarity : 0 à 1.
 float3 FilterPixel(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, float3 g, float3 h, float3 i, float3 far1, float3 far2, float3 far3,
                    float3 far4, float noise, float3 nearRing, float3 farRing, float sharpenMode, float sharpenAmount, float sharpenLimit, float deband,
-                   float hdr,
+                   float hdr, float clarity, float black, float white,
                    float brightness, float contrast, float saturation, float vibrance, float gammaInverse, float shadows, float temperature,
                    float colorblind) {
     float3 color = e;
@@ -164,7 +192,9 @@ float3 FilterPixel(float3 a, float3 b, float3 c, float3 d, float3 e, float3 f, f
         color = SharpenCas(a, b, c, d, e, f, g, h, i, sharpenAmount);
     }
     if (deband > 0.0f) color = Deband(e, color, far1, far2, far3, far4, deband);
+    if (clarity > 0.0f) color = Clarity(color, nearRing, farRing, clarity);
     if (hdr > 0.0f) color = FakeHdr(color, nearRing, farRing, hdr);
+    if (black > 0.0f || white < 1.0f) color = Levels(color, black, white);
     color = AdjustColor(color, brightness, contrast, saturation, vibrance, gammaInverse, shadows, temperature);
     if (colorblind > 0.5f) color = Daltonize(color, colorblind);
     if (deband > 0.0f) color = saturate(color + float3(noise, noise, noise) / 255.0f);

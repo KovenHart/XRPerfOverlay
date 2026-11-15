@@ -55,9 +55,10 @@ static_assert(sizeof(PanelShareHeader) == 32, "la disposition doit rester identi
 //    par XRPerfSensors dans XRPerfOverlay.ini, que la layer lit au lancement d'un jeu.
 constexpr wchar_t kSettingsBlockName[] = L"Local\\XRPerfOverlay.Settings";
 constexpr uint32_t kSettingsBlockMagic = 0x53505258;  // "XRPS"
-constexpr uint32_t kSettingsBlockVersion = 8;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
+constexpr uint32_t kSettingsBlockVersion = 9;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
                                                // 6 : puissance à la place de la fréquence ; 7 : filtres d'image ;
-                                               // 8 : faux HDR, raccourcis modifiables, limite et portée de la netteté
+                                               // 8 : faux HDR, raccourcis modifiables, limite et portée de la netteté ;
+                                               // 9 : point noir, point blanc, clarté
 
 struct SettingsBlock {
     uint32_t magic;             // offset 0
@@ -134,9 +135,14 @@ struct SettingsBlock {
     int32_t hotkeys[11];        // 252 à 292
     int32_t imageSharpenLimit;  // 296 : LumaSharpen, écart maximal en % de luminosité (1 à 50)
     int32_t imageSharpenRadius; // 300 : portée de la netteté, 1 à 3 pixels
-};                              // 304 octets
+    // Version 9.
+    int32_t imageBlack;         // 304 : point noir, 0 à 25
+    int32_t imageWhite;         // 308 : point blanc, 75 à 100
+    int32_t imageClarity;       // 312 : clarté, 0 à 100
+    int32_t reserved9;          // 316
+};                              // 320 octets
 
-static_assert(sizeof(SettingsBlock) == 304, "la disposition doit rester identique a celle de OverlaySettings.cs");
+static_assert(sizeof(SettingsBlock) == 320, "la disposition doit rester identique a celle de OverlaySettings.cs");
 
 // 4. Image d'une fenêtre du bureau (un chat, par exemple), capturée par XRPerfSensors.exe (bibliothèque
 //    XRPerfCapture.dll) et affichée dans le casque par la layer ou par XRPerfVR. La mémoire est créée par

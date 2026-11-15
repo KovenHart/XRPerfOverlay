@@ -102,6 +102,7 @@ struct XrprOptions {
     uint32_t stream2Codec, stream2Height, stream2Bitrate;
     char stream2Url[256];
     char stream2Key[256];
+    int32_t imageBlack, imageWhite, imageClarity;  // point noir, point blanc, clarté
 };
 
 struct XrprStatus {
@@ -1150,6 +1151,9 @@ class Recorder {
         m_image.hdr = m_options.imageHdr;
         m_image.sharpenLimit = m_options.imageSharpenLimit;
         m_image.sharpenRadius = m_options.imageSharpenRadius;
+        m_image.black = m_options.imageBlack;
+        m_image.white = m_options.imageWhite;
+        m_image.clarity = m_options.imageClarity;
         m_image.clamp();
         if (m_image.mode != 0 && m_image.changesImage() && !setupFilter(td)) {
             RecordLog("Filtres d'image indisponibles dans la video (shader ou textures) : video sans filtres.");

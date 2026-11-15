@@ -70,6 +70,9 @@ namespace XRPerfSensors
             w.WriteNumber("ImageSharpness", o.ImageSharpness);
             w.WriteNumber("ImageSharpenLimit", o.ImageSharpenLimit);
             w.WriteNumber("ImageSharpenRadius", o.ImageSharpenRadius);
+            w.WriteNumber("ImageBlack", o.ImageBlack);
+            w.WriteNumber("ImageWhite", o.ImageWhite);
+            w.WriteNumber("ImageClarity", o.ImageClarity);
             w.WriteNumber("ImageBrightness", o.ImageBrightness);
             w.WriteNumber("ImageContrast", o.ImageContrast);
             w.WriteNumber("ImageSaturation", o.ImageSaturation);
@@ -269,7 +272,7 @@ namespace XRPerfSensors
                 }
                 case "ImageSharpness": case "ImageBrightness": case "ImageContrast": case "ImageSaturation": case "ImageVibrance":
                 case "ImageGamma": case "ImageShadows": case "ImageTemperature": case "ImageDeband": case "ImageHdr":
-                case "ImageSharpenLimit": case "ImageSharpenRadius":
+                case "ImageSharpenLimit": case "ImageSharpenRadius": case "ImageBlack": case "ImageWhite": case "ImageClarity":
                 {
                     OverlaySettings.ImageRange(key, out int min, out int max);
                     if (!Int(v, min, max, out i)) return false;
@@ -278,6 +281,9 @@ namespace XRPerfSensors
                         case "ImageSharpness": o.ImageSharpness = i; break;
                         case "ImageSharpenLimit": o.ImageSharpenLimit = i; break;
                         case "ImageSharpenRadius": o.ImageSharpenRadius = i; break;
+                        case "ImageBlack": o.ImageBlack = i; break;
+                        case "ImageWhite": o.ImageWhite = i; break;
+                        case "ImageClarity": o.ImageClarity = i; break;
                         case "ImageBrightness": o.ImageBrightness = i; break;
                         case "ImageContrast": o.ImageContrast = i; break;
                         case "ImageSaturation": o.ImageSaturation = i; break;

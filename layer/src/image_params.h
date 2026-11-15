@@ -18,7 +18,10 @@ struct ImageSettings {
     int saturation = 0;   // -100 à 100
     int vibrance = 0;     // 0 à 100
     int gamma = 100;      // 50 à 200 (1 = 100)
-    int hdr = 0;          // faux HDR (contraste local), 0 à 100
+    int hdr = 0;          // faux HDR, 0 à 100
+    int black = 0;        // point noir, % de luminosité, 0 à 25 (noirs plus profonds)
+    int white = 100;      // point blanc, % de luminosité, 75 à 100
+    int clarity = 0;      // clarté (contraste local des tons moyens), 0 à 100
     int shadows = 0;      // 0 à 100
     int temperature = 0;  // -50 (froid) à 50 (chaud)
     int deband = 0;       // 0 à 100
@@ -43,20 +46,23 @@ struct ImageSettings {
         temperature = c(temperature, -50, 50);
         deband = c(deband, 0, 100);
         hdr = c(hdr, 0, 100);
+        black = c(black, 0, 25);
+        white = c(white, 75, 100);
+        clarity = c(clarity, 0, 100);
         colorblind = pick(colorblind, 4);
     }
 
     // Un réglage change l'image (sinon, rien à faire).
     bool changesImage() const {
         return sharpen != 0 || brightness != 0 || contrast != 0 || saturation != 0 || vibrance != 0 || gamma != 100 || shadows != 0 ||
-               temperature != 0 || deband != 0 || colorblind != 0 || hdr != 0;
+               temperature != 0 || deband != 0 || colorblind != 0 || hdr != 0 || black != 0 || white != 100 || clarity != 0;
     }
 
     bool operator==(const ImageSettings& o) const {
         return mode == o.mode && sharpen == o.sharpen && sharpness == o.sharpness && sharpenLimit == o.sharpenLimit &&
                sharpenRadius == o.sharpenRadius && brightness == o.brightness && contrast == o.contrast &&
                saturation == o.saturation && vibrance == o.vibrance && gamma == o.gamma && shadows == o.shadows && temperature == o.temperature &&
-               deband == o.deband && colorblind == o.colorblind && hdr == o.hdr;
+               deband == o.deband && colorblind == o.colorblind && hdr == o.hdr && black == o.black && white == o.white && clarity == o.clarity;
     }
     bool operator!=(const ImageSettings& o) const { return !(*this == o); }
 };
@@ -67,8 +73,8 @@ struct ImageFilterParams {
     float contrast = 0.f, saturation = 0.f, vibrance = 0.f, gammaInverse = 1.f;
     float shadows = 0.f, temperature = 0.f, colorblind = 0.f, seed = 0.f;
     float originX = 0.f, originY = 0.f, inLinear = 1.f, outLinear = 1.f;
-    float width = 0.f, height = 0.f, hdr = 0.f, reserved = 0.f;
-    float sharpenLimit = 0.1f, sharpenRadius = 1.f, reserved1 = 0.f, reserved2 = 0.f;
+    float width = 0.f, height = 0.f, hdr = 0.f, black = 0.f;
+    float sharpenLimit = 0.1f, sharpenRadius = 1.f, white = 1.f, clarity = 0.f;
 };
 static_assert(sizeof(ImageFilterParams) == 96, "24 valeurs (6 x float4)");
 
@@ -89,6 +95,9 @@ inline ImageFilterParams ImageParamsFrom(ImageSettings s) {
     p.hdr = s.hdr / 100.f;
     p.sharpenLimit = s.sharpenLimit / 100.f;
     p.sharpenRadius = static_cast<float>(s.sharpenRadius);
+    p.black = s.black / 100.f;
+    p.white = s.white / 100.f;
+    p.clarity = s.clarity / 100.f;
     return p;
 }
 

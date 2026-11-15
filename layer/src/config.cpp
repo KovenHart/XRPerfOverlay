@@ -195,6 +195,9 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
         im.hdr = readInt(c, L"image", L"hdr", 0, 0, 100);
         im.sharpenLimit = readInt(c, L"image", L"sharpen_limit", 10, 1, 50);
         im.sharpenRadius = readInt(c, L"image", L"sharpen_radius", 1, 1, 3);
+        im.black = readInt(c, L"image", L"black", 0, 0, 25);
+        im.white = readInt(c, L"image", L"white", 100, 75, 100);
+        im.clarity = readInt(c, L"image", L"clarity", 0, 0, 100);
     }
 
     c.clock = readInt(c, L"overlay", L"clock", 1, 0, 1) != 0;

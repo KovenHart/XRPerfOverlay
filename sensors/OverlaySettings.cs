@@ -116,7 +116,10 @@ namespace XRPerfSensors
         public int ImageTemperature;       // -50 à 50
         public int ImageDeband;            // 0 à 100
         public string ImageColorblind = "none";
-        public int ImageHdr;               // faux HDR (contraste local), 0 à 100
+        public int ImageHdr;               // faux HDR, 0 à 100
+        public int ImageBlack;             // point noir, 0 à 25 (noirs plus profonds)
+        public int ImageWhite = 100;       // point blanc, 75 à 100
+        public int ImageClarity;           // clarté, 0 à 100
 
         // [hotkeys] : raccourcis du casque, modificateurs << 16 | touche (modificateurs : 1 Alt, 2 Ctrl, 4 Maj,
         // 8 Windows), 0 = sans raccourci. Même ordre que Config::hotkey (layer/src/config.h) et le bloc partagé.
@@ -184,7 +187,9 @@ namespace XRPerfSensors
             min = 0; max = 100;
             switch (key)
             {
-                case "ImageVibrance": case "ImageShadows": case "ImageDeband": case "ImageHdr": return true;
+                case "ImageVibrance": case "ImageShadows": case "ImageDeband": case "ImageHdr": case "ImageClarity": return true;
+                case "ImageBlack": max = 25; return true;
+                case "ImageWhite": min = 75; return true;
                 case "ImageSharpness": max = 200; return true;
                 case "ImageSharpenLimit": min = 1; max = 50; return true;
                 case "ImageSharpenRadius": min = 1; max = 3; return true;
@@ -321,6 +326,9 @@ namespace XRPerfSensors
             s.ImageDeband = ImageInt(path, "deband", 0, 0, 100);
             s.ImageColorblind = ImageChoice(path, "colorblind", ImageColorblinds);
             s.ImageHdr = ImageInt(path, "hdr", 0, 0, 100);
+            s.ImageBlack = ImageInt(path, "black", 0, 0, 25);
+            s.ImageWhite = ImageInt(path, "white", 100, 75, 100);
+            s.ImageClarity = ImageInt(path, "clarity", 0, 0, 100);
             // Raccourcis : touche, et modificateurs à part (« _mods », absent = Ctrl+Alt), comme la layer.
             for (int i = 0; i < HotkeyNames.Length; i++)
             {
@@ -439,6 +447,9 @@ namespace XRPerfSensors
                 ok &= WritePrivateProfileStringW("image", pair.Item1, pair.Item2.ToString(CultureInfo.InvariantCulture), path);
             ok &= WritePrivateProfileStringW("image", "colorblind", ImageColorblind, path);
             ok &= WritePrivateProfileStringW("image", "hdr", ImageHdr.ToString(CultureInfo.InvariantCulture), path);
+            ok &= WritePrivateProfileStringW("image", "black", ImageBlack.ToString(CultureInfo.InvariantCulture), path);
+            ok &= WritePrivateProfileStringW("image", "white", ImageWhite.ToString(CultureInfo.InvariantCulture), path);
+            ok &= WritePrivateProfileStringW("image", "clarity", ImageClarity.ToString(CultureInfo.InvariantCulture), path);
             // Raccourcis : la touche (0x4F) et, sauf pour Ctrl+Alt, ses modificateurs (clé retirée sinon).
             for (int i = 0; i < HotkeyNames.Length; i++)
             {
@@ -557,6 +568,10 @@ namespace XRPerfSensors
             for (int i = 0; i < Hotkeys.Length; i++) Put(block, 252 + 4 * i, unchecked((uint)Hotkeys[i]));
             Put(block, 296, unchecked((uint)ImageSharpenLimit));
             Put(block, 300, unchecked((uint)ImageSharpenRadius));
+            // Niveaux et clarté (version 9).
+            Put(block, 304, unchecked((uint)ImageBlack));
+            Put(block, 308, unchecked((uint)ImageWhite));
+            Put(block, 312, unchecked((uint)ImageClarity));
             return block;
         }
     }
@@ -567,9 +582,9 @@ namespace XRPerfSensors
     /// </summary>
     internal sealed class SettingsShare : IDisposable
     {
-        public const int Size = 304;
+        public const int Size = 320;
         public const uint Magic = 0x53505258; // "XRPS"
-        public const uint Version = 8;
+        public const uint Version = 9;
 
         private const string Name = @"Local\XRPerfOverlay.Settings";
         private const int OffsetSequence = 8;
