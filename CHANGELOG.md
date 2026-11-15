@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.13.2
+
+- **Faux HDR revu** : l'aspect des effets « Fake HDR » (ReShade, fork UEVR) : ombres plus profondes, hautes lumières plus vives et couleurs plus riches, avec un peu de contraste local. Avant, seul le contraste local changeait, sans toucher aux couleurs : l'effet était terne. Vers 60 %, l'aspect habituel de ces effets. Le preset *Faux HDR* ajoute moins de vibrance, l'effet en apportant déjà.
+
 ## 1.13.1
 
 - **Vidéo sans saccades à 72 images/s** : quand le jeu rend à la même cadence que la vidéo (72 pour 72, 90 pour 90...), l'enregistreur prend maintenant chaque image une demi-image après sa publication par le jeu. Avant, si les images du jeu arrivaient juste autour des instants prévus, le moindre écart d'une fraction de milliseconde en faisait perdre une et répéter la précédente : jusqu'à une image sur quatre en double, et une vidéo saccadée alors que le casque était fluide. L'horodatage des images ne change pas : le son reste synchronisé. Le journal de l'enregistreur indique « Prise calée sur les images du jeu ».

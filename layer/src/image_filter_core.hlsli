@@ -88,17 +88,18 @@ float3 Deband(float3 original, float3 current, float3 s1, float3 s2, float3 s3, 
 }
 
 // --- Faux HDR ------------------------------------------------------------------------------------
-// Contraste local : l'écart du pixel à la luminosité moyenne de son entourage (deux anneaux, proche et
-// lointain) est amplifié, puis les tons moyens sont approfondis, comme le FakeHDR de ReShade. Les couleurs
-// gardent leur teinte (seule la luminosité change). `strength` : 0 à 1.
+// L'aspect « HDR » des effets de ce nom (ReShade, fork UEVR) : une courbe appliquée à chaque canal, qui
+// approfondit les ombres, pousse les hautes lumières et rend les couleurs plus riches (les canaux s'écartent
+// entre eux), plus un peu de contraste local (écart du pixel à la moyenne de deux anneaux, proche et
+// lointain) pour garder du détail. `strength` : 0 à 1 ; vers 0,6, l'aspect habituel de ces effets.
 float3 FakeHdr(float3 c, float3 nearRing, float3 farRing, float strength) {
     float s = saturate(strength);
-    float l = Luma(c);
-    float local = 0.5f * (Luma(nearRing) + Luma(farRing));
-    float target = saturate(l + (l - local) * (1.5f * s));
-    target = pow(target, 1.0f + 0.3f * s);
-    float ratio = min(target / max(l, 0.0001f), 4.0f);
-    return saturate(c * ratio);
+    float gain = 0.13f * s;
+    float power = 1.0f + 0.5f * s;
+    float3 lifted = c * (1.0f + gain);
+    float3 curved = pow(lifted, float3(power, power, power)) + c * gain;
+    float detail = (Luma(c) - 0.5f * (Luma(nearRing) + Luma(farRing))) * (0.5f * s);
+    return saturate(curved + float3(detail, detail, detail));
 }
 
 // --- Couleurs -------------------------------------------------------------------------------------
