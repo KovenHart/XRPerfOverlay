@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.13.2
+
+- **Fake HDR reworked**: the look of "Fake HDR" effects (ReShade, UEVR fork): deeper shadows, brighter highlights and richer colors, with a little local contrast. Before, only local contrast changed, leaving colors alone: the effect was dull. Around 60%, the usual look of these effects. The *Fake HDR* preset adds less vibrance, since the effect already brings some.
+
 ## 1.13.1
 
 - **Smooth video at 72 fps**: when the game renders at the video's frame rate (72 for 72, 90 for 90...), the recorder now takes each frame half a frame after the game publishes it. Before, if the game's frames arrived right around the scheduled instants, the slightest offset of a fraction of a millisecond made one frame be lost and the previous one repeated: up to one frame in four duplicated, and a stuttering video while the headset was smooth. Frame timestamps are unchanged: sound stays in sync. The recorder log shows "Prise calee sur les images du jeu".

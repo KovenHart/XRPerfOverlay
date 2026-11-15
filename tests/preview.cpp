@@ -1090,7 +1090,8 @@ static void testImageFilters() {
     const float3 red = Daltonize(float3(0.8f, 0.2f, 0.2f), 2.f), green = Daltonize(float3(0.2f, 0.6f, 0.2f), 2.f);
     assert(std::fabs(red.z - green.z) > 0.1f);
     // Faux HDR : force nulle, rien ; un pixel plus clair que son entourage s'éclaircit davantage qu'en zone
-    // unie, un plus sombre s'assombrit davantage ; noir, blanc et teinte gardés.
+    // unie, un plus sombre s'assombrit davantage ; noir et blanc gardés ; ombres plus profondes, couleurs
+    // plus riches.
     {
         const float3 mid(0.6f, 0.6f, 0.6f), lower(0.4f, 0.4f, 0.4f), higher(0.8f, 0.8f, 0.8f);
         assert(near(FilterPixel(mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, 0.f, lower, lower, 0.f, 0.f, 0.035f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
@@ -1100,8 +1101,11 @@ static void testImageFilters() {
         assert(FakeHdr(mid, lower, lower, 1.f).x > flatHdr.x && FakeHdr(mid, higher, higher, 1.f).x < flatHdr.x);
         assert(near(FakeHdr(float3(0.f, 0.f, 0.f), mid, mid, 1.f), float3(0.f, 0.f, 0.f), 1e-6f));
         assert(near(FakeHdr(float3(1.f, 1.f, 1.f), lower, lower, 1.f), float3(1.f, 1.f, 1.f), 1e-6f));
-        const float3 hue(0.5f, 0.3f, 0.2f), hued = FakeHdr(hue, lower, higher, 0.7f);
-        assert(std::fabs(hued.x / hued.z - hue.x / hue.z) < 1e-3f);
+        const float3 hue(0.5f, 0.3f, 0.2f), hued = FakeHdr(hue, hue, hue, 0.6f);
+        assert(hued.x - hued.z > hue.x - hue.z);
+        const float3 shadow(0.25f, 0.25f, 0.25f);
+        assert(FakeHdr(shadow, shadow, shadow, 0.6f).x < shadow.x);
+        assert(near(FakeHdr(hue, lower, higher, 0.f), hue, 1e-6f));
         ImageSettings settings;
         settings.hdr = 140;
         assert(settings.changesImage() && ImageParamsFrom(settings).hdr == 1.f);

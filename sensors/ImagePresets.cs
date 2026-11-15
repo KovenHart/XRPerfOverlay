@@ -36,7 +36,7 @@ namespace XRPerfSensors
             new Preset { Id = "lowres", Values = "{\"ImageSharpen\":\"rcas\",\"ImageSharpness\":70}" },
             new Preset { Id = "crisp", Values = "{\"ImageSharpen\":\"luma\",\"ImageSharpness\":60,\"ImageSharpenLimit\":6}" },
             new Preset { Id = "vivid", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageContrast\":5,\"ImageSaturation\":10,\"ImageVibrance\":40}" },
-            new Preset { Id = "hdr", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageVibrance\":25,\"ImageHdr\":60}" },
+            new Preset { Id = "hdr", Values = "{\"ImageSharpen\":\"cas\",\"ImageSharpness\":40,\"ImageVibrance\":10,\"ImageHdr\":60}" },
             new Preset { Id = "cinema", Values = "{\"ImageContrast\":10,\"ImageSaturation\":-10,\"ImageVibrance\":15,\"ImageTemperature\":12,\"ImageHdr\":20}" },
             new Preset { Id = "dark", Values = "{\"ImageBrightness\":6,\"ImageGamma\":85,\"ImageShadows\":25}" },
             new Preset { Id = "oled", Values = "{\"ImageShadows\":35,\"ImageDeband\":60}" },
