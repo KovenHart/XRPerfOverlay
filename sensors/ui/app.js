@@ -439,7 +439,7 @@ window.App = (function () {
   }
 
   function renderAll() {
-    document.title = "XR Perf Overlay";
+    document.title = "XR Perf Studio";
     renderRail();
     renderTopbar();
     renderBanner();
@@ -455,7 +455,7 @@ window.App = (function () {
   function renderRail() {
     const rail = document.getElementById("rail");
     rail.replaceChildren();
-    rail.appendChild(h("div", { class: "brand" }, brandMark(), h("div", { class: "brand-name" }, "XR Perf Overlay", h("span", { text: t("app.sub") }))));
+    rail.appendChild(h("div", { class: "brand" }, brandMark(), h("div", { class: "brand-name" }, "XR Perf Studio", h("span", { text: t("app.sub") }))));
     for (const p of PAGES) {
       if (p.group) { rail.appendChild(h("div", { class: "nav-group", text: t(p.group) })); continue; }
       const item = h("button", { class: "nav-item", type: "button", title: t("nav." + p.id), "aria-current": state.page === p.id ? "page" : null, onclick: () => go(p.id) },
@@ -740,7 +740,8 @@ window.App = (function () {
       .map(x => [k(get("overlay", "Hotkey." + x.name)), h("span", { text: t(x.label) })]);
     dash.appendChild(h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.keys") })),
       h("div", { class: "keys" }, keyList,
-        videoEnabled() && get("desktop", "VideoHotkey") ? [k(get("desktop", "VideoHotkey")), h("span", { text: t("key.video") })] : null)));
+        videoEnabled() && get("desktop", "VideoHotkey") ? [k(get("desktop", "VideoHotkey")), h("span", { text: t("key.video") })] : null,
+        videoEnabled() && get("desktop", "SnapHotkey") ? [k(get("desktop", "SnapHotkey")), h("span", { text: t("key.snap") })] : null)));
     page.appendChild(dash);
   }
 
@@ -1075,6 +1076,7 @@ window.App = (function () {
     for (const x of HOTKEYS)
       if ("overlay:Hotkey." + x.name !== self && get("overlay", "Hotkey." + x.name) === combo) return t(x.label);
     if (self !== "desktop:VideoHotkey" && get("desktop", "VideoHotkey") === combo) return t("key.video");
+    if (self !== "desktop:SnapHotkey" && get("desktop", "SnapHotkey") === combo) return t("key.snap");
     return null;
   }
   const MODIFIER_KEYS = [0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
@@ -1372,6 +1374,15 @@ window.App = (function () {
         hotkeyRow(),
         folderRow,
       ], videoEnabled),
+      group(t("snap.title"), t("snap.help"), [
+        h("div", { class: "video-card", id: "snap-card", "aria-live": "polite" }),
+        segRow("desktop", "SnapFormat", t("snap.format"), t("snap.format.help"), [{ value: "png", label: "PNG" }, { value: "jpeg", label: "JPEG" }]),
+        sliderRow("desktop", "SnapQuality", t("snap.quality"), t("snap.quality.help"), 50, 100, pct, { enabled: () => get("desktop", "SnapFormat") === "jpeg" }),
+        selectRow("desktop", "SnapHeight", t("vid.resolution"), t("snap.resolution.help"),
+          [1080, 1440, 2160, 2880].map(x => ({ value: x, label: x === 2160 ? "2160p (4K)" : x === 2880 ? "2880p (5K)" : x + "p" }))),
+        hotkeyRow("desktop", "SnapHotkey", t("vid.key"), t("snap.key.help")),
+        snapFolderRow(),
+      ], videoEnabled),
       group(t("vid.obs"), t("vid.obs.help"), [
         switchCtl("desktop", "VideoObs", t("vid.obs.enable"), t("vid.obs.enable.help")),
         row(t("vid.obs.state"), null, h("span", { class: "row-help", id: "obs-state", "aria-live": "polite" }), { enabled: () => !!get("desktop", "VideoObs") }),
@@ -1383,8 +1394,42 @@ window.App = (function () {
     if (!state.videoDevices) send("videoDevices");
   }
 
+  function snapFolderRow() {
+    const r = row(t("snap.folder"), get("desktop", "SnapFolder") || " ", h("div", { class: "row-buttons" },
+      h("button", { class: "btn", type: "button", onclick: () => send("snapPickFolder") }, t("vid.folder.change")),
+      h("button", { class: "btn", type: "button", onclick: () => send("snapOpenFolder") }, icon("folder"), t("vid.folder.open"))));
+    r.querySelector(".row-help").id = "snap-folder";
+    return r;
+  }
+
+  // Carte des captures d'écran : bouton, nombre prises, dernier fichier.
+  function updateSnap() {
+    const card = document.getElementById("snap-card");
+    const folder = document.getElementById("snap-folder");
+    const v = state.video || {};
+    if (folder) folder.textContent = get("desktop", "SnapFolder") || v.snapFolder || "";
+    if (!card) return;
+    const key = get("desktop", "SnapHotkey");
+    const detail = [key ? t("snap.ready.key", { key: hotkeyText(key) }) : t("snap.ready.nokey")];
+    if (v.snapCount) detail.push(t("snap.count", { n: num(v.snapCount) }));
+    const last = v.snapLast ? t("snap.last", { file: v.snapLast.split("\\").pop() }) : "";
+    const notes = [];
+    if (v.snapFailed) notes.push(t("snap.failed", { n: num(v.snapFailed) }));
+    if (key && v.snapHotkeyOk === false) notes.push(t("vid.key.taken", { key: hotkeyText(key) }));
+    if (v.available !== false && v.snapSupported === false) notes.push(t("snap.unsupported"));
+    card.className = "video-card";
+    card.replaceChildren(
+      h("div", { class: "video-state" }, h("div", null, h("div", { class: "video-title", text: t("snap.ready") }),
+        h("div", { class: "row-help", text: detail.join(" · ") }),
+        last ? h("div", { class: "row-help", text: last, title: v.snapLast }) : null,
+        notes.map(n => h("div", { class: "video-note", text: n })))),
+      h("button", { class: "btn primary", type: "button", disabled: !videoEnabled() || v.available === false || v.snapSupported === false,
+        onclick: () => send("snapshot") }, icon("image"), t("snap.take")));
+  }
+
   // Carte d'état : ce qui se passe, et le bouton qui va avec. Mise à jour chaque seconde sans redessiner la page.
   function updateVideo() {
+    updateSnap();
     const card = document.getElementById("video-card");
     const folder = document.getElementById("video-folder");
     const v = state.video || { state: 0, available: true };
@@ -1475,7 +1520,7 @@ window.App = (function () {
         row(t("hk.resetAll"), t("hk.resetAll.help"),
           h("button", { class: "btn", type: "button", disabled: locked("overlay"), onclick: () => { stopHotkeyCapture(); send("resetHotkeys"); } }, t("hk.resetAll.button"))),
       ])),
-      group(t("hk.video"), null, [hotkeyRow()]),
+      group(t("hk.video"), null, [hotkeyRow("desktop", "VideoHotkey", t("key.video")), hotkeyRow("desktop", "SnapHotkey", t("key.snap"), t("snap.key.help"))]),
     ];
     settingsLayout(page, form, null);
   }
@@ -1622,6 +1667,10 @@ window.App = (function () {
       group(t("ui.window"), null, [
         row(t("ui.fullscreen"), t("ui.fullscreen.help"), fsBtn),
         switchCtl("desktop", "UiStartFullscreen", t("ui.startFull")),
+      ]),
+      group(t("ui.shortcuts"), null, [
+        switchCtl("desktop", "ShortcutDesktop", t("ui.shortcut.desktop"), t("ui.shortcut.desktop.help")),
+        switchCtl("desktop", "ShortcutStart", t("ui.shortcut.start"), t("ui.shortcut.start.help")),
       ]),
     ];
     settingsLayout(page, form, null);

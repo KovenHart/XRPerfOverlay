@@ -423,6 +423,20 @@ void VideoProducer::publishPanel(const uint8_t* pixels, int width, int height, i
     b->panelSequence = (sequence | 1u) + 1u;
 }
 
+bool VideoProducer::photoFlash() {
+    if (!m_block && !openBlock()) return false;
+    const uint32_t count = m_block->snapshotCount;
+    const unsigned long long now = GetTickCount64();
+    if (!m_photoSeen) {  // compteur trouvé : rien à montrer
+        m_photoSeen = true;
+        m_photoCount = count;
+    } else if (count != m_photoCount) {
+        m_photoCount = count;
+        m_photoTickMs = now;
+    }
+    return m_photoTickMs != 0 && now - m_photoTickMs < 1500;
+}
+
 double VideoProducer::recordingSeconds(bool* live) {
     if (live) *live = false;
     if (!m_block && !openBlock()) return -1.0;

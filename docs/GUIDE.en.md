@@ -1,8 +1,8 @@
-# XR Perf Overlay: user guide
+# XR Perf Studio: user guide
 
 *Français : [GUIDE.md](GUIDE.md)* · [Back to the home page](../README.en.md)
 
-Everything XR Perf Overlay does, page by page, and what to know when something goes wrong. To install it, see the [home page](../README.en.md); the changes in each version are in the [CHANGELOG](../CHANGELOG.en.md).
+Everything XR Perf Studio does, page by page, and what to know when something goes wrong. To install it, see the [home page](../README.en.md); the changes in each version are in the [CHANGELOG](../CHANGELOG.en.md).
 
 ## Why it doesn't get in the way of mods
 
@@ -27,6 +27,8 @@ The installation folder is the existing installation's, if there is one (the one
 
 Once installed, the extracted folder (and the archive) can be deleted. One exception: if the archive was extracted right where the default installation goes (`C:\XRPerfOverlay`), the program is placed in its `dist\` subfolder and the installer says so; that folder must then be kept.
 
+On first installation, an **XR Perf Studio** shortcut is added to the Desktop and the Start menu; it opens the XRPerfSensors window (or brings it back if the program is already running). The Interface page adds or removes them; an update does not recreate the ones you removed, and `uninstall.bat` deletes them.
+
 Options, from a command prompt: `Installer.bat -Target "D:\Tools\XRPerfOverlay"` to choose the folder (no trailing `\`; an existing installation's settings are carried over), `-AutoStart oui` or `-AutoStart non` (`yes` / `no` work too) to skip the question.
 
 ## Usage
@@ -49,7 +51,7 @@ The shortcuts work even if the game window doesn't have focus, and settings chan
 
 ## The XRPerfSensors window
 
-Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open XR Perf Overlay**) to open the program's window. A menu on the left leads to each page; every change applies immediately, including in a running game, and is saved to `XRPerfOverlay.ini`. `F11` switches to full screen (or the button at the top right), `Esc` leaves it.
+Double-click the `XRPerfSensors` icon near the clock (or right-click → **Open XR Perf Studio**) to open the program's window. A menu on the left leads to each page; every change applies immediately, including in a running game, and is saved to `XRPerfOverlay.ini`. `F11` switches to full screen (or the button at the top right), `Esc` leaves it.
 
 - **Dashboard**: the panel as it appears in the headset (the running game's image, otherwise a preview with sample FPS), quick switches (OpenXR layer, panel, watch, desktop window, SteamVR games, mirror for OBS), the processor, graphics card and video memory live with their graph of the last two minutes, the last session and the keyboard shortcuts. A badge at the top shows whether a VR game is running.
 - **Panel**: show or hide the panel, attachment (in front of the eyes, left or right hand); in front of the eyes: position (chosen on a diagram of the field of view), distance, horizontal and vertical offsets, turning towards the eyes; on the hand: position on the hand, show only when looking at the hand, position adjustments; size, overall and background opacity; in games: the OpenXR layer (see "Turning the layer off") and SteamVR (OpenVR) games. The preview stays alongside.
@@ -120,11 +122,11 @@ The **Configuration** page goes over what matters for VR on the PC:
 - **OpenXR layers**: every registered layer, in the order the OpenXR loader reads them, with its state (active, disabled, file missing, DLL not found). The most common ones are recognized by name (OFXR Bridge, OpenXR Toolkit, Quad-Views-Foveated, OpenKneeboard, OpenXR-MotionCompensation...).
 - **Installed VR software**, **hardware** (processor, memory, graphics cards with their video memory and driver version) and **Windows** (version, hardware-accelerated GPU scheduling, Game Mode, power mode).
 
-At the top of the page, the findings: what prevents VR from starting (no runtime, runtime file gone), then what deserves a look (registered layer whose file no longer exists, active layer without its DLL, XR Perf Overlay registered from two folders, OpenXR Toolkit still active, two frame generation layers active at once, Power saver mode, little memory), and finally information (runtime changed since the last session, OpenXR games going through SteamVR while Pimax Play is installed, laptop with two graphics cards). These are leads: the page does not know your intentions, and a deliberate choice (SteamVR as the runtime for a mod, for example) is not a mistake.
+At the top of the page, the findings: what prevents VR from starting (no runtime, runtime file gone), then what deserves a look (registered layer whose file no longer exists, active layer without its DLL, XR Perf Studio registered from two folders, OpenXR Toolkit still active, two frame generation layers active at once, Power saver mode, little memory), and finally information (runtime changed since the last session, OpenXR games going through SteamVR while Pimax Play is installed, laptop with two graphics cards). These are leads: the page does not know your intentions, and a deliberate choice (SteamVR as the runtime for a mod, for example) is not a mistake.
 
-**Turning a layer off.** Each layer in the list has a **Turn off** (or **Turn on**) button, and so do the findings about a specific layer (OpenXR Toolkit still active, layer without its DLL). After confirmation, its OpenXR registration is set to "disabled", as with the XR Perf Overlay switch: the layer stays installed, the OpenXR loader ignores it from the next game launch, and a click on **Turn on** brings it back. Only existing registrations are changed: nothing is created in the registry. An update or reinstall of the mod concerned may turn it back on by itself.
+**Turning a layer off.** Each layer in the list has a **Turn off** (or **Turn on**) button, and so do the findings about a specific layer (OpenXR Toolkit still active, layer without its DLL). After confirmation, its OpenXR registration is set to "disabled", as with the XR Perf Studio switch: the layer stays installed, the OpenXR loader ignores it from the next game launch, and a click on **Turn on** brings it back. Only existing registrations are changed: nothing is created in the registry. An update or reinstall of the mod concerned may turn it back on by itself.
 
-**Changing the order of layers.** The game calls the layer at the top of the list first; the bottom one is closest to the headset runtime. Each layer's **Move up** and **Move down** arrows move it one step. The OpenXR loader always reads the layers registered for all users before those of your account alone (which a game run as administrator ignores): the order is therefore changed within each of these two groups. The new order applies the next time a game starts. Order matters most for frame generation: placed above XR Perf Overlay, it would make it count generated frames too in the panel's big number, and the page points it out.
+**Changing the order of layers.** The game calls the layer at the top of the list first; the bottom one is closest to the headset runtime. Each layer's **Move up** and **Move down** arrows move it one step. The OpenXR loader always reads the layers registered for all users before those of your account alone (which a game run as administrator ignores): the order is therefore changed within each of these two groups. The new order applies the next time a game starts. Order matters most for frame generation: placed above XR Perf Studio, it would make it count generated frames too in the panel's big number, and the page points it out.
 
 The registry keeps no separate order: to change it, XRPerfSensors rewrites the registrations of that group in the new order, with exactly the same values. Before each change (order, turning on or off), the previous state of both groups is kept in `%LOCALAPPDATA%\XRPerfOverlay`: **Undo last change** puts it back. A rewrite cut short (power failure) is finished the next time XRPerfSensors starts, without loss.
 
@@ -150,10 +152,10 @@ With the **"Only when I look at my wrist"** option (on by default), the watch on
 **How the layer gets the hand positions.** OpenXR only provides them through "actions", the game's button mechanism. The layer therefore slips into three of the game's calls, removing nothing, as OpenXR Toolkit or OpenKneeboard do:
 
 1. when the game declares the bindings of a controller model, it adds a single item to them, the grip pose of each hand;
-2. when the game attaches its actions to the session, it adds its small set ("XR Perf Overlay");
+2. when the game attaches its actions to the session, it adds its small set ("XR Perf Studio");
 3. likewise at each action update by the game.
 
-It declares **no button**: it cannot take anything away from the game. It never adds a controller model the game didn't declare itself, so as not to change the one the runtime picks. If one of these calls fails with its addition, it is redone as the game provided it and attaching is abandoned for the session (the watch goes back in front of the eyes); the log says so. This mechanism is only set up if the watch is enabled or the panel is attached to a hand **when the game starts**: turned on mid-game, the game must be restarted. In SteamVR's controller binding screen, the "XR Perf Overlay" set and its hand pose may appear.
+It declares **no button**: it cannot take anything away from the game. It never adds a controller model the game didn't declare itself, so as not to change the one the runtime picks. If one of these calls fails with its addition, it is redone as the game provided it and attaching is abandoned for the session (the watch goes back in front of the eyes); the log says so. This mechanism is only set up if the watch is enabled or the panel is attached to a hand **when the game starts**: turned on mid-game, the game must be restarted. In SteamVR's controller binding screen, the "XR Perf Studio" set and its hand pose may appear.
 
 **The battery** comes from the brand-new OpenXR extension `XR_EXT_interaction_profile_battery_state_display`: the layer requests it from the runtime only if offered (and if the watch must show the battery). SteamVR provides it; other PC runtimes, such as Pimax OpenXR, not yet: without it, the battery simply doesn't show. In OpenVR games, XRPerfVR reads the battery directly from SteamVR.
 
@@ -205,8 +207,8 @@ What the measurement represents: the time, on the card, between the start and th
 
 The headset panel is a layer added by the runtime: it doesn't appear in the game window or in UEVR's mirror. To have it in a recording without an OpenXR mirror (costly in FPS), `XRPerfSensors` can show it in a small desktop window, to add in OBS as a second source:
 
-1. Right-click the `XRPerfSensors` icon (notification area) → check **"Panel mirror on the desktop (OBS)"**, or turn it on on the Desktop mirror page. A borderless "XR Perf Overlay" window appears; it can be moved with the mouse.
-2. In OBS, capture the game as usual (game capture or window capture of UEVR's mirror), then add a **"Window Capture"** source on the `XR Perf Overlay` window, and place and resize it over the game image.
+1. Right-click the `XRPerfSensors` icon (notification area) → check **"Panel mirror on the desktop (OBS)"**, or turn it on on the Desktop mirror page. A borderless "XR Perf Studio" window appears; it can be moved with the mouse.
+2. In OBS, capture the game as usual (game capture or window capture of UEVR's mirror), then add a **"Window Capture"** source on the `XR Perf Studio` window, and place and resize it over the game image.
 3. If the source stays black: `XRPerfSensors` runs as administrator, so OBS may need to run as administrator too, or the source's capture method may need changing.
 
 The Desktop mirror page offers its size (25 to 300 %), its opacity, its position (free, or snapped to a screen edge) and "Keep on top": it then stays visible over the game on screen, which is enough for a full-screen capture. Position, size and choices are remembered.
@@ -219,7 +221,7 @@ XRPerfSensors can record what you see in the headset, without OBS: one eye's ima
 
 **Start and stop.** `Ctrl+Alt+V` by default (any combination on the Video or Hotkeys page: click the hotkey then press the keys you want; an F1 to F24 key can be used alone; a headset hotkey is refused), the button on the Video page, or "Record headset video" in the tray icon menu. Recording starts with the first image of a VR game: started before the game, it waits ("REC waiting"). While recording, a red square and the duration ("VID 03:12") show at the top of the panel in the headset, and "REC 03:12" at the top of the XRPerfSensors window. The same hotkey stops and finishes the file. If the game closes, the file is finished by itself after 10 seconds; if XRPerfSensors closes, it finishes it before leaving.
 
-**Files.** In `Videos\XR Perf Overlay` by default ("Change..." on the Video page), named after the game and the time: `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. An MP4 file can only be played once finished: if the PC shuts down abruptly while recording, the current video is lost.
+**Files.** In `Videos\XR Perf Studio` by default ("Change..." on the Video page), named after the game and the time: `GothicRemake-Win64-Shipping 2026-11-08 21-14-03.mp4`. An MP4 file can only be played once finished: if the PC shuts down abruptly while recording, the current video is lost.
 
 **Settings** (Video page, for the next recording):
 
@@ -233,15 +235,29 @@ XRPerfSensors can record what you see in the headset, without OBS: one eye's ima
 
 **Game menus and HUD** (OpenXR games). Many games do not bake their menus into the 3D image: they have the runtime display them as a flat screen over the scene. These screens (up to four per frame) are copied with the eye image and drawn in place, in perspective, in the video as in the OBS source; a curved screen is flattened.
 
-**Where the image comes from.** In an OpenXR game (Direct3D 11 or 12), the layer copies the eye's image when it leaves for the runtime. If other layers sit below XR Perf Overlay (Pimax NR and its DLSS, OpenXR Toolkit...), **Recorded image** picks which one: *The headset's* (default), after their processing, as the runtime receives it (the layer adds a link at the very bottom of the OpenXR chain for this); *The game's*, before them (`source=game` in the `[video]` section). The choice applies from the next game launch. It is the game's image, without what the runtime adds on top; the recorder puts the panel back if you ask for it (see above), from its image provided by the layer. With foveated rendering (Quad-Views), it is the eye's wide image, less sharp in the center than in the headset. In a SteamVR (OpenVR) game, XRPerfVR takes SteamVR's mirror image, which also contains overlays (the panel included). The copy stays on the graphics card; the recorder crops, converts and encodes it, still on the graphics card (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel), a chip separate from rendering. The cost for the game is one copy of the recorded eye's image per video frame (around 0.1 ms on a high-end card, a few tenths on a more modest one), and nothing at all when not recording. While recording, the copy and the recorder also use video memory: a few hundred MB, more in 4K.
+**Where the image comes from.** In an OpenXR game (Direct3D 11 or 12), the layer copies the eye's image when it leaves for the runtime. If other layers sit below XR Perf Studio (Pimax NR and its DLSS, OpenXR Toolkit...), **Recorded image** picks which one: *The headset's* (default), after their processing, as the runtime receives it (the layer adds a link at the very bottom of the OpenXR chain for this); *The game's*, before them (`source=game` in the `[video]` section). The choice applies from the next game launch. It is the game's image, without what the runtime adds on top; the recorder puts the panel back if you ask for it (see above), from its image provided by the layer. With foveated rendering (Quad-Views), it is the eye's wide image, less sharp in the center than in the headset. In a SteamVR (OpenVR) game, XRPerfVR takes SteamVR's mirror image, which also contains overlays (the panel included). The copy stays on the graphics card; the recorder crops, converts and encodes it, still on the graphics card (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel), a chip separate from rendering. The cost for the game is one copy of the recorded eye's image per video frame (around 0.1 ms on a high-end card, a few tenths on a more modest one), and nothing at all when not recording. While recording, the copy and the recorder also use video memory: a few hundred MB, more in 4K.
 
 **Turning it off.** The "Video recording" switch on the Video page (or `capture=0` in the `[video]` section of `XRPerfOverlay.ini`) releases the hotkey and, from the next game launch, the layer no longer follows the images of OpenXR games.
 
+## Screenshots
+
+A photo of what you see in the headset, with exactly the same image as the video: eye, aspect ratio, framing, panel, game menus and image filters from the Video page. OpenXR games (through the layer) and SteamVR games (through XRPerfVR).
+
+**Taking a screenshot.** `Ctrl+Alt+C` by default (any combination on the Video or Hotkeys page), the **Capture** button on the Video page, or "Headset screenshot" in the tray icon menu. The headset shows **PHOTO** for a moment at the top of the panel, and the XRPerfSensors window shows the file name. When not recording, the recorder starts for this one photo (a fraction of a second, no sound or video file) then stops; with no VR game running, the screenshot is abandoned after a few seconds. During a video, a live stream or the OBS image, the photo is taken from the current image, without interrupting anything.
+
+**Settings** (*Screenshots* group of the Video page):
+
+- **Format**: *PNG*, lossless (files of several MB), or *JPEG*, much lighter, with its **quality** (50 to 100%, 90% by default).
+- **Resolution**: 1080p, 1440p, 2160p (4K, default) or 2880p (5K); the width follows the aspect ratio (16:9, 4:3, square). It is limited to the eye image, and during a video or a live stream to their resolution.
+- **Folder**: `Pictures\XR Perf Studio` by default; files named after the game and the time (`GothicRemake-Win64-Shipping 2026-11-16 21-14-03.png`).
+
+**Turning it off.** Remove the hotkey (*Remove* button); the "Video recording" switch also turns screenshots off.
+
 ## OBS source (streaming)
 
-To stream with OBS Studio (30 or later), XR Perf Overlay adds an **"XR Perf (headset)"** source to OBS: the same image as the recorded video (chosen eye, format, resolution, frame rate, crop, stabilization, level horizon, panel, image filters), passed straight through the graphics card. Nothing is encoded twice: OBS gets the untouched image and compresses it itself for the stream. OpenXR and SteamVR games.
+To stream with OBS Studio (30 or later), XR Perf Studio adds an **"XR Perf (headset)"** source to OBS: the same image as the recorded video (chosen eye, format, resolution, frame rate, crop, stabilization, level horizon, panel, image filters), passed straight through the graphics card. Nothing is encoded twice: OBS gets the untouched image and compresses it itself for the stream. OpenXR and SteamVR games.
 
-**Installation.** `Installer.bat` copies the source into OBS if it is installed (`C:\ProgramData\obs-studio\plugins\xrperf-obs`). OBS must be closed during installation; OBS installed after XR Perf Overlay: run `Installer.bat` again.
+**Installation.** `Installer.bat` copies the source into OBS if it is installed (`C:\ProgramData\obs-studio\plugins\xrperf-obs`). OBS must be closed during installation; OBS installed after XR Perf Studio: run `Installer.bat` again.
 
 **In OBS.** Sources, **+**, **XR Perf (headset)**. Sound is captured in OBS as usual (application or desktop audio capture, and the microphone).
 
@@ -276,7 +292,7 @@ XRPerfSensors can stream the headset video live to **Twitch** or **YouTube**, wi
 
 The **Image** page of XRPerfSensors sets filters applied to each eye's image. They are all neutral by default, and the *Off* mode turns them all off.
 
-**Where.** *In the headset*: in an OpenXR game (Direct3D 11 or 12), the layer filters each eye's image when it leaves for the runtime, after the other layers (Pimax NR and its DLSS, OpenXR Toolkit...) when they sit below ours; the recorded video is filtered the same way. In a SteamVR game, the game's image doesn't go through XR Perf Overlay: no filter in the headset. *Video only*: only the recorded video is filtered, in OpenXR and SteamVR games alike, and the headset image doesn't change.
+**Where.** *In the headset*: in an OpenXR game (Direct3D 11 or 12), the layer filters each eye's image when it leaves for the runtime, after the other layers (Pimax NR and its DLSS, OpenXR Toolkit...) when they sit below ours; the recorded video is filtered the same way. In a SteamVR game, the game's image doesn't go through XR Perf Studio: no filter in the headset. *Video only*: only the recorded video is filtered, in OpenXR and SteamVR games alike, and the headset image doesn't change.
 
 **Presets.** At the top of the page, a preset sets everything at once (except the mode), as a starting point: *Reduced resolution* (RCAS), *Natural crispness* (LumaSharpen), *Vivid colors*, *Fake HDR*, *Cinema*, *Game too dark*, *Deeper blacks* and the *OLED* series (*natural*, *vivid*, *contrast*, *color pop*, *deep*, after the presets of wyerdev's UEVR fork, with LumaSharpen sharpening 100% / 0.10 / 1 px). Chosen while the filters are off, it puts them in the headset. "Save the settings" keeps the current settings under a name of yours (the game's, for example); they appear under "Mine", and "Delete" removes the selected one. As soon as a setting differs from the preset, the list shows "Custom". Yours are in `%LOCALAPPDATA%\XRPerfOverlay\ImagePresets.json`.
 
@@ -369,7 +385,7 @@ The file stays open for the whole session and each update happens in the system 
 - **Log**: `%LOCALAPPDATA%\XRPerfOverlay\XRPerfOverlay.log`. One line per game start says whether the overlay is ready and, if not, why; the session report's path is noted there too. The log is written in French.
 - **Nothing shows**: check that the game really uses OpenXR (an "Instance OpenXR créée" line must appear in the log), that the panel isn't hidden (`Ctrl+Alt+O`), then reduce `offset_x` / `offset_y` if it goes out of view.
 - **"No sensors"** in the panel: `XRPerfSensors.exe` isn't running.
-- **The watch stays in front of the eyes instead of the wrist**: controller tracking is only set up when the game starts; restart it. The log says "Suivi des manettes actif" (controller tracking active), or why it isn't (game without declared controllers, refused by the runtime). Under SteamVR, if tracking is active but the watch never appears on the wrist, the controller configuration used for this game (personal or community) may not bind the "XR Perf Overlay" set's hand pose: go back to the game's default configuration, or bind it in the controller binding screen.
+- **The watch stays in front of the eyes instead of the wrist**: controller tracking is only set up when the game starts; restart it. The log says "Suivi des manettes actif" (controller tracking active), or why it isn't (game without declared controllers, refused by the runtime). Under SteamVR, if tracking is active but the watch never appears on the wrist, the controller configuration used for this game (personal or community) may not bind the "XR Perf Studio" set's hand pose: go back to the game's default configuration, or bind it in the controller binding screen.
 - **No battery on the watch**: the runtime doesn't offer the battery extension.
 - **Nothing in a SteamVR (OpenVR) game**: the "Also in SteamVR games" option must be on and XRPerfSensors running. The log says "XRPerfVR : connecte a SteamVR", then the followed game, or why it isn't followed (excluded in the `.ini`, OpenXR game left to the layer).
 - **Frozen or flickering panel in a SteamVR (OpenVR) game**: the log reports the layer image refused by SteamVR with a code, then accepted again if things settle.

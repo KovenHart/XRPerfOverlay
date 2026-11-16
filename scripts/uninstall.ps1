@@ -47,6 +47,15 @@ try {
             Write-Host (T "Source OBS non retirée (OBS Studio est ouvert ?) : supprimez $obsPlugin à la main." "OBS source not removed (is OBS Studio open?): delete $obsPlugin by hand.") -ForegroundColor Yellow
         }
     }
+    # Raccourcis « XR Perf Studio » (Bureau, menu Démarrer).
+    foreach ($place in @([Environment]::GetFolderPath('DesktopDirectory'), [Environment]::GetFolderPath('Programs'))) {
+        if (-not $place) { continue }
+        $link = Join-Path $place 'XR Perf Studio.lnk'
+        if (Test-Path -LiteralPath $link) {
+            Remove-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
+            Write-Host ((T "Raccourci retiré : " "Shortcut removed: ") + $link) -ForegroundColor Green
+        }
+    }
     # XRPerfVR s'arrête de lui-même avec XRPerfSensors, après avoir terminé son rapport.
     foreach ($process in @(Get-Process -Name 'XRPerfVR' -ErrorAction SilentlyContinue)) {
         try { if (-not $process.WaitForExit(5000)) { $process.Kill() } } catch { }

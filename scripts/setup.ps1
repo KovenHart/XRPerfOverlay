@@ -1,4 +1,4 @@
-﻿# Installe ou met à jour XR Perf Overlay à partir du dossier produit par la compilation.
+﻿# Installe ou met à jour XR Perf Studio à partir du dossier produit par la compilation.
 # Lancé par Installer.bat ; compatible avec Windows PowerShell 5.1.
 #
 # Ce que fait ce script, dans l'ordre :
@@ -270,7 +270,7 @@ function Assert-SensorsFolderReplaceable([string]$TargetFolder) {
             (Test-Path -LiteralPath (Join-Path $TargetFolder $LayerJson) -PathType Leaf) -or
             (Test-Path -LiteralPath (Join-Path $targetSensors 'XRPerfSensors.exe') -PathType Leaf)
     if (-not $ours) {
-        throw (T "Le dossier choisi contient déjà un sous-dossier « sensors » qui ne vient pas de XR Perf Overlay : $targetSensors. Choisissez un dossier vide ou une installation existante. Rien n'a été modifié." "The chosen folder already contains a « sensors » subfolder that does not come from XR Perf Overlay: $targetSensors. Choose an empty folder or an existing installation. Nothing was changed.")
+        throw (T "Le dossier choisi contient déjà un sous-dossier « sensors » qui ne vient pas de XR Perf Studio : $targetSensors. Choisissez un dossier vide ou une installation existante. Rien n'a été modifié." "The chosen folder already contains a « sensors » subfolder that does not come from XR Perf Studio: $targetSensors. Choose an empty folder or an existing installation. Nothing was changed.")
     }
 }
 
@@ -329,6 +329,30 @@ function Install-Files([string]$SourceFolder, [string]$TargetFolder) {
 }
 
 # Numéro de version du dossier à installer (fichier VERSION), ou chaîne vide.
+# Raccourcis « XR Perf Studio » (Bureau, menu Démarrer) de l'utilisateur, vers XRPerfSensors. Première
+# installation : créés ; mise à jour : seuls ceux déjà là sont refaits (un raccourci retiré par l'utilisateur,
+# depuis la page Interface ou à la main, ne revient pas). Retourne le nombre de raccourcis en place.
+function Set-Shortcuts([string]$Folder, [bool]$Create) {
+    $exe = Join-Path (Join-Path $Folder 'sensors') 'XRPerfSensors.exe'
+    $count = 0
+    try { $shell = New-Object -ComObject WScript.Shell } catch { return 0 }
+    foreach ($place in @([Environment]::GetFolderPath('DesktopDirectory'), [Environment]::GetFolderPath('Programs'))) {
+        if (-not $place) { continue }
+        $path = Join-Path $place 'XR Perf Studio.lnk'
+        if (-not $Create -and -not (Test-Path -LiteralPath $path)) { continue }
+        try {
+            $link = $shell.CreateShortcut($path)
+            $link.TargetPath = $exe
+            $link.WorkingDirectory = Split-Path -Parent $exe
+            $link.IconLocation = "$exe,0"
+            $link.Description = (T 'Performances, vidéo et direct en VR' 'VR performance, video and live streaming')
+            $link.Save()
+            $count++
+        } catch { }
+    }
+    return $count
+}
+
 function Get-SourceVersion([string]$SourceFolder) {
     $versionFile = Join-Path $SourceFolder 'VERSION'
     if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) { return '' }
@@ -397,7 +421,7 @@ function Resolve-TargetFolder([string]$SourceFolder) {
         $folder = Get-FullPath $Target
         if ($folder.Length -le 3) { throw (T "Le dossier d'installation ne peut pas être la racine d'un disque ($folder) : indiquez un sous-dossier." "The installation folder cannot be the root of a drive ($folder): give a subfolder.") }
         if (-not (Test-SamePath $folder $SourceFolder) -and (Test-ProjectFolder $folder $SourceFolder)) {
-            throw (T "Le dossier choisi ($folder) est celui des sources de XR Perf Overlay, ou le contient : y installer mélangerait le programme aux fichiers nécessaires à la compilation. Choisissez un autre dossier. Rien n'a été modifié." "The chosen folder ($folder) is, or contains, the XR Perf Overlay sources: installing there would mix the program with the files needed to build it. Choose another folder. Nothing was changed.")
+            throw (T "Le dossier choisi ($folder) est celui des sources de XR Perf Studio, ou le contient : y installer mélangerait le programme aux fichiers nécessaires à la compilation. Choisissez un autre dossier. Rien n'a été modifié." "The chosen folder ($folder) is, or contains, the XR Perf Studio sources: installing there would mix the program with the files needed to build it. Choose another folder. Nothing was changed.")
         }
     } elseif ($existing) {
         $folder = $existing
@@ -440,7 +464,7 @@ function Invoke-Setup {
 
     $version = Get-SourceVersion $sourceFolder
     Write-Host ''
-    if ($version) { Write-Host "XR Perf Overlay $version" }
+    if ($version) { Write-Host "XR Perf Studio $version" }
     if ($existing) { Write-Host ((T "Installation existante trouvée : " "Existing installation found: ") + $existing) }
     Write-Host ((T "Dossier d'installation : " "Installation folder: ") + $targetFolder)
 
@@ -496,6 +520,9 @@ function Invoke-Setup {
     }
     $sensorsRunning = Test-SensorsRunning
     $obsPlugin = Install-ObsPlugin $targetFolder
+    # Raccourcis dans le profil de l'utilisateur : seulement si c'est bien son compte qui installe.
+    $shortcuts = -1
+    if (Test-SamePath $account $current) { $shortcuts = Set-Shortcuts $targetFolder (-not $existing) }
 
     Write-Host ''
     Write-Host (T 'Installation terminée.' 'Installation finished.') -ForegroundColor Green
@@ -533,6 +560,9 @@ function Invoke-Setup {
         Write-Host (T "  OBS            : OBS Studio est ouvert, sa source n'a pas pu être mise à jour : fermez OBS puis relancez Installer.bat." "  OBS            : OBS Studio is open, its source could not be updated: close OBS, then run Installer.bat again.") -ForegroundColor Yellow
     } elseif ($obsPlugin -eq 'no-obs') {
         Write-Host (T "  OBS            : OBS Studio non trouvé ; après l'avoir installé, relancez Installer.bat pour ajouter la source XR Perf." "  OBS            : OBS Studio not found; after installing it, run Installer.bat again to add the XR Perf source.")
+    }
+    if ($shortcuts -gt 0) {
+        Write-Host (T "  Raccourcis     : « XR Perf Studio » sur le Bureau et dans le menu Démarrer (à retirer depuis la page Interface)." '  Shortcuts      : "XR Perf Studio" on the desktop and in the Start menu (removable from the Interface page).')
     }
     Write-Host (T '  Dans le casque : Ctrl+Alt+O affiche ou masque le panneau.' '  In the headset : Ctrl+Alt+O shows or hides the panel.')
     Write-Host (T '  Interface      : double-clic sur l''icône de XRPerfSensors, près de l''horloge.' '  Interface      : double-click the XRPerfSensors icon, near the clock.')

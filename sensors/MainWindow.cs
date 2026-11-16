@@ -53,7 +53,7 @@ namespace XRPerfSensors
             _app = app;
             _page = page ?? "dashboard";
             _reports = new ReportStore(app.ReportFolders);
-            Text = "XR Perf Overlay";
+            Text = "XR Perf Studio";
             Icon = AppIcon.Load(new Size(32, 32));
             BackColor = Color.FromArgb(14, 17, 22);
             MinimumSize = new Size(760, 540);
@@ -326,6 +326,9 @@ namespace XRPerfSensors
                             if (refused != null) PostToast(refused);
                             break;
                         case "videoStop": _app.StopVideo(); break;
+                        case "snapshot": _app.TakeSnapshot(); break;
+                        case "snapOpenFolder": Later(() => OpenFolder(_app.Desktop.SnapFolderOrDefault)); break;
+                        case "snapPickFolder": Later(PickSnapFolder); break;
                         case "videoOpenFolder": Later(OpenVideoFolder); break;
                         case "videoPickFolder": Later(PickVideoFolder); break;
                         case "videoDevices": SendVideoDevices(); break;
@@ -466,6 +469,14 @@ namespace XRPerfSensors
                 w.WriteBoolean("hotkeyOk", _app.VideoHotkeyOk);
                 w.WriteString("hotkeyText", _app.VideoHotkeyText);
                 w.WriteString("folder", _app.Desktop.VideoFolderOrDefault);
+                // Captures d'écran : nombre pris depuis le lancement, ratées, dernier fichier.
+                w.WriteBoolean("snapSupported", video != null && video.SnapshotSupported);
+                w.WriteNumber("snapCount", video != null ? video.SnapshotsTaken : 0);
+                w.WriteNumber("snapFailed", video != null ? video.SnapshotsFailed : 0);
+                w.WriteString("snapLast", video != null ? video.LastSnapshot : "");
+                w.WriteBoolean("snapHotkeyOk", _app.SnapHotkeyOk);
+                w.WriteString("snapHotkeyText", _app.SnapHotkeyText);
+                w.WriteString("snapFolder", _app.Desktop.SnapFolderOrDefault);
                 // Source OBS : plugin installé, source affichée dans OBS, image donnée.
                 w.WriteBoolean("obsPlugin", VideoRecorder.ObsPluginInstalled);
                 w.WriteBoolean("obsShown", video != null && video.ObsSourceAgeMs < 3000);
@@ -510,9 +521,10 @@ namespace XRPerfSensors
             });
         }
 
-        private void OpenVideoFolder()
+        private void OpenVideoFolder() { OpenFolder(_app.Desktop.VideoFolderOrDefault); }
+
+        private void OpenFolder(string folder)
         {
-            string folder = _app.Desktop.VideoFolderOrDefault;
             try
             {
                 Directory.CreateDirectory(folder);
@@ -542,6 +554,24 @@ namespace XRPerfSensors
             }
         }
 
+        private void PickSnapFolder()
+        {
+            using (var dialog = new FolderBrowserDialog
+            {
+                Description = Loc.T("Dossier des captures d'écran du casque", "Folder for headset screenshots"),
+                UseDescriptionForTitle = true,
+                SelectedPath = _app.Desktop.SnapFolderOrDefault,
+                ShowNewFolderButton = true,
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dialog.SelectedPath)) return;
+                _app.Desktop.SnapFolder = string.Equals(dialog.SelectedPath, Settings.DefaultSnapFolder, StringComparison.OrdinalIgnoreCase) ? "" : dialog.SelectedPath;
+                _app.VideoChanged();
+                PostDesktop();
+                PostVideo();
+            }
+        }
+
         // Un réglage changé dans la page.
         private void OnSet(string scope, string key, JsonElement value)
         {
@@ -550,8 +580,9 @@ namespace XRPerfSensors
             {
                 Settings desk = _app.Desktop;
                 int video = desk.VideoKey == 0 ? 0 : (desk.VideoMods << 16) | desk.VideoKey;
+                int snap = desk.SnapKey == 0 ? 0 : (desk.SnapMods << 16) | desk.SnapKey;
                 if (_app.Unavailable != null) return;
-                if (!SettingsJson.ApplyOverlay(_app.Overlay, key, value, video))
+                if (!SettingsJson.ApplyOverlay(_app.Overlay, key, value, video, snap))
                 {
                     if (key.StartsWith("Hotkey.", StringComparison.Ordinal)) PostOverlay();  // refusé : la page reprend la valeur gardée
                     return;
@@ -563,6 +594,13 @@ namespace XRPerfSensors
             if (scope != "desktop") return;
             Settings d = _app.Desktop;
             string before = d.Language;
+            if (key == "ShortcutDesktop" || key == "ShortcutStart")
+            {
+                // Raccourcis : créés ou retirés tout de suite ; la page reprend l'état réel (refus de Windows).
+                SettingsJson.ApplyDesktop(d, key, value);
+                PostDesktop();
+                return;
+            }
             SettingsJson.Change change = SettingsJson.ApplyDesktop(d, key, value, _app.Unavailable == null ? _app.Overlay.Hotkeys : null);
             switch (change)
             {
@@ -690,7 +728,7 @@ namespace XRPerfSensors
             SendConfig();
         }
 
-        // Activer ou désactiver une layer depuis la page Configuration. Celle de XR Perf Overlay passe par son
+        // Activer ou désactiver une layer depuis la page Configuration. Celle de XR Perf Studio passe par son
         // propre interrupteur ; les autres, par leur inscription dans le registre (jamais créée ni supprimée).
         private async void SetXrLayer(int id, string manifest, bool enabled, string label)
         {

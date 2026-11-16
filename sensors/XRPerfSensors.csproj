@@ -22,7 +22,7 @@
   <!-- Numéro de version : le même que la layer, lu dans le fichier VERSION à la racine du projet. -->
   <PropertyGroup Condition="Exists('$(MSBuildThisFileDirectory)..\VERSION')">
     <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\VERSION').Trim())</Version>
-    <Product>XR Perf Overlay</Product>
+    <Product>XR Perf Studio</Product>
     <!-- Pas d'identifiant de commit ajouté au numéro affiché. -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>

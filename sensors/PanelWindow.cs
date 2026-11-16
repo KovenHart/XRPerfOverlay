@@ -1,7 +1,7 @@
 // Fenêtre du bureau qui montre le même panneau que dans le casque.
 //
 // But : enregistrer ou diffuser avec OBS sans passer par un miroir OpenXR. On capture le miroir du
-// jeu comme d'habitude, et on ajoute cette fenêtre ("XR Perf Overlay") comme seconde source.
+// jeu comme d'habitude, et on ajoute cette fenêtre ("XR Perf Studio") comme seconde source.
 // L'image vient de la layer, par une mémoire partagée qu'elle ne remplit que si cette fenêtre est
 // affichée : fenêtre fermée, le jeu ne fait aucun travail supplémentaire.
 
@@ -398,7 +398,7 @@ namespace XRPerfSensors
             }
             else
             {
-                TextRenderer.DrawText(g, Loc.T("XR Perf Overlay - en attente d'un jeu VR...", "XR Perf Overlay - waiting for a VR game..."), Font, new Rectangle(Point.Empty, ClientSize),
+                TextRenderer.DrawText(g, Loc.T("XR Perf Studio - en attente d'un jeu VR...", "XR Perf Studio - waiting for a VR game..."), Font, new Rectangle(Point.Empty, ClientSize),
                     Color.FromArgb(142, 152, 170),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             }
@@ -575,9 +575,28 @@ namespace XRPerfSensors
         public bool VideoMic;
         public string VideoRenderDevice = "";  // identifiant Windows de la sortie audio enregistrée ("" : celle par défaut)
         public string VideoCaptureDevice = ""; // identifiant du micro ("" : celui par défaut)
-        public string VideoFolder = "";        // "" : Vidéos\XR Perf Overlay
+        public string VideoFolder = "";        // "" : Vidéos\XR Perf Studio
         public int VideoKey = 'V';             // Ctrl+Alt+V ; 0 = sans raccourci
         public int VideoMods = ModCtrl | ModAlt;
+
+        // Captures d'écran : même image que la vidéo (œil, cadrage, panneau, filtres), en PNG ou JPEG.
+        // Pendant une vidéo ou un direct, la photo est prise dans l'image en cours (au plus à sa résolution).
+        public static readonly string[] SnapFormats = { "png", "jpeg" };
+        public static readonly int[] SnapHeights = { 1080, 1440, 2160, 2880 };
+        public const int MinSnapQuality = 50;
+        public string SnapFormat = "png";
+        public int SnapQuality = 90;           // JPEG
+        public int SnapHeight = 2160;
+        public string SnapFolder = "";         // "" : Images\XR Perf Studio
+        public int SnapKey = 'C';              // Ctrl+Alt+C ; 0 = sans raccourci
+        public int SnapMods = ModCtrl | ModAlt;
+
+        public static string DefaultSnapFolder
+        {
+            get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "XR Perf Studio"); }
+        }
+
+        public string SnapFolderOrDefault { get { return string.IsNullOrWhiteSpace(SnapFolder) ? DefaultSnapFolder : SnapFolder; } }
 
         // Direct sur Twitch ou YouTube : le raccourci et le bouton de la vidéo lancent l'un ou l'autre
         // (VideoTarget). Réglages de l'image communs (œil, cadrage, panneau, filtres, son) ; résolution, cadence
@@ -654,6 +673,7 @@ namespace XRPerfSensors
                     if (key == "capture_title") { settings.CaptureTitle = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "capture_process") { settings.CaptureProcess = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "video_folder") { settings.VideoFolder = line.Substring(equals + 1).Trim(); continue; }
+                    if (key == "snap_folder") { settings.SnapFolder = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "video_render_device") { settings.VideoRenderDevice = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "video_capture_device") { settings.VideoCaptureDevice = line.Substring(equals + 1).Trim(); continue; }
                     if (key == "stream_key_twitch") { settings.StreamKeyTwitch = line.Substring(equals + 1).Trim(); continue; }
@@ -672,6 +692,7 @@ namespace XRPerfSensors
                     if (key == "video_overlay_corner") { if (Array.IndexOf(VideoCorners, text) >= 0) settings.VideoOverlayCorner = text; continue; }
                     if (key == "video_target") { if (Array.IndexOf(VideoTargets, text) >= 0) settings.VideoTarget = text; continue; }
                     if (key == "stream_service") { if (Array.IndexOf(StreamServices, text) >= 0) settings.StreamService = text; continue; }
+                    if (key == "snap_format") { if (Array.IndexOf(SnapFormats, text) >= 0) settings.SnapFormat = text; continue; }
                     if (key == "stream_codec") { if (Array.IndexOf(VideoCodecs, text) >= 0) settings.StreamCodec = text; continue; }
                     if (!int.TryParse(line.Substring(equals + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value)) continue;
                     switch (key)
@@ -717,6 +738,10 @@ namespace XRPerfSensors
                         case "stream_twitch_bitrate": if (value >= MinStreamBitrate && value <= MaxStreamBitrateAny) settings.StreamTwitchBitrate = value; break;
                         case "stream_youtube_height": if (Array.IndexOf(StreamHeights, value) >= 0) settings.StreamYoutubeHeight = value; break;
                         case "stream_youtube_bitrate": if (value >= MinStreamBitrate && value <= MaxStreamBitrateAny) settings.StreamYoutubeBitrate = value; break;
+                        case "snap_quality": if (value >= MinSnapQuality && value <= 100) settings.SnapQuality = value; break;
+                        case "snap_height": if (Array.IndexOf(SnapHeights, value) >= 0) settings.SnapHeight = value; break;
+                        case "snap_key": if (value >= 0 && value <= 0xFE) settings.SnapKey = value; break;
+                        case "snap_mods": if (value >= 0 && value <= 0xF) settings.SnapMods = value; break;
                         case "stream_fps": if (Array.IndexOf(StreamRates, value) >= 0) settings.StreamFps = value; break;
                     }
                 }
@@ -729,6 +754,12 @@ namespace XRPerfSensors
             {
                 settings.VideoKey = 'V';
                 settings.VideoMods = ModCtrl | ModAlt;
+            }
+            if (!ValidVideoHotkey(settings.SnapMods, settings.SnapKey) ||
+                (settings.SnapKey != 0 && settings.SnapKey == settings.VideoKey && settings.SnapMods == settings.VideoMods))
+            {
+                settings.SnapKey = 'C';
+                settings.SnapMods = ModCtrl | ModAlt;
             }
             return settings;
         }
@@ -813,6 +844,12 @@ namespace XRPerfSensors
                     "stream_codec=" + StreamCodec,
                     "stream_key_twitch=" + OneLine(StreamKeyTwitch),
                     "stream_key_youtube=" + OneLine(StreamKeyYoutube),
+                    "snap_format=" + SnapFormat,
+                    "snap_quality=" + SnapQuality.ToString(CultureInfo.InvariantCulture),
+                    "snap_height=" + SnapHeight.ToString(CultureInfo.InvariantCulture),
+                    "snap_folder=" + OneLine(SnapFolder),
+                    "snap_key=" + SnapKey.ToString(CultureInfo.InvariantCulture),
+                    "snap_mods=" + SnapMods.ToString(CultureInfo.InvariantCulture),
                 });
             }
             catch (Exception)

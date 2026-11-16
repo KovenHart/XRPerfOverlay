@@ -48,12 +48,16 @@
     Language: params.get("lang") || "auto",
     VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30, VideoStabilize: "light", VideoLevel: false, VideoObs: true,
     VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoHotkey: (3 << 16) | 86,
+    SnapFormat: "png", SnapQuality: 90, SnapHeight: 2160, SnapFolder: "C:\\Users\\Player\\Pictures\\XR Perf Studio", SnapHotkey: (3 << 16) | 67,
+    ShortcutDesktop: true, ShortcutStart: true,
     VideoTarget: params.get("video") === "live" ? "stream" : "file", StreamService: params.get("service") || "twitch", StreamFps: 60, StreamTwitchHeight: 900, StreamTwitchBitrate: 6000, StreamYoutubeHeight: 1440, StreamYoutubeBitrate: 18000, StreamCodec: "av1",
     StreamKeyTwitchSet: params.get("key") !== "none", StreamKeyYoutubeSet: false,
   };
   // Enregistrement vidéo simulé : ?video=rec (en cours), wait (en attente d'un jeu), error (dernière fin sur erreur), off.
   const video = { available: true, codecs: params.get("codecs") != null ? Number(params.get("codecs")) : 7, state: 0, seconds: 0, bytes: 0, frames: 0, repeated: 0, dropped: 0,
     audio: 0, file: "", game: "", encoder: "", reason: "", hotkeyOk: params.get("hotkey") !== "taken", folder: desktop.VideoFolder,
+    snapSupported: true, snapCount: params.get("snap") ? 3 : 0, snapFailed: 0, snapHotkeyOk: true, snapFolder: desktop.SnapFolder,
+    snapLast: params.get("snap") ? desktop.SnapFolder + "\\GothicRemake-Win64-Shipping 2026-11-16 21-14-03.png" : "",
     obsPlugin: params.get("obs") !== "missing", obsShown: params.get("obs") === "shown" || params.get("obs") === "fed", obsFed: params.get("obs") === "fed",
     streaming: false, streamState: 0, streamKbps: 0, streamDropped: 0, streamReconnects: 0, stream2State: 0, stream2Kbps: 0, stream2Dropped: 0, stream2Reconnects: 0 };
   if (params.get("video") === "rec") Object.assign(video, { state: 2, seconds: 754, bytes: 3.71e9, audio: 3, game: "GothicRemake-Win64-Shipping", encoder: "NVIDIA HEVC Encoder MFT" });
@@ -75,7 +79,7 @@
   let fullscreen = false;
   let timer = 0;
   const layer = { state: params.get("layer") || "enabled", busy: false, elevated: false };
-  // Ordre des layers (page Configuration) : ?xrorder=fg met OFXR Bridge au-dessus d'XR Perf Overlay.
+  // Ordre des layers (page Configuration) : ?xrorder=fg met OFXR Bridge au-dessus d'XR Perf Studio.
   let xrUndo = null;
   const reply = msg => setTimeout(() => window.App.receive(JSON.parse(JSON.stringify(msg))), 0);
 
@@ -131,7 +135,7 @@
       ],
       layers: [
         layer("XR_APILAYER_NOVENDOR_perf_overlay", "C:\\XRPerfOverlay\\XR_APILAYER_NOVENDOR_perf_overlay.json",
-          { description: "XR Perf Overlay - affichage FPS / CPU / GPU dans le casque", ours: true, current: true }),
+          { description: "XR Perf Studio - affichage FPS / CPU / GPU dans le casque", ours: true, current: true }),
         layer("XR_APILAYER_NOVENDOR_ofxr_bridge", "%USERPROFILE%\\Mods\\OFXR-Bridge\\XR_APILAYER_NOVENDOR_ofxr_bridge.json", { enabled: !issues ? true : true }),
         layer("XR_APILAYER_MBUCCHIA_toolkit", P + "OpenXR-Toolkit\\XR_APILAYER_MBUCCHIA_toolkit.json", issues ? {} : { enabled: false }),
         issues ? layer(null, P + "OpenKneeboard\\OpenKneeboard-OpenXR.json", { exists: false, readable: false, library: null, libraryExists: null }) : null,
@@ -205,7 +209,7 @@
             { id: "1", title: "Chat - Twitch", process: "chrome.exe", selected: true },
             { id: "2", title: "#vr-mods - Discord", process: "Discord.exe" },
             { id: "3", title: "OBS 31.0.2 - Profil : VR", process: "obs64.exe" },
-            { id: "4", title: "XR Perf Overlay", process: "XRPerfSensors.exe" },
+            { id: "4", title: "XR Perf Studio", process: "XRPerfSensors.exe" },
           ] });
           break;
         case "setLayer":
@@ -305,6 +309,13 @@
         case "videoStop":
           if (video.state === 2) video.file = desktop.VideoFolder + "\\" + video.game + " 2026-11-08 21-14-03.mp4";
           video.state = video.state === 2 ? 3 : 0;
+          reply(Object.assign({ type: "video" }, video));
+          break;
+        case "snapshot":
+          if (!overlay.VideoCapture) break;
+          video.snapCount++;
+          video.snapLast = desktop.SnapFolder + "\\GothicRemake-Win64-Shipping 2026-11-16 21-14-0" + (video.snapCount % 10) + (desktop.SnapFormat === "jpeg" ? ".jpg" : ".png");
+          reply({ type: "toast", text: "Capture d'écran : " + video.snapLast.split("\\").pop() });
           reply(Object.assign({ type: "video" }, video));
           break;
         case "videoDevices":

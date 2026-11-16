@@ -295,7 +295,8 @@ void drawHeader(Canvas& cv, const PanelData& d) {
     const int topLine = baseline - kFontValue.ascent - kFontLabel.cellH - 2;
     int topX = labelX;
     // Rapport manuel et vidéo enregistrés en même temps : leurs deux témoins prennent la place de la cible.
-    const bool twoIndicators = d.recordState >= 1 && d.recordState <= 3 && d.videoSeconds >= 0.0;
+    const bool videoShown = d.videoSeconds >= 0.0 || d.photo;
+    const bool twoIndicators = d.recordState >= 1 && d.recordState <= 3 && videoShown;
     if (d.targetFps > 0.f && !twoIndicators) {
         std::snprintf(buf, sizeof(buf), d.english ? "target %.0f" : "cible %.0f", static_cast<double>(d.targetFps));
         topX = cv.text(kFontLabel, labelX, topLine, buf, th.muted) + 18;
@@ -316,7 +317,12 @@ void drawHeader(Canvas& cv, const PanelData& d) {
         indicatorX = cv.text(kFontLabel, topX + static_cast<int>(2 * r) + 6, topLine, buf, d.recordState == 1 ? th.text : dot) + 16;
     }
     // Enregistrement vidéo : carré rouge (comme un bouton d'enregistrement) et durée.
-    if (d.videoSeconds >= 0.0 && indicatorX < Panel::kWidth - 120) {
+    if (d.photo && indicatorX < Panel::kWidth - 120) {
+        // Capture d'écran à l'instant : rond blanc et « PHOTO », un moment (à la place de VID / LIVE).
+        const float r = 5.f;
+        cv.disc(static_cast<float>(indicatorX) + r, static_cast<float>(topLine) + kFontLabel.cellH * 0.5f, r, th.text);
+        cv.text(kFontLabel, indicatorX + static_cast<int>(2 * r) + 6, topLine, "PHOTO", th.text);
+    } else if (d.videoSeconds >= 0.0 && indicatorX < Panel::kWidth - 120) {
         const int side = 9;
         const int top = topLine + (kFontLabel.cellH - side) / 2;
         if (d.videoLive)  // direct : rond (comme le témoin « en direct » des plateformes)

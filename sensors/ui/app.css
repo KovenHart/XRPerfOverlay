@@ -1,4 +1,4 @@
-/* XR Perf Overlay : interface du bureau (affichée par WebView2 dans XRPerfSensors).
+/* XR Perf Studio : interface du bureau (affichée par WebView2 dans XRPerfSensors).
    Les couleurs sont des variables posées par app.js à partir du thème choisi (mêmes palettes que le
    panneau du casque) ; ce fichier n'en contient que les valeurs de départ, celles du thème sombre. */
 

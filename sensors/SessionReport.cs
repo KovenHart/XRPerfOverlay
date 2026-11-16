@@ -190,7 +190,7 @@ namespace XRPerfSensors
                 report.FileTime = File.GetLastWriteTime(path);
                 report.Text = ReadShared(path);
                 report.Parse(report.Text);
-                report.Readable = report.Text.Contains("XR Perf Overlay");
+                report.Readable = report.Text.Contains("XR Perf Studio") || report.Text.Contains("XR Perf Overlay");  // nom d'avant la 1.15
             }
             catch (Exception)
             {
@@ -243,7 +243,7 @@ namespace XRPerfSensors
                             : Starts(line, "TEMPS PAR IMAGE", "FRAME TIME") ? "FRAME"
                             : Starts(line, "PROCESSEUR", "PROCESSOR") ? "CPU"
                             : Starts(line, "CARTE GRAPHIQUE", "GRAPHICS CARD") ? "GPU"
-                            : line.StartsWith("XR Perf Overlay", StringComparison.Ordinal) ? "" : "OTHER";
+                            : line.StartsWith("XR Perf ", StringComparison.Ordinal) ? "" : "OTHER";  // XR Perf Studio, ou Overlay (avant la 1.15)
                     if (minutes)
                     {
                         inMinutes = true;
@@ -635,8 +635,8 @@ namespace XRPerfSensors
             var findings = new List<Finding>();
             if (!r.Readable)
             {
-                Add(findings, FindingLevel.Problem, L("Ce fichier n'a pas pu être lu comme un rapport de XR Perf Overlay.",
-                    "This file could not be read as an XR Perf Overlay report."));
+                Add(findings, FindingLevel.Problem, L("Ce fichier n'a pas pu être lu comme un rapport de XR Perf Studio.",
+                    "This file could not be read as an XR Perf Studio report."));
                 return findings;
             }
             if (double.IsNaN(r.FpsAvg) || double.IsNaN(r.Frames) || r.Frames < 100)
@@ -951,7 +951,7 @@ namespace XRPerfSensors
             {
                 view.Level = FindingLevel.Problem;
                 view.Verdict = L("Rapport illisible", "Unreadable report");
-                view.Summary = L("Ce fichier n'a pas pu être lu comme un rapport de XR Perf Overlay.", "This file could not be read as an XR Perf Overlay report.");
+                view.Summary = L("Ce fichier n'a pas pu être lu comme un rapport de XR Perf Studio.", "This file could not be read as an XR Perf Studio report.");
                 return view;
             }
             if (double.IsNaN(r.FpsAvg) || double.IsNaN(r.Frames) || r.Frames < 100)

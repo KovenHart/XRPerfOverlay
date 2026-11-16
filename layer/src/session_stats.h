@@ -20,7 +20,7 @@ namespace xrpo {
 
 // Renseignements fournis par l'appelant pour l'en-tête du résumé.
 struct SessionInfo {
-    const char* version = "";     // version de XR Perf Overlay (vide = non indiquée)
+    const char* version = "";     // version de XR Perf Studio (vide = non indiquée)
     const char* game = "?";       // nom de l'exécutable
     const char* api = "?";        // API graphique
     const char* headset = "";     // nom du casque affiché (vide = inconnu)
@@ -189,9 +189,9 @@ class SessionStats {
         const auto T = [en](const char* french, const char* english) { return en ? english : french; };
         w.put("\xEF\xBB\xBF");
         if (info.version[0])
-            w.put(T("XR Perf Overlay %s - résumé de session\r\n\r\n", "XR Perf Overlay %s - session summary\r\n\r\n"), info.version);
+            w.put(T("XR Perf Studio %s - résumé de session\r\n\r\n", "XR Perf Studio %s - session summary\r\n\r\n"), info.version);
         else
-            w.put(T("XR Perf Overlay - résumé de session\r\n\r\n", "XR Perf Overlay - session summary\r\n\r\n"));
+            w.put(T("XR Perf Studio - résumé de session\r\n\r\n", "XR Perf Studio - session summary\r\n\r\n"));
         w.put(T("Jeu              : %s\r\n", "Game             : %s\r\n"), info.game);
         w.put(T("API graphique    : %s\r\n", "Graphics API     : %s\r\n"), info.api);
         if (info.system[0] && std::strcmp(info.system, info.headset) != 0)

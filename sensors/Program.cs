@@ -341,6 +341,8 @@ namespace XRPerfSensors
         private readonly VideoRecorder _video;
         private readonly GlobalHotkey _videoHotkey;
         private ToolStripMenuItem _videoItem;
+        private readonly GlobalHotkey _snapHotkey;
+        private ToolStripMenuItem _snapItem;
         private bool _overlayDirty;
         private bool _saveErrorShown;
 
@@ -358,8 +360,8 @@ namespace XRPerfSensors
             _iniPath = Path.Combine(installFolder, "XRPerfOverlay.ini");
             if (!File.Exists(_layerDll))
             {
-                _settingsUnavailable = Loc.T("XRPerfSensors n'est pas dans le sous-dossier « sensors » d'une installation de XR Perf Overlay (DLL introuvable dans ",
-                                             "XRPerfSensors is not in the « sensors » subfolder of an XR Perf Overlay installation (DLL not found in ") + installFolder + ").";
+                _settingsUnavailable = Loc.T("XRPerfSensors n'est pas dans le sous-dossier « sensors » d'une installation de XR Perf Studio (DLL introuvable dans ",
+                                             "XRPerfSensors is not in the « sensors » subfolder of an XR Perf Studio installation (DLL not found in ") + installFolder + ").";
             }
             _overlay = _settingsUnavailable == null ? OverlaySettings.Load(_iniPath) : new OverlaySettings();
             // La langue choisie ici vaut aussi pour le panneau et les rapports : le .ini la reçoit si elle diffère.
@@ -437,6 +439,9 @@ namespace XRPerfSensors
                 };
                 _videoHotkey = new GlobalHotkey();
                 _videoHotkey.Pressed += ToggleVideo;
+                _video.SnapshotDone += SnapshotDone;
+                _snapHotkey = new GlobalHotkey();
+                _snapHotkey.Pressed += () => TakeSnapshot();
             }
             catch (Exception)
             {
@@ -453,9 +458,20 @@ namespace XRPerfSensors
                 UpdateObs();         // image pour la source OBS, tant qu'elle est affichée
                 if (_video != null && _main != null && !_main.IsDisposed) _main.PostVideo();
                 if (_videoItem != null && _video != null) _videoItem.Checked = _video.Busy;
+                if (_video != null) _video.PollSnapshots();
             };
             _uiTimer.Start();
+
+            // Relancé par un raccourci alors qu'il tourne : la fenêtre s'ouvre.
+            _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+            _showTimer = new System.Windows.Forms.Timer { Interval = 250 };
+            _showTimer.Tick += (s, e) => { if (_showEvent.WaitOne(0)) ShowMain("dashboard"); };
+            _showTimer.Start();
         }
+
+        public const string ShowEventName = @"Local\XRPerfOverlay.SensorsShow";
+        private EventWaitHandle _showEvent;
+        private System.Windows.Forms.Timer _showTimer;
 
         // --- Services de la fenêtre principale -----------------------------------------------------------
 
@@ -467,6 +483,8 @@ namespace XRPerfSensors
         public VideoRecorder Video { get { return _video; } }
         /// <summary>Le raccourci de la vidéo est enregistré auprès de Windows (false : pris par un autre programme).</summary>
         public bool VideoHotkeyOk { get { return _videoHotkey == null || _settings.VideoKey == 0 || _videoHotkeyPaused || _videoHotkey.Registered; } }
+        /// <summary>Le raccourci des captures d'écran est enregistré auprès de Windows.</summary>
+        public bool SnapHotkeyOk { get { return _snapHotkey == null || _settings.SnapKey == 0 || _videoHotkeyPaused || _snapHotkey.Registered; } }
 
         // --- Enregistrement vidéo ------------------------------------------------------------------------
 
@@ -503,6 +521,43 @@ namespace XRPerfSensors
             });
             if (_main != null && !_main.IsDisposed) _main.PostVideo();
         }
+
+        // --- Captures d'écran ------------------------------------------------------------------------------
+
+        /// <summary>Prend une capture d'écran du casque ; retourne la raison d'un refus (null : demandée).</summary>
+        public string TakeSnapshot()
+        {
+            string refused;
+            if (_video == null) refused = Loc.T("Captures d'écran indisponibles.", "Screenshots unavailable.");
+            else if (!VideoEnabled) refused = Loc.T("La capture vidéo est désactivée (page Vidéo) : les captures d'écran aussi.", "Video capture is turned off (Video page): screenshots too.");
+            else refused = _video.Snapshot(_settings, _overlay);
+            if (refused != null) Notify(refused, true);
+            if (_main != null && !_main.IsDisposed) _main.PostVideo();
+            return refused;
+        }
+
+        private void SnapshotDone(bool ok, string text)
+        {
+            if (ok)
+            {
+                if (_main != null && !_main.IsDisposed && _main.Visible)
+                    _main.PostToast(Loc.T("Capture d'écran : ", "Screenshot: ") + Path.GetFileName(text));
+            }
+            else Notify(text, true);
+            // Appelé pendant la lecture de l'état (PostVideo) : la page est mise à jour juste après.
+            MainWindow main = _main;
+            if (main != null && !main.IsDisposed && main.IsHandleCreated) main.BeginInvoke(new Action(() => { if (!main.IsDisposed) main.PostVideo(); }));
+        }
+
+        // Message : dans la fenêtre si elle est ouverte, sinon une bulle de l'icône.
+        private void Notify(string text, bool warning)
+        {
+            if (_main != null && !_main.IsDisposed && _main.Visible) _main.PostToast(text);
+            else _icon.ShowBalloonTip(6000, "XRPerfSensors", text, warning ? ToolTipIcon.Warning : ToolTipIcon.Info);
+        }
+
+        /// <summary>Raccourci des captures d'écran en texte, vide s'il n'y en a pas.</summary>
+        public string SnapHotkeyText { get { return GlobalHotkey.Text(_settings.SnapMods, _settings.SnapKey); } }
 
         /// <summary>Un réglage de la vidéo a changé : enregistré, raccourci mis à jour.</summary>
         public void VideoChanged()
@@ -581,6 +636,31 @@ namespace XRPerfSensors
             {
                 _videoItem.Enabled = VideoEnabled;
                 _videoItem.Text = VideoItemText();
+            }
+            UpdateSnapHotkey();
+        }
+
+        private int _snapHotkeyWarned;
+
+        private void UpdateSnapHotkey()
+        {
+            if (_snapHotkey == null) return;
+            bool active = VideoEnabled && !_videoHotkeyPaused;
+            bool ok = _snapHotkey.Set(_settings.SnapMods, active ? _settings.SnapKey : 0);
+            int combo = (_settings.SnapMods << 16) | _settings.SnapKey;
+            if (ok) _snapHotkeyWarned = 0;
+            if (!ok && _settings.SnapKey != 0 && _snapHotkeyWarned != combo)
+            {
+                _snapHotkeyWarned = combo;
+                _icon.ShowBalloonTip(6000, "XRPerfSensors",
+                    string.Format(Loc.T("Le raccourci {0} des captures d'écran est déjà pris par un autre programme : choisissez-en un autre (page Raccourcis).",
+                                        "The screenshot hotkey {0} is already taken by another program: choose another one (Hotkeys page)."), SnapHotkeyText),
+                    ToolTipIcon.Warning);
+            }
+            if (_snapItem != null)
+            {
+                _snapItem.Enabled = VideoEnabled;
+                _snapItem.Text = Loc.T("Capture d'écran du casque", "Headset screenshot") + (_settings.SnapKey != 0 ? " (" + SnapHotkeyText + ")" : "");
             }
         }
 
@@ -814,8 +894,9 @@ namespace XRPerfSensors
         {
             if (_settingsUnavailable != null) return;
             int video = _settings.VideoKey == 0 ? 0 : (_settings.VideoMods << 16) | _settings.VideoKey;
+            int snap = _settings.SnapKey == 0 ? 0 : (_settings.SnapMods << 16) | _settings.SnapKey;
             for (int i = 0; i < OverlaySettings.DefaultHotkeys.Length; i++)
-                _overlay.Hotkeys[i] = OverlaySettings.DefaultHotkeys[i] == video ? 0 : OverlaySettings.DefaultHotkeys[i];
+                _overlay.Hotkeys[i] = OverlaySettings.DefaultHotkeys[i] == video || OverlaySettings.DefaultHotkeys[i] == snap ? 0 : OverlaySettings.DefaultHotkeys[i];
             OverlayChanged();
         }
 
@@ -915,7 +996,7 @@ namespace XRPerfSensors
             var menu = new ContextMenuStrip();
             menu.Items.Add(new ToolStripMenuItem("XRPerfSensors " + AppVersion.Text) { Enabled = false });
             menu.Items.Add(new ToolStripSeparator());
-            var open = new ToolStripMenuItem(Loc.T("Ouvrir XR Perf Overlay", "Open XR Perf Overlay"), null, (s, e) => ShowMain("dashboard"));
+            var open = new ToolStripMenuItem(Loc.T("Ouvrir XR Perf Studio", "Open XR Perf Studio"), null, (s, e) => ShowMain("dashboard"));
             open.Font = new Font(open.Font, FontStyle.Bold);
             menu.Items.Add(open);
             menu.Items.Add(Loc.T("Rapports de session", "Session reports"), null, (s, e) => ShowMain("reports"));
@@ -934,6 +1015,12 @@ namespace XRPerfSensors
             };
             _videoItem.Click += (s, e) => ToggleVideo();
             menu.Items.Add(_videoItem);
+            _snapItem = new ToolStripMenuItem(Loc.T("Capture d'écran du casque", "Headset screenshot") + (_settings.SnapKey != 0 ? " (" + SnapHotkeyText + ")" : ""))
+            {
+                Enabled = VideoEnabled,
+            };
+            _snapItem.Click += (s, e) => TakeSnapshot();
+            menu.Items.Add(_snapItem);
             menu.Opening += (s, e) => LayerChanged();
             if (!LibreHardwareMonitor.PawnIo.PawnIo.IsInstalled)
             {
@@ -1100,6 +1187,7 @@ namespace XRPerfSensors
             _vr.Dispose();   // rapport en cours terminé par XRPerfVR avant la fermeture
             if (_capture != null) _capture.Dispose();  // capture arrêtée avant la fin du programme
             if (_videoHotkey != null) _videoHotkey.Dispose();
+            if (_snapHotkey != null) _snapHotkey.Dispose();
             if (_video != null) _video.Dispose();      // vidéo en cours terminée (fichier lisible) avant la fin
             _stop.Set();
             _worker.Join(3000);
@@ -1146,7 +1234,16 @@ namespace XRPerfSensors
             // Une seule instance à la fois.
             using (var single = new Mutex(true, @"Local\XRPerfOverlay.SensorsApp", out bool first))
             {
-                if (!first) return 0;
+                if (!first)
+                {
+                    // Déjà lancé (raccourci du Bureau, menu Démarrer) : l'instance en cours ouvre sa fenêtre.
+                    try
+                    {
+                        using (var show = EventWaitHandle.OpenExisting(TrayApp.ShowEventName)) show.Set();
+                    }
+                    catch (Exception) { }
+                    return 0;
+                }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 OpenXrLayers.RecoverPending();  // réordonnancement des layers interrompu : valeurs remises

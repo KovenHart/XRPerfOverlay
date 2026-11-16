@@ -10,7 +10,7 @@
   // category : framegen (génération d'images), foveated (rendu fovéal), toolkit (outil à tout faire),
   // overlay (affichage dans le casque), tracking (suivi, compensation de mouvement), postfx (retouche d'image).
   const KNOWN_LAYERS = [
-    { id: "xrperf", match: ["perf_overlay"], label: "XR Perf Overlay", category: "overlay" },
+    { id: "xrperf", match: ["perf_overlay"], label: "XR Perf Studio", category: "overlay" },
     { id: "toolkit", match: ["mbucchia_toolkit", "openxr-toolkit", "openxr_toolkit"], label: "OpenXR Toolkit", category: "toolkit" },
     { id: "quadviews", match: ["quad_views", "quadviews", "quad-views"], label: "Quad-Views-Foveated", category: "foveated" },
     { id: "ofxr", match: ["ofxr"], label: "OFXR Bridge", category: "framegen" },
@@ -133,7 +133,7 @@
   const ORDER = { Problem: 0, Warning: 1, Info: 2, Good: 3 };
 
   // Inscription que la page peut activer ou désactiver : fichier présent et lisible. Celle de cette
-  // installation de XR Perf Overlay a son propre interrupteur (tableau de bord, page Panneau).
+  // installation de XR Perf Studio a son propre interrupteur (tableau de bord, page Panneau).
   function canToggle(layer) {
     return !!layer && layer.id != null && layer.exists && layer.readable && !(layer.ours && layer.current);
   }
@@ -314,7 +314,7 @@
   // Diagnostic en texte simple, pour le copier (forum, Discord). Aucun nom de compte : les chemins du
   // dossier de l'utilisateur arrivent déjà sous la forme %USERPROFILE%.
   function text(cfg, t, version) {
-    const lines = ["XR Perf Overlay " + (version || "") + " - " + t("cfg.textTitle"), ""];
+    const lines = ["XR Perf Studio " + (version || "") + " - " + t("cfg.textTitle"), ""];
     const mark = { Problem: "[!!]", Warning: "[!] ", Info: "[i] ", Good: "[ok]" };
     lines.push(t("cfg.findings").toUpperCase());
     for (const f of analyze(cfg, t)) lines.push("  " + mark[f.level] + " " + f.text);

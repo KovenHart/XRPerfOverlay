@@ -720,7 +720,7 @@ class RtmpConnection {
             AmfKey(m, "stereo");
             AmfBool(m, config.channels == 2);
             AmfKey(m, "encoder");
-            AmfString(m, "XR Perf Overlay");
+            AmfString(m, "XR Perf Studio");
             AmfObjectEnd(m);
             if (!sendMessage(5, 0, 18, m_stream, m)) return fail(error, "envoi impossible");
         }

@@ -143,7 +143,7 @@ https://github.com/dotnet/runtime et https://github.com/dotnet/winforms
 ## PawnIO (non inclus)
 
 Pilote facultatif, à installer séparément, qui donne accès à la température et à la fréquence du processeur.
-Il n'est pas distribué avec XR Perf Overlay — https://pawnio.eu/
+Il n'est pas distribué avec XR Perf Studio — https://pawnio.eu/
 
 ## Police DejaVu Sans Mono (`layer/src/font_data.h`)
 

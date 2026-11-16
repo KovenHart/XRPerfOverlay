@@ -78,7 +78,7 @@ l'enregistrement de l'image d'un œil en MP4 (H.264, H.265 ou AV1 par l'encodeur
 graphique, qualité au choix), avec le son du jeu et le micro en option. En option aussi : le
 panneau dans la vidéo (à sa place ou dans un coin), la stabilisation et l'horizon droit. Avec
 d'autres layers (Pimax NR, OpenXR Toolkit...), l'image enregistrée est celle que reçoit le casque.
-Fichiers dans Vidéos\XR Perf Overlay. « VID » et la durée s'affichent en haut du panneau pendant
+Fichiers dans Vidéos\XR Perf Studio. « VID » et la durée s'affichent en haut du panneau pendant
 l'enregistrement. Jeux OpenXR (Direct3D 11 et 12) et jeux SteamVR.
 
 Filtres d'image (page Image, désactivés par défaut) : netteté CAS, RCAS ou LumaSharpen, couleurs

@@ -311,6 +311,7 @@ class OpenVrBackend final : public VrBackend {
 
     double videoSeconds() override { return m_video ? m_video->recordingSeconds(&m_videoLiveFlag) : -1.0; }
     bool videoLive() override { return m_videoLiveFlag; }
+    bool photoFlash() override { return m_video && m_video->photoFlash(); }
 
     bool videoBusy() override { return m_videoBusy; }
 
@@ -368,7 +369,7 @@ class OpenVrBackend final : public VrBackend {
 
     bool createOverlays() override {
         const char* keys[kOverlays] = {"xrperfoverlay.panel", "xrperfoverlay.watch", "xrperfoverlay.window"};
-        const char* names[kOverlays] = {"XR Perf Overlay", "XR Perf Overlay - montre", "XR Perf Overlay - fenetre"};
+        const char* names[kOverlays] = {"XR Perf Studio", "XR Perf Studio - montre", "XR Perf Studio - fenetre"};
         bool ok = true;
         for (int i = 0; i < kOverlays; ++i) {
             vr::VROverlayHandle_t handle = vr::k_ulOverlayHandleInvalid;

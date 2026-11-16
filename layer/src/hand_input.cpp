@@ -46,7 +46,7 @@ bool HandInput::createActions() {
     }
     XrActionSetCreateInfo setInfo = {XR_TYPE_ACTION_SET_CREATE_INFO};
     std::snprintf(setInfo.actionSetName, sizeof(setInfo.actionSetName), "xrperfoverlay");
-    std::snprintf(setInfo.localizedActionSetName, sizeof(setInfo.localizedActionSetName), "XR Perf Overlay");
+    std::snprintf(setInfo.localizedActionSetName, sizeof(setInfo.localizedActionSetName), "XR Perf Studio");
     setInfo.priority = 0;
     if (XR_FAILED(m_createActionSet(m_instance, &setInfo, &m_actionSet))) {
         m_actionSet = XR_NULL_HANDLE;

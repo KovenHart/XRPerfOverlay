@@ -1,6 +1,8 @@
-# XR Perf Overlay
+# XR Perf Studio
 
 **🇫🇷 [Version française](README.md)** · 🇬🇧 English
+
+*Formerly XR Perf Overlay.*
 
 A performance panel shown in the headset for every OpenXR game (including games run with UEVR), and also for SteamVR games that don't go through OpenXR (OpenVR):
 
@@ -8,7 +10,7 @@ A performance panel shown in the headset for every OpenXR game (including games 
 - **CPU**: load, frame time, temperature, clock
 - **GPU**: load, frame time, temperature, clock, VRAM
 
-Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves. The Video page records what you see in the headset (H.264, H.265 or AV1 on the graphics card, with game sound and microphone, optional panel and stabilization), without OBS. The Image page adds optional sharpening (CAS, RCAS, LumaSharpen), color adjustments, fake HDR, debanding and a colorblind mode, with presets, in the headset or in the video. Every hotkey can be changed. For streaming, go live without OBS on **Twitch**, **YouTube** or both at once (H.264, plus H.265 or AV1 for YouTube); or an "XR Perf (headset)" OBS source receives the same image, with no double encoding. The Configuration page diagnoses the PC for VR: OpenXR runtime, installed layers (to turn on, off or reorder), hardware, Windows settings.
+Optional: a wrist watch, and a desktop window (a stream chat, Discord...) shown in the headset. A report is written for every game session (or on the `Ctrl+Alt+S` hotkey), with its analysis and curves. The Video page records what you see in the headset (H.264, H.265 or AV1 on the graphics card, with game sound and microphone, optional panel and stabilization), without OBS, and takes screenshots (PNG or JPEG, up to 5K, `Ctrl+Alt+C`). The Image page adds optional sharpening (CAS, RCAS, LumaSharpen), color adjustments, fake HDR, debanding and a colorblind mode, with presets, in the headset or in the video. Every hotkey can be changed. For streaming, go live without OBS on **Twitch**, **YouTube** or both at once (H.264, plus H.265 or AV1 for YouTube); or an "XR Perf (headset)" OBS source receives the same image, with no double encoding. The Configuration page diagnoses the PC for VR: OpenXR runtime, installed layers (to turn on, off or reorder), hardware, Windows settings.
 
 ![Panel preview](docs/apercu.png)
 
@@ -22,7 +24,7 @@ It uses OpenXR's official mechanism: nothing is injected into the game, no Direc
 
 ## Installation
 
-1. Download `XRPerfOverlay-<version>-win64.zip` from the [latest release](../../releases/latest).
+1. Download `XRPerfStudio-<version>-win64.zip` from the [latest release](../../releases/latest).
 2. Extract the whole archive (right-click, "Extract All").
 3. Double-click **`Installer.bat`**.
    - Windows may show "Windows protected your PC": the program isn't signed. Click "More info", then "Run anyway".

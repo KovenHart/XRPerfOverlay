@@ -1,4 +1,4 @@
-// XRPerfVR.exe : panneau, montre et rapports de XR Perf Overlay dans les jeux SteamVR (OpenVR).
+// XRPerfVR.exe : panneau, montre et rapports de XR Perf Studio dans les jeux SteamVR (OpenVR).
 // Lancé et arrêté par XRPerfSensors ; sans fenêtre. Voir vr_host.h.
 //
 //   XRPerfVR.exe [--parent <pid>] [--after-quit]

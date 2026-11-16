@@ -94,6 +94,8 @@ class VideoProducer {
     // Durée de l'enregistrement en cours, pour le témoin du panneau ; négative s'il n'y en a pas.
     // `live` : direct (Twitch, YouTube) plutôt qu'un fichier.
     double recordingSeconds(bool* live = nullptr);
+    // Capture d'écran écrite il y a moins de 1,5 s : témoin PHOTO du panneau.
+    bool photoFlash();
     // Fin de session : rend la main (plus personne ne fournit d'images) et libère les textures.
     void shutdown();
     // Nom du jeu montré dans le nom du fichier (par défaut : l'exécutable de ce processus).
@@ -128,6 +130,9 @@ class VideoProducer {
     bool m_failed = false;
 
   private:
+    uint32_t m_photoCount = 0;
+    unsigned long long m_photoTickMs = 0;
+    bool m_photoSeen = false;
     bool openBlock();
     void release(bool keepBlock);
     void fail();

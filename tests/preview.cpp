@@ -261,8 +261,8 @@ static void testSessionStats(const std::string& dir) {
     info.finished = true; info.wallSeconds = 616.0;
     // Casque et resolution inconnus : des tirets, pas de ligne vide.
     std::string text = st.format(info);
-    assert(text.find("XR Perf Overlay - r\xC3\xA9sum\xC3\xA9 de session\r\n") == 3);   // version non indiquee
-    { SessionInfo vi = info; vi.version = "1.2.3"; assert(st.format(vi).find("XR Perf Overlay 1.2.3 - r\xC3\xA9sum\xC3\xA9 de session\r\n") == 3); }
+    assert(text.find("XR Perf Studio - r\xC3\xA9sum\xC3\xA9 de session\r\n") == 3);   // version non indiquee
+    { SessionInfo vi = info; vi.version = "1.2.3"; assert(st.format(vi).find("XR Perf Studio 1.2.3 - r\xC3\xA9sum\xC3\xA9 de session\r\n") == 3); }
     assert(has(text, "Casque           : --\r\n") && has(text, "Runtime OpenXR   : --\r\n") && has(text, "il    : --\r\n"));
     d.renderWidth = 3168; d.renderHeight = 3168; st.onSample(d, false, t);
     info.headset = "Pimax Crystal Light"; info.system = "Pimax Crystal Light"; info.runtime = "PimaxXR 0.4.5";
@@ -832,7 +832,7 @@ static void testLanguage(const std::string& dir) {
     info.game = "Game.exe"; info.api = "Direct3D 11"; info.startText = "2026-10-18 09:00:00"; info.nowText = "2026-10-18 09:03:00";
     info.finished = true; info.wallSeconds = 180.0; info.english = true; info.cpu = "CPU X"; info.gpu = "";
     const std::string en = st.format(info);
-    assert(has(en, "XR Perf Overlay - session summary\r\n") && has(en, "Game             : Game.exe\r\n") && has(en, "Graphics card    : --\r\n"));
+    assert(has(en, "XR Perf Studio - session summary\r\n") && has(en, "Game             : Game.exe\r\n") && has(en, "Graphics card    : --\r\n"));
     assert(has(en, "Duration         : 3 min 00 s, of which ") && has(en, "\r\nFRAMES PER SECOND\r\n") && has(en, "  Target         : 72, held 100 % of the time\r\n"));
     assert(has(en, "FRAME TIME (ms)            average       max\r\n") && has(en, "  GPU (estimated)        ") && has(en, "GRAPHICS CARD  "));
     assert(has(en, "  VRAM (GB)  ") && has(en, "FRAME TIME DISTRIBUTION   (frame budget to hold 72 : 13.9 ms)\r\n") && has(en, "  Within budget           : 100.0 %\r\n"));
@@ -991,6 +991,10 @@ static void testReportControl(const std::string& dir) {
     panel.render(d, 0.82f);
     writePpm(panel, dir + "/panel_live.ppm", 96, 128, 112, Panel::contentHeight(d));
     d.videoLive = false;
+    d.videoSeconds = -1.0; d.photo = true;
+    panel.render(d, 0.82f);
+    writePpm(panel, dir + "/panel_photo.ppm", 96, 128, 112, Panel::contentHeight(d));
+    d.photo = false;
     std::printf("tests des rapports manuels : OK\n");
 }
 

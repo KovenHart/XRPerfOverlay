@@ -4,6 +4,12 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.15.0
+
+- **XR Perf Overlay becomes XR Perf Studio**: the software does much more than show measurements (video, live streaming, OBS source, image filters, desktop window, reports). The new name appears in the interface, the tray menu, reports, OBS and the package (`XRPerfStudio-<version>-win64.zip`). Nothing changes for an existing installation: same settings (`%LOCALAPPDATA%\XRPerfOverlay` folder), same OpenXR layer, same SteamVR application, same OBS source in scenes, same video folder; older reports stay readable.
+- **Headset screenshots**: `Ctrl+Alt+C` (key of your choice), the **Capture** button on the Video page or the tray icon menu. Same image as the video (eye, framing, panel, game menus, filters), in **PNG** or **JPEG** (adjustable quality), from **1080p to 2880p**, in `Pictures\XR Perf Studio` (folder of your choice). "PHOTO" shows for a moment in the headset. During a video or a live stream, the photo is taken from the current image. OpenXR and SteamVR games.
+- **Desktop and Start menu shortcuts**, created on first installation; the Interface page adds or removes them. Started while XRPerfSensors is already running, the shortcut opens its window.
+
 ## 1.14.0
 
 - **Deeper blacks** (black point) and **white point**, Image page: fixes the "grey black" of games tuned for a monitor, especially on an OLED headset.

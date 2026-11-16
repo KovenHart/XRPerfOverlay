@@ -17,12 +17,12 @@ BEGIN
     BEGIN
         BLOCK "040C04B0"
         BEGIN
-            VALUE "CompanyName", "XR Perf Overlay"
-            VALUE "FileDescription", "XR Perf Overlay - API layer OpenXR"
+            VALUE "CompanyName", "XR Perf Studio"
+            VALUE "FileDescription", "XR Perf Studio - API layer OpenXR"
             VALUE "FileVersion", XRPO_VERSION_TEXT
             VALUE "InternalName", "XR_APILAYER_NOVENDOR_perf_overlay"
             VALUE "OriginalFilename", "XR_APILAYER_NOVENDOR_perf_overlay.dll"
-            VALUE "ProductName", "XR Perf Overlay"
+            VALUE "ProductName", "XR Perf Studio"
             VALUE "ProductVersion", XRPO_VERSION_TEXT
         END
     END
