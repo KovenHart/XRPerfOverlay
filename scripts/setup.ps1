@@ -1,4 +1,4 @@
-﻿# Installe ou met à jour XR Perf Overlay à partir du dossier produit par la compilation.
+﻿# Installe ou met à jour XR Perf Studio à partir du dossier produit par la compilation.
 # Lancé par Installer.bat ; compatible avec Windows PowerShell 5.1.
 #
 # Ce que fait ce script, dans l'ordre :
@@ -270,7 +270,7 @@ function Assert-SensorsFolderReplaceable([string]$TargetFolder) {
             (Test-Path -LiteralPath (Join-Path $TargetFolder $LayerJson) -PathType Leaf) -or
             (Test-Path -LiteralPath (Join-Path $targetSensors 'XRPerfSensors.exe') -PathType Leaf)
     if (-not $ours) {
-        throw (T "Le dossier choisi contient déjà un sous-dossier « sensors » qui ne vient pas de XR Perf Overlay : $targetSensors. Choisissez un dossier vide ou une installation existante. Rien n'a été modifié." "The chosen folder already contains a « sensors » subfolder that does not come from XR Perf Overlay: $targetSensors. Choose an empty folder or an existing installation. Nothing was changed.")
+        throw (T "Le dossier choisi contient déjà un sous-dossier « sensors » qui ne vient pas de XR Perf Studio : $targetSensors. Choisissez un dossier vide ou une installation existante. Rien n'a été modifié." "The chosen folder already contains a « sensors » subfolder that does not come from XR Perf Studio: $targetSensors. Choose an empty folder or an existing installation. Nothing was changed.")
     }
 }
 
@@ -397,7 +397,7 @@ function Resolve-TargetFolder([string]$SourceFolder) {
         $folder = Get-FullPath $Target
         if ($folder.Length -le 3) { throw (T "Le dossier d'installation ne peut pas être la racine d'un disque ($folder) : indiquez un sous-dossier." "The installation folder cannot be the root of a drive ($folder): give a subfolder.") }
         if (-not (Test-SamePath $folder $SourceFolder) -and (Test-ProjectFolder $folder $SourceFolder)) {
-            throw (T "Le dossier choisi ($folder) est celui des sources de XR Perf Overlay, ou le contient : y installer mélangerait le programme aux fichiers nécessaires à la compilation. Choisissez un autre dossier. Rien n'a été modifié." "The chosen folder ($folder) is, or contains, the XR Perf Overlay sources: installing there would mix the program with the files needed to build it. Choose another folder. Nothing was changed.")
+            throw (T "Le dossier choisi ($folder) est celui des sources de XR Perf Studio, ou le contient : y installer mélangerait le programme aux fichiers nécessaires à la compilation. Choisissez un autre dossier. Rien n'a été modifié." "The chosen folder ($folder) is, or contains, the XR Perf Studio sources: installing there would mix the program with the files needed to build it. Choose another folder. Nothing was changed.")
         }
     } elseif ($existing) {
         $folder = $existing
@@ -440,7 +440,7 @@ function Invoke-Setup {
 
     $version = Get-SourceVersion $sourceFolder
     Write-Host ''
-    if ($version) { Write-Host "XR Perf Overlay $version" }
+    if ($version) { Write-Host "XR Perf Studio $version" }
     if ($existing) { Write-Host ((T "Installation existante trouvée : " "Existing installation found: ") + $existing) }
     Write-Host ((T "Dossier d'installation : " "Installation folder: ") + $targetFolder)
 

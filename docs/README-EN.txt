@@ -47,7 +47,7 @@ Start an OpenXR game: the panel appears in the headset.
   Ctrl + Alt + G                     place the captured window in front of you
   Ctrl + Alt + S                     manual report mode: start / stop recording
 
-XRPerfSensors icon near the clock: double-click it (or right-click > Open XR Perf Overlay) to open
+XRPerfSensors icon near the clock: double-click it (or right-click > Open XR Perf Studio) to open
 the program's window. A menu on the left leads to each page:
   - Dashboard: the panel as it appears in the headset, quick switches, the processor, graphics
     card and video memory live, the last session;
@@ -75,7 +75,7 @@ Headset video (Video page): Ctrl+Alt+V (or the hotkey of your choice) starts the
 one eye's image to MP4 (H.264, H.265 or AV1 with the graphics card's encoder, quality of your
 choice), with optional game sound and microphone. Also optional: the panel in the video (in place
 or in a corner), stabilization and a level horizon. With other layers (Pimax NR, OpenXR Toolkit...),
-the recorded image is the one the headset receives. Files in Videos\XR Perf Overlay. "VID" and the
+the recorded image is the one the headset receives. Files in Videos\XR Perf Studio. "VID" and the
 duration show at the top of the panel while recording. OpenXR games (Direct3D 11 and 12) and
 SteamVR games.
 

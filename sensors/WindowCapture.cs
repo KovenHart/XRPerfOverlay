@@ -215,7 +215,7 @@ namespace XRPerfSensors
             bool wanted = hasTarget && (preview || ReaderWants());
             if (!Available)
             {
-                _message = File.Exists(_dllPath) ? Loc.T("Capture impossible : mémoire partagée indisponible.", "Capture impossible: shared memory unavailable.") : Loc.T("XRPerfCapture.dll absente : réinstallez XR Perf Overlay.", "XRPerfCapture.dll is missing: reinstall XR Perf Overlay.");
+                _message = File.Exists(_dllPath) ? Loc.T("Capture impossible : mémoire partagée indisponible.", "Capture impossible: shared memory unavailable.") : Loc.T("XRPerfCapture.dll absente : réinstallez XR Perf Studio.", "XRPerfCapture.dll is missing: reinstall XR Perf Studio.");
                 return;
             }
             if (!hasTarget)
@@ -233,7 +233,7 @@ namespace XRPerfSensors
             }
             if (!Load())
             {
-                _message = Loc.T("XRPerfCapture.dll illisible : réinstallez XR Perf Overlay.", "XRPerfCapture.dll is unreadable: reinstall XR Perf Overlay.");
+                _message = Loc.T("XRPerfCapture.dll illisible : réinstallez XR Perf Studio.", "XRPerfCapture.dll is unreadable: reinstall XR Perf Studio.");
                 return;
             }
             // Fenêtre toujours là et toujours la bonne : gardée ; sinon recherchée de nouveau.

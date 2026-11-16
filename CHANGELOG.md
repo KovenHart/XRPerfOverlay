@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.15.0
+
+- **XR Perf Overlay devient XR Perf Studio** : le logiciel fait bien plus qu'afficher des mesures (vidéo, direct, source OBS, filtres d'image, fenêtre du bureau, rapports). Le nouveau nom apparaît dans l'interface, le menu de l'icône, les rapports, OBS et le paquet (`XRPerfStudio-<version>-win64.zip`). Rien ne change pour une installation existante : mêmes réglages (dossier `%LOCALAPPDATA%\XRPerfOverlay`), même layer OpenXR, même application SteamVR, même source OBS dans les scènes, même dossier des vidéos ; les anciens rapports restent lisibles.
+
 ## 1.14.0
 
 - **Noirs plus profonds** (point noir) et **point blanc**, page Image : corrige le « noir gris » des jeux réglés pour un écran, surtout sur un casque OLED.

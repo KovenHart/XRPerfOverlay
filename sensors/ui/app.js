@@ -439,7 +439,7 @@ window.App = (function () {
   }
 
   function renderAll() {
-    document.title = "XR Perf Overlay";
+    document.title = "XR Perf Studio";
     renderRail();
     renderTopbar();
     renderBanner();
@@ -455,7 +455,7 @@ window.App = (function () {
   function renderRail() {
     const rail = document.getElementById("rail");
     rail.replaceChildren();
-    rail.appendChild(h("div", { class: "brand" }, brandMark(), h("div", { class: "brand-name" }, "XR Perf Overlay", h("span", { text: t("app.sub") }))));
+    rail.appendChild(h("div", { class: "brand" }, brandMark(), h("div", { class: "brand-name" }, "XR Perf Studio", h("span", { text: t("app.sub") }))));
     for (const p of PAGES) {
       if (p.group) { rail.appendChild(h("div", { class: "nav-group", text: t(p.group) })); continue; }
       const item = h("button", { class: "nav-item", type: "button", title: t("nav." + p.id), "aria-current": state.page === p.id ? "page" : null, onclick: () => go(p.id) },

@@ -438,9 +438,9 @@ namespace XRPerfSensors
             _message = "";
             if (!Available)
                 _message = File.Exists(_dllPath) ? Loc.T("Enregistrement impossible : mémoire partagée indisponible.", "Recording impossible: shared memory unavailable.")
-                                                 : Loc.T("XRPerfRecord.dll absente : réinstallez XR Perf Overlay.", "XRPerfRecord.dll is missing: reinstall XR Perf Overlay.");
+                                                 : Loc.T("XRPerfRecord.dll absente : réinstallez XR Perf Studio.", "XRPerfRecord.dll is missing: reinstall XR Perf Studio.");
             else if (!Load())
-                _message = Loc.T("XRPerfRecord.dll illisible : réinstallez XR Perf Overlay.", "XRPerfRecord.dll is unreadable: reinstall XR Perf Overlay.");
+                _message = Loc.T("XRPerfRecord.dll illisible : réinstallez XR Perf Studio.", "XRPerfRecord.dll is unreadable: reinstall XR Perf Studio.");
             else if (_stopping != null && !_stopping.IsCompleted)
                 _message = Loc.T("Le fichier précédent est en cours de finalisation, un instant.", "The previous file is being finalized, one moment.");
             else if (missing != null)

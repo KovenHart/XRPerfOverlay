@@ -22,7 +22,7 @@ endif()
 set(XRPO_VERSION_MAJOR ${CMAKE_MATCH_1})
 set(XRPO_VERSION_MINOR ${CMAKE_MATCH_2})
 set(XRPO_VERSION_PATCH ${CMAKE_MATCH_3})
-message(STATUS "XR Perf Overlay ${XRPO_VERSION}")
+message(STATUS "XR Perf Studio ${XRPO_VERSION}")
 configure_file(src/version_info.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/version_info.h" @ONLY)
 # Filtres d'image : source HLSL (aussi compilée en C++ par les tests) recopiée dans une chaîne C++.
 file(READ src/image_filter_core.hlsli XRPO_IMAGE_FILTER_CORE)

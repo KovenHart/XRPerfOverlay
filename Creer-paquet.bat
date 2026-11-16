@@ -1,6 +1,6 @@
 @echo off
-rem Construit le paquet de distribution de XR Perf Overlay (programme deja compile, sans les sources) :
-rem   release\XRPerfOverlay-<version>-win64.zip
+rem Construit le paquet de distribution de XR Perf Studio (programme deja compile, sans les sources) :
+rem   release\XRPerfStudio-<version>-win64.zip
 rem Il s'installe ensuite sur n'importe quel PC par un double-clic sur Installer.bat, sans Visual Studio
 rem ni SDK .NET. Le numero de version vient du fichier VERSION.
 rem Il faut ici les memes outils que pour build.bat, et un acces a Internet (le runtime .NET inclus
@@ -8,7 +8,7 @@ rem dans le paquet est telecharge par NuGet).
 setlocal
 cd /d "%~dp0"
 echo ============================================================
-echo  XR Perf Overlay - paquet de distribution
+echo  XR Perf Studio - paquet de distribution
 echo ============================================================
 echo.
 set "XRPO_DIST=build\package"

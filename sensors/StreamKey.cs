@@ -57,7 +57,7 @@ namespace XRPerfSensors
                 Marshal.Copy(input, 0, buffer, input.Length);
                 var blobIn = new DATA_BLOB { cbData = input.Length, pbData = buffer };
                 DATA_BLOB blobOut;
-                bool ok = protect ? CryptProtectData(ref blobIn, "XR Perf Overlay", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, CRYPTPROTECT_UI_FORBIDDEN, out blobOut)
+                bool ok = protect ? CryptProtectData(ref blobIn, "XR Perf Studio", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, CRYPTPROTECT_UI_FORBIDDEN, out blobOut)
                                   : CryptUnprotectData(ref blobIn, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, CRYPTPROTECT_UI_FORBIDDEN, out blobOut);
                 if (!ok || blobOut.pbData == IntPtr.Zero) return null;
                 try

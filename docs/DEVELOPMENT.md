@@ -1,8 +1,8 @@
-# XR Perf Overlay: development
+# XR Perf Studio: development
 
 *Français : [DEVELOPPEMENT.md](DEVELOPPEMENT.md)* · [Back to the home page](../README.en.md)
 
-Building from source, building and publishing the package, code layout. To simply use XR Perf Overlay, see the [home page](../README.en.md).
+Building from source, building and publishing the package, code layout. To simply use XR Perf Studio, see the [home page](../README.en.md).
 
 ## The programs
 
@@ -16,7 +16,7 @@ Building from source, building and publishing the package, code layout. To simpl
 
 ## Two ways to get it
 
-- **Distribution package** (`XRPerfOverlay-<version>-win64.zip`, "Releases" page of the repository): the program already built. Nothing else to install: no Visual Studio, no SDK, no .NET runtime (included). Extract the archive, double-click `Installer.bat`. The package's `README-EN.txt` file guides the user.
+- **Distribution package** (`XRPerfStudio-<version>-win64.zip`, "Releases" page of the repository): the program already built. Nothing else to install: no Visual Studio, no SDK, no .NET runtime (included). Extract the archive, double-click `Installer.bat`. The package's `README-EN.txt` file guides the user.
 - **Sources** (this repository): `Installer.bat` builds first, which needs the tools below.
 
 Either way, the PawnIO driver is optional (CPU temperature and clock only).
@@ -51,12 +51,12 @@ Uninstalling: `uninstall.bat` in the installation folder, then delete that folde
 
 **Version number.** It is written in one place only, the `VERSION` file at the root (form `1.2.3`). The build carries it everywhere: the DLL's version resource (file properties, Details tab), XRPerfSensors (window, menu and icon tooltip), the layer's log ("OpenXR instance created" line), the header of each session report, and the `VERSION` file in the installation folder. If the installed DLL and XRPerfSensors don't come from the same version, XRPerfSensors says so at startup.
 
-**Building the package on your PC.** Double-click `Creer-paquet.bat`: it builds (like `build.bat`), publishes XRPerfSensors as self-contained (.NET runtime included; NuGet needs internet to download it), then produces `release\XRPerfOverlay-<version>-win64.zip` and its SHA-256 checksum. The `scripts\package.ps1` script does the work; it checks that the DLL carries the `VERSION` number, that XRPerfSensors is self-contained and that the package contains everything the installer expects.
+**Building the package on your PC.** Double-click `Creer-paquet.bat`: it builds (like `build.bat`), publishes XRPerfSensors as self-contained (.NET runtime included; NuGet needs internet to download it), then produces `release\XRPerfStudio-<version>-win64.zip` and its SHA-256 checksum. The `scripts\package.ps1` script does the work; it checks that the DLL carries the `VERSION` number, that XRPerfSensors is self-contained and that the package contains everything the installer expects.
 
 Package contents:
 
 ```
-XRPerfOverlay-<version>\
+XRPerfStudio-<version>\
   Installer.bat           install or update (nothing to build)
   LISEZ-MOI.txt           user guide in French (README-EN.txt: the same in English)
   README.md, CHANGELOG.md, docs\   home page, changes, guide and screenshots (in French and English)

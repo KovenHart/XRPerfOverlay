@@ -58,7 +58,7 @@ namespace XRPerfSensors
         public string EnableEnvironment;
         /// <summary>Layer qui ne se charge que si sa variable d'activation est définie : l'est-elle ?</summary>
         public bool? EnabledByEnvironment;
-        /// <summary>Inscription de XR Perf Overlay ; <see cref="Current"/> : celle de cette installation.</summary>
+        /// <summary>Inscription de XR Perf Studio ; <see cref="Current"/> : celle de cette installation.</summary>
         public bool Ours;
         public bool Current;
     }

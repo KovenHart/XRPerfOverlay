@@ -144,7 +144,7 @@ assert.ok(!/undefined|null|NaN/.test(text), "texte copié avec une valeur manqua
 
 // Boutons : quelles inscriptions peuvent être activées ou désactivées, et actions jointes aux constats.
 assert.ok(!C.canToggle(OURS), "la layer de cette installation a son propre interrupteur");
-assert.ok(C.canToggle(Object.assign(layer("XR_APILAYER_NOVENDOR_perf_overlay", "D:\\Old\\x.json", { ours: true }), { id: 3 })), "une ancienne inscription de XR Perf Overlay se désactive ici");
+assert.ok(C.canToggle(Object.assign(layer("XR_APILAYER_NOVENDOR_perf_overlay", "D:\\Old\\x.json", { ours: true }), { id: 3 })), "une ancienne inscription de XR Perf Studio se désactive ici");
 assert.ok(!C.canToggle(Object.assign(layer(null, "gone.json", { exists: false, readable: false }), { id: 1 })), "inscription orpheline : pas de bouton");
 assert.ok(!C.canToggle(layer("XR_APILAYER_X_y", "y.json")), "sans numéro, pas de bouton");
 const tk = Object.assign(layer("XR_APILAYER_MBUCCHIA_toolkit", "t.json"), { id: 4 });

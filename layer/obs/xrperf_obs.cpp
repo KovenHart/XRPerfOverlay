@@ -1,6 +1,6 @@
 // xrperf-obs.dll : plugin OBS Studio (30 et plus, Windows 64 bits) qui ajoute la source « XR Perf (casque) ».
 //
-// L'image est celle de la vidéo du casque de XR Perf Overlay (œil cadré, stabilisé, filtres, panneau),
+// L'image est celle de la vidéo du casque de XR Perf Studio (œil cadré, stabilisé, filtres, panneau),
 // préparée par l'enregistreur de XRPerfSensors (layer/src/video_record.cpp) dans une texture Direct3D 11
 // partagée : rien n'est encodé ni ne passe par le processeur. Bloc de mémoire partagée Local\XRPerfOverlay.Obs
 // (ObsShare, layer/src/shared_block.h) :
@@ -111,9 +111,9 @@ obs_properties_t* GetProperties(void*) {
     obs_properties_t* props = obs_properties_create();
     obs_property_t* info = obs_properties_add_text(
         props, "info",
-        French() ? "Image de la vidéo du casque de XR Perf Overlay. Les réglages (œil, format, résolution, stabilisation, panneau, filtres) sont ceux "
+        French() ? "Image de la vidéo du casque de XR Perf Studio. Les réglages (œil, format, résolution, stabilisation, panneau, filtres) sont ceux "
                    "de la page Vidéo de XRPerfSensors, qui doit être ouvert. Le son se prend dans OBS (capture audio de l'application ou du bureau)."
-                 : "Headset video image from XR Perf Overlay. Settings (eye, format, resolution, stabilization, panel, filters) are those of the Video "
+                 : "Headset video image from XR Perf Studio. Settings (eye, format, resolution, stabilization, panel, filters) are those of the Video "
                    "page of XRPerfSensors, which must be running. Sound is captured in OBS (application or desktop audio capture).",
         OBS_TEXT_INFO);
     (void)info;
@@ -199,12 +199,12 @@ bool obs_module_load(void) {
     info.video_render = VideoRender;
     info.icon_type = OBS_ICON_TYPE_GAME_CAPTURE;
     obs_register_source(&info);
-    blog(LOG_INFO, "[xrperf-obs] XR Perf Overlay %s : source \"XR Perf\" disponible.", XRPO_VERSION_TEXT);
+    blog(LOG_INFO, "[xrperf-obs] XR Perf Studio %s : source \"XR Perf\" disponible.", XRPO_VERSION_TEXT);
     return true;
 }
 
-MODULE_EXPORT const char* obs_module_name(void) { return "XR Perf Overlay"; }
+MODULE_EXPORT const char* obs_module_name(void) { return "XR Perf Studio"; }
 
 MODULE_EXPORT const char* obs_module_description(void) {
-    return "Headset video image from XR Perf Overlay (OpenXR and SteamVR games) / Image de la video du casque de XR Perf Overlay.";
+    return "Headset video image from XR Perf Studio (OpenXR and SteamVR games) / Image de la video du casque de XR Perf Studio.";
 }

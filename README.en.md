@@ -1,6 +1,8 @@
-# XR Perf Overlay
+# XR Perf Studio
 
 **🇫🇷 [Version française](README.md)** · 🇬🇧 English
+
+*Formerly XR Perf Overlay.*
 
 A performance panel shown in the headset for every OpenXR game (including games run with UEVR), and also for SteamVR games that don't go through OpenXR (OpenVR):
 
@@ -22,7 +24,7 @@ It uses OpenXR's official mechanism: nothing is injected into the game, no Direc
 
 ## Installation
 
-1. Download `XRPerfOverlay-<version>-win64.zip` from the [latest release](../../releases/latest).
+1. Download `XRPerfStudio-<version>-win64.zip` from the [latest release](../../releases/latest).
 2. Extract the whole archive (right-click, "Extract All").
 3. Double-click **`Installer.bat`**.
    - Windows may show "Windows protected your PC": the program isn't signed. Click "More info", then "Run anyway".

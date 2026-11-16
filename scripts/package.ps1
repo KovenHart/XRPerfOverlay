@@ -1,9 +1,9 @@
-﻿# Construit le paquet de distribution de XR Perf Overlay : le programme déjà compilé, sans les
+﻿# Construit le paquet de distribution de XR Perf Studio : le programme déjà compilé, sans les
 # sources, prêt à être installé par un double-clic sur Installer.bat (sans Visual Studio ni SDK .NET).
 #
-#   release\XRPerfOverlay-<version>\              dossier du paquet
-#   release\XRPerfOverlay-<version>-win64.zip     le même, compressé (à publier)
-#   release\XRPerfOverlay-<version>-win64.zip.sha256
+#   release\XRPerfStudio-<version>\              dossier du paquet
+#   release\XRPerfStudio-<version>-win64.zip     le même, compressé (à publier)
+#   release\XRPerfStudio-<version>-win64.zip.sha256
 #
 # La layer doit déjà être compilée (build.bat, ou CMake dans la compilation automatique de GitHub).
 # XRPerfSensors est publié ici en mode autonome : le runtime .NET est inclus, l'utilisateur n'a rien
@@ -54,8 +54,8 @@ $versionFile = Join-Path $Root 'VERSION'
 if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) { throw "Fichier VERSION introuvable à la racine du projet ($Root)." }
 $version = ([string](Get-Content -LiteralPath $versionFile -TotalCount 1)).Trim()
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Le fichier VERSION doit contenir un numéro de la forme 1.2.3 (lu : « $version »)." }
-$name = "XRPerfOverlay-$version"
-Write-Host "Paquet de XR Perf Overlay $version"
+$name = "XRPerfStudio-$version"
+Write-Host "Paquet de XR Perf Studio $version"
 
 # --- Dossier du paquet -----------------------------------------------------------------------------
 if (-not $LayerDll) { $LayerDll = Join-Path (Join-Path (Join-Path 'build' 'layer') 'Release') "$LayerName.dll" }
@@ -154,7 +154,7 @@ $zip = Join-Path $outFolder "$name-win64.zip"
 if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-# Le dossier XRPerfOverlay-<version> est inclus : l'archive s'extrait dans un dossier à son nom.
+# Le dossier XRPerfStudio-<version> est inclus : l'archive s'extrait dans un dossier à son nom.
 [System.IO.Compression.ZipFile]::CreateFromDirectory($staging, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $true)
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 [System.IO.File]::WriteAllText("$zip.sha256", "$hash  $name-win64.zip`n")

@@ -1,4 +1,4 @@
-# Compilation automatique de XR Perf Overlay sur une machine Windows de GitHub.
+# Compilation automatique de XR Perf Studio sur une machine Windows de GitHub.
 #
 # - À chaque envoi (push) ou demande de fusion (pull request) : compile la layer (MSVC) et
 #   XRPerfSensors, lance les tests, construit le paquet de distribution et le joint au résultat
@@ -40,7 +40,7 @@ jobs:
             throw "L'étiquette $env:GITHUB_REF_NAME ne correspond pas au fichier VERSION ($version) : attendu v$version."
           }
           "version=$version" >> $env:GITHUB_OUTPUT
-          Write-Host "XR Perf Overlay $version"
+          Write-Host "XR Perf Studio $version"
 
       # En-têtes de libobs (OBS Studio 30.0, la plus ancienne version prise en charge) pour la source OBS.
       - name: En-têtes d'OBS Studio
@@ -82,7 +82,7 @@ jobs:
       - name: Paquet joint à l'exécution
         uses: actions/upload-artifact@v6
         with:
-          name: XRPerfOverlay-${{ steps.version.outputs.version }}-win64
+          name: XRPerfStudio-${{ steps.version.outputs.version }}-win64
           path: |
             release/*.zip
             release/*.sha256
@@ -103,5 +103,5 @@ jobs:
         run: |
           $version = '${{ steps.version.outputs.version }}'
           $files = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*.zip' -or $_.Name -like '*.sha256' } | ForEach-Object { $_.FullName })
-          gh release create $env:GITHUB_REF_NAME @files --draft --title "XR Perf Overlay $version" --generate-notes
+          gh release create $env:GITHUB_REF_NAME @files --draft --title "XR Perf Studio $version" --generate-notes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

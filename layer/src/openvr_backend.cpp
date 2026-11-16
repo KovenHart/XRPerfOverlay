@@ -368,7 +368,7 @@ class OpenVrBackend final : public VrBackend {
 
     bool createOverlays() override {
         const char* keys[kOverlays] = {"xrperfoverlay.panel", "xrperfoverlay.watch", "xrperfoverlay.window"};
-        const char* names[kOverlays] = {"XR Perf Overlay", "XR Perf Overlay - montre", "XR Perf Overlay - fenetre"};
+        const char* names[kOverlays] = {"XR Perf Studio", "XR Perf Studio - montre", "XR Perf Studio - fenetre"};
         bool ok = true;
         for (int i = 0; i < kOverlays; ++i) {
             vr::VROverlayHandle_t handle = vr::k_ulOverlayHandleInvalid;

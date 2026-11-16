@@ -1,8 +1,8 @@
-# XR Perf Overlay : développement
+# XR Perf Studio : développement
 
 *English: [DEVELOPMENT.md](DEVELOPMENT.md)* · [Retour à l'accueil](../README.md)
 
-Compiler depuis les sources, construire et publier le paquet, organisation du code. Pour simplement utiliser XR Perf Overlay, voir l'[accueil](../README.md).
+Compiler depuis les sources, construire et publier le paquet, organisation du code. Pour simplement utiliser XR Perf Studio, voir l'[accueil](../README.md).
 
 ## Les programmes
 
@@ -16,7 +16,7 @@ Compiler depuis les sources, construire et publier le paquet, organisation du co
 
 ## Deux façons de l'obtenir
 
-- **Paquet de distribution** (`XRPerfOverlay-<version>-win64.zip`, page « Releases » du dépôt) : le programme déjà compilé. Rien à installer à part lui : ni Visual Studio, ni SDK, ni runtime .NET (inclus). Extraire l'archive, double-cliquer sur `Installer.bat`. Le fichier `LISEZ-MOI.txt` du paquet guide l'utilisateur.
+- **Paquet de distribution** (`XRPerfStudio-<version>-win64.zip`, page « Releases » du dépôt) : le programme déjà compilé. Rien à installer à part lui : ni Visual Studio, ni SDK, ni runtime .NET (inclus). Extraire l'archive, double-cliquer sur `Installer.bat`. Le fichier `LISEZ-MOI.txt` du paquet guide l'utilisateur.
 - **Sources** (ce dépôt) : `Installer.bat` compile d'abord, ce qui demande les outils ci-dessous.
 
 Dans les deux cas, le pilote PawnIO est facultatif (température et fréquence du processeur seulement).
@@ -52,12 +52,12 @@ Désinstallation : `uninstall.bat` dans le dossier d'installation, puis supprime
 
 **Numéro de version.** Il est écrit à un seul endroit, le fichier `VERSION` à la racine (forme `1.2.3`). La compilation le reporte partout : ressource de version de la DLL (propriétés du fichier, onglet Détails), XRPerfSensors (fenêtre, menu et info-bulle de l'icône), journal de la layer (ligne « Instance OpenXR créée »), en-tête de chaque rapport de session, et fichier `VERSION` du dossier d'installation. Si la DLL et XRPerfSensors installés ne viennent pas de la même version, XRPerfSensors le signale au démarrage.
 
-**Construire le paquet sur son PC.** Double-cliquer sur `Creer-paquet.bat` : il compile (comme `build.bat`), publie XRPerfSensors en mode autonome (runtime .NET inclus ; il faut Internet pour que NuGet le télécharge), puis produit `release\XRPerfOverlay-<version>-win64.zip` et son empreinte SHA-256. Le script `scripts\package.ps1` fait le travail ; il vérifie que la DLL porte bien le numéro du fichier `VERSION`, que XRPerfSensors est bien autonome et que le paquet contient tout ce que l'installateur attend.
+**Construire le paquet sur son PC.** Double-cliquer sur `Creer-paquet.bat` : il compile (comme `build.bat`), publie XRPerfSensors en mode autonome (runtime .NET inclus ; il faut Internet pour que NuGet le télécharge), puis produit `release\XRPerfStudio-<version>-win64.zip` et son empreinte SHA-256. Le script `scripts\package.ps1` fait le travail ; il vérifie que la DLL porte bien le numéro du fichier `VERSION`, que XRPerfSensors est bien autonome et que le paquet contient tout ce que l'installateur attend.
 
 Contenu du paquet :
 
 ```
-XRPerfOverlay-<version>\
+XRPerfStudio-<version>\
   Installer.bat           installation ou mise à jour (rien à compiler)
   LISEZ-MOI.txt           guide de l'utilisateur (README-EN.txt : le même en anglais)
   README.md, CHANGELOG.md, docs\   accueil, nouveautés, guide et captures (en français et en anglais)
@@ -157,7 +157,7 @@ sensors/Program.cs            lecture des capteurs et icône de notification
 sensors/XRPerfSensors.ico     icône du programme (fichier .exe, zone de notification, fenêtre du bureau)
 VERSION                       numéro de version (seule source, repris par la DLL, XRPerfSensors et le paquet)
 Installer.bat                 installation en un double-clic (compile d'abord s'il est lancé depuis les sources)
-Creer-paquet.bat              construit le paquet de distribution (release\XRPerfOverlay-<version>-win64.zip)
+Creer-paquet.bat              construit le paquet de distribution (release\XRPerfStudio-<version>-win64.zip)
 scripts/package.ps1           assemblage du paquet (publication autonome de XRPerfSensors, archive, empreinte)
 .github/workflows/build.yml   compilation, tests et paquet automatiques sur GitHub ; brouillon de version sur étiquette
 docs/LISEZ-MOI.txt            guide de l'utilisateur joint au paquet (docs/README-EN.txt : en anglais)

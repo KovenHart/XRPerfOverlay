@@ -75,7 +75,7 @@
   let fullscreen = false;
   let timer = 0;
   const layer = { state: params.get("layer") || "enabled", busy: false, elevated: false };
-  // Ordre des layers (page Configuration) : ?xrorder=fg met OFXR Bridge au-dessus d'XR Perf Overlay.
+  // Ordre des layers (page Configuration) : ?xrorder=fg met OFXR Bridge au-dessus d'XR Perf Studio.
   let xrUndo = null;
   const reply = msg => setTimeout(() => window.App.receive(JSON.parse(JSON.stringify(msg))), 0);
 
@@ -131,7 +131,7 @@
       ],
       layers: [
         layer("XR_APILAYER_NOVENDOR_perf_overlay", "C:\\XRPerfOverlay\\XR_APILAYER_NOVENDOR_perf_overlay.json",
-          { description: "XR Perf Overlay - affichage FPS / CPU / GPU dans le casque", ours: true, current: true }),
+          { description: "XR Perf Studio - affichage FPS / CPU / GPU dans le casque", ours: true, current: true }),
         layer("XR_APILAYER_NOVENDOR_ofxr_bridge", "%USERPROFILE%\\Mods\\OFXR-Bridge\\XR_APILAYER_NOVENDOR_ofxr_bridge.json", { enabled: !issues ? true : true }),
         layer("XR_APILAYER_MBUCCHIA_toolkit", P + "OpenXR-Toolkit\\XR_APILAYER_MBUCCHIA_toolkit.json", issues ? {} : { enabled: false }),
         issues ? layer(null, P + "OpenKneeboard\\OpenKneeboard-OpenXR.json", { exists: false, readable: false, library: null, libraryExists: null }) : null,
@@ -205,7 +205,7 @@
             { id: "1", title: "Chat - Twitch", process: "chrome.exe", selected: true },
             { id: "2", title: "#vr-mods - Discord", process: "Discord.exe" },
             { id: "3", title: "OBS 31.0.2 - Profil : VR", process: "obs64.exe" },
-            { id: "4", title: "XR Perf Overlay", process: "XRPerfSensors.exe" },
+            { id: "4", title: "XR Perf Studio", process: "XRPerfSensors.exe" },
           ] });
           break;
         case "setLayer":

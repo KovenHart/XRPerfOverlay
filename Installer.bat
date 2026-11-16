@@ -1,5 +1,5 @@
 @echo off
-rem XR Perf Overlay - installation ou mise a jour en un double-clic.
+rem XR Perf Studio - installation ou mise a jour en un double-clic.
 rem Deux cas :
 rem   - paquet de distribution (sous-dossier "programme" deja compile) : installation directe ;
 rem   - sources : compile d'abord la layer et le programme de capteurs (meme chose que build.bat).
@@ -9,7 +9,7 @@ rem Options facultatives :  Installer.bat -Target "D:\Dossier"   -AutoStart oui 
 setlocal
 cd /d "%~dp0"
 echo ============================================================
-echo  XR Perf Overlay - installation
+echo  XR Perf Studio - installation
 echo ============================================================
 echo.
 rem Paquet de distribution : le programme est deja compile, rien a compiler.

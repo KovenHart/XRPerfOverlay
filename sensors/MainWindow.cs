@@ -53,7 +53,7 @@ namespace XRPerfSensors
             _app = app;
             _page = page ?? "dashboard";
             _reports = new ReportStore(app.ReportFolders);
-            Text = "XR Perf Overlay";
+            Text = "XR Perf Studio";
             Icon = AppIcon.Load(new Size(32, 32));
             BackColor = Color.FromArgb(14, 17, 22);
             MinimumSize = new Size(760, 540);
@@ -690,7 +690,7 @@ namespace XRPerfSensors
             SendConfig();
         }
 
-        // Activer ou désactiver une layer depuis la page Configuration. Celle de XR Perf Overlay passe par son
+        // Activer ou désactiver une layer depuis la page Configuration. Celle de XR Perf Studio passe par son
         // propre interrupteur ; les autres, par leur inscription dans le registre (jamais créée ni supprimée).
         private async void SetXrLayer(int id, string manifest, bool enabled, string label)
         {

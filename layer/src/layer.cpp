@@ -1,4 +1,4 @@
-// XR Perf Overlay - API layer OpenXR.
+// XR Perf Studio - API layer OpenXR.
 //
 // Principe : le chargeur OpenXR insère cette DLL entre le jeu et le runtime. Nous n'interceptons
 // que six fonctions (création / destruction d'instance et de session, xrWaitFrame, xrBeginFrame,
@@ -799,7 +799,7 @@ XrResult XRAPI_CALL layer_xrCreateApiLayerInstance(const XrInstanceCreateInfo* i
         if (videoOutput) Log("Video : image enregistree en sortie de chaine (apres les layers du dessous).");
         if (imageOutput) Log("Filtres d'image : appliques en sortie de chaine (apres les layers du dessous).");
         const char* application = info ? info->applicationInfo.applicationName : "?";
-        Log("Instance OpenXR creee pour \"%s\" (%s) : overlay %s (XR Perf Overlay %s).", application, Narrow(exe).c_str(),
+        Log("Instance OpenXR creee pour \"%s\" (%s) : overlay %s (XR Perf Studio %s).", application, Narrow(exe).c_str(),
             excluded ? "desactive (processus exclu dans le .ini)" : (hooksUsable ? "pret" : "desactive (fonctions OpenXR manquantes)"), XRPO_VERSION);
     } catch (...) {
         g_active = false;

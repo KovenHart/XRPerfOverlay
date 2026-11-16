@@ -358,8 +358,8 @@ namespace XRPerfSensors
             _iniPath = Path.Combine(installFolder, "XRPerfOverlay.ini");
             if (!File.Exists(_layerDll))
             {
-                _settingsUnavailable = Loc.T("XRPerfSensors n'est pas dans le sous-dossier « sensors » d'une installation de XR Perf Overlay (DLL introuvable dans ",
-                                             "XRPerfSensors is not in the « sensors » subfolder of an XR Perf Overlay installation (DLL not found in ") + installFolder + ").";
+                _settingsUnavailable = Loc.T("XRPerfSensors n'est pas dans le sous-dossier « sensors » d'une installation de XR Perf Studio (DLL introuvable dans ",
+                                             "XRPerfSensors is not in the « sensors » subfolder of an XR Perf Studio installation (DLL not found in ") + installFolder + ").";
             }
             _overlay = _settingsUnavailable == null ? OverlaySettings.Load(_iniPath) : new OverlaySettings();
             // La langue choisie ici vaut aussi pour le panneau et les rapports : le .ini la reçoit si elle diffère.
@@ -915,7 +915,7 @@ namespace XRPerfSensors
             var menu = new ContextMenuStrip();
             menu.Items.Add(new ToolStripMenuItem("XRPerfSensors " + AppVersion.Text) { Enabled = false });
             menu.Items.Add(new ToolStripSeparator());
-            var open = new ToolStripMenuItem(Loc.T("Ouvrir XR Perf Overlay", "Open XR Perf Overlay"), null, (s, e) => ShowMain("dashboard"));
+            var open = new ToolStripMenuItem(Loc.T("Ouvrir XR Perf Studio", "Open XR Perf Studio"), null, (s, e) => ShowMain("dashboard"));
             open.Font = new Font(open.Font, FontStyle.Bold);
             menu.Items.Add(open);
             menu.Items.Add(Loc.T("Rapports de session", "Session reports"), null, (s, e) => ShowMain("reports"));

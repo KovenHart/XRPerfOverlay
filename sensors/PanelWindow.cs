@@ -1,7 +1,7 @@
 // Fenêtre du bureau qui montre le même panneau que dans le casque.
 //
 // But : enregistrer ou diffuser avec OBS sans passer par un miroir OpenXR. On capture le miroir du
-// jeu comme d'habitude, et on ajoute cette fenêtre ("XR Perf Overlay") comme seconde source.
+// jeu comme d'habitude, et on ajoute cette fenêtre ("XR Perf Studio") comme seconde source.
 // L'image vient de la layer, par une mémoire partagée qu'elle ne remplit que si cette fenêtre est
 // affichée : fenêtre fermée, le jeu ne fait aucun travail supplémentaire.
 
@@ -398,7 +398,7 @@ namespace XRPerfSensors
             }
             else
             {
-                TextRenderer.DrawText(g, Loc.T("XR Perf Overlay - en attente d'un jeu VR...", "XR Perf Overlay - waiting for a VR game..."), Font, new Rectangle(Point.Empty, ClientSize),
+                TextRenderer.DrawText(g, Loc.T("XR Perf Studio - en attente d'un jeu VR...", "XR Perf Studio - waiting for a VR game..."), Font, new Rectangle(Point.Empty, ClientSize),
                     Color.FromArgb(142, 152, 170),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
             }
@@ -575,7 +575,7 @@ namespace XRPerfSensors
         public bool VideoMic;
         public string VideoRenderDevice = "";  // identifiant Windows de la sortie audio enregistrée ("" : celle par défaut)
         public string VideoCaptureDevice = ""; // identifiant du micro ("" : celui par défaut)
-        public string VideoFolder = "";        // "" : Vidéos\XR Perf Overlay
+        public string VideoFolder = "";        // "" : Vidéos\XR Perf Studio
         public int VideoKey = 'V';             // Ctrl+Alt+V ; 0 = sans raccourci
         public int VideoMods = ModCtrl | ModAlt;
 
