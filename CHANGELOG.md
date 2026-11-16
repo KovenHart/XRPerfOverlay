@@ -7,6 +7,8 @@ Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier
 ## 1.15.0
 
 - **XR Perf Overlay devient XR Perf Studio** : le logiciel fait bien plus qu'afficher des mesures (vidéo, direct, source OBS, filtres d'image, fenêtre du bureau, rapports). Le nouveau nom apparaît dans l'interface, le menu de l'icône, les rapports, OBS et le paquet (`XRPerfStudio-<version>-win64.zip`). Rien ne change pour une installation existante : mêmes réglages (dossier `%LOCALAPPDATA%\XRPerfOverlay`), même layer OpenXR, même application SteamVR, même source OBS dans les scènes, même dossier des vidéos ; les anciens rapports restent lisibles.
+- **Captures d'écran du casque** : `Ctrl+Alt+C` (touche au choix), le bouton **Capturer** de la page Vidéo ou le menu de l'icône. Même image que la vidéo (œil, cadrage, panneau, menus du jeu, filtres), en **PNG** ou **JPEG** (qualité réglable), de **1080p à 2880p**, dans `Images\XR Perf Studio` (dossier au choix). « PHOTO » s'affiche un instant dans le casque. Pendant une vidéo ou un direct, la photo est prise dans l'image en cours. Jeux OpenXR et SteamVR.
+- **Raccourcis sur le Bureau et dans le menu Démarrer**, créés à la première installation ; la page Interface les ajoute ou les retire. Lancé alors que XRPerfSensors tourne déjà, le raccourci ouvre sa fenêtre.
 
 ## 1.14.0
 

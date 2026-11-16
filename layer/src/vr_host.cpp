@@ -480,6 +480,7 @@ void VrHost::sample(double now) {
     data.recordState = m_reportControl.indicator(now, m_recording && m_recordManual, m_recordStart, data.recordSeconds);
     data.videoSeconds = m_vr.videoSeconds();
     data.videoLive = data.videoSeconds >= 0.0 && m_vr.videoLive();
+    data.photo = m_vr.photoFlash();
     // Rapport écrit par la layer (jeu OpenXR en Vulkan ou OpenGL) : son témoin, sur le panneau d'XRPerfVR.
     if (!m_session.report) {
         int state = 0;

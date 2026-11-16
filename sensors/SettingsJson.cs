@@ -104,6 +104,9 @@ namespace XRPerfSensors
             w.WriteNumber("CropRight", d.CropRight);
             w.WriteNumber("CropBottom", d.CropBottom);
             w.WriteString("Language", d.Language);
+            // Raccourcis : état réel (fichiers présents), pas un réglage enregistré.
+            w.WriteBoolean("ShortcutDesktop", Shortcuts.OnDesktop);
+            w.WriteBoolean("ShortcutStart", Shortcuts.InStartMenu);
             w.WriteString("UiTheme", d.UiTheme);
             w.WriteString("UiBackground", d.UiBackground);
             w.WriteString("UiText", d.UiText);
@@ -131,6 +134,11 @@ namespace XRPerfSensors
             w.WriteString("VideoCaptureDevice", d.VideoCaptureDevice);
             w.WriteString("VideoFolder", d.VideoFolderOrDefault);
             w.WriteNumber("VideoHotkey", d.VideoKey == 0 ? 0 : (d.VideoMods << 16) | d.VideoKey);  // modificateurs << 16 | touche
+            w.WriteString("SnapFormat", d.SnapFormat);
+            w.WriteNumber("SnapQuality", d.SnapQuality);
+            w.WriteNumber("SnapHeight", d.SnapHeight);
+            w.WriteString("SnapFolder", d.SnapFolderOrDefault);
+            w.WriteNumber("SnapHotkey", d.SnapKey == 0 ? 0 : (d.SnapMods << 16) | d.SnapKey);
             w.WriteString("VideoTarget", d.VideoTarget);
             w.WriteString("StreamService", d.StreamService);
             w.WriteNumber("StreamFps", d.StreamFps);
@@ -178,7 +186,7 @@ namespace XRPerfSensors
         }
 
         /// <summary>Applique un réglage du casque. Retourne false si la clé ou la valeur ne convient pas.</summary>
-        public static bool ApplyOverlay(OverlaySettings o, string key, JsonElement v, int videoHotkey = 0)
+        public static bool ApplyOverlay(OverlaySettings o, string key, JsonElement v, int videoHotkey = 0, int snapHotkey = 0)
         {
             // Raccourci du casque : valide, et pris ni par un autre raccourci du casque ni par celui de la vidéo.
             if (key != null && key.StartsWith("Hotkey.", StringComparison.Ordinal))
@@ -186,7 +194,7 @@ namespace XRPerfSensors
                 int slot = Array.IndexOf(OverlaySettings.HotkeyNames, key.Substring(7));
                 if (slot < 0 || !Int(v, 0, 0xFFFFF, out int raw)) return false;
                 int combo = OverlaySettings.NormalizeHotkey(raw);
-                if (combo < 0 || (combo != 0 && (o.HotkeyTaken(combo, slot) || combo == videoHotkey))) return false;
+                if (combo < 0 || (combo != 0 && (o.HotkeyTaken(combo, slot) || combo == videoHotkey || combo == snapHotkey))) return false;
                 o.Hotkeys[slot] = combo;
                 return true;
             }
@@ -311,6 +319,10 @@ namespace XRPerfSensors
             switch (key)
             {
                 case "DesktopPanel": if (!Bool(v, out b)) return Change.None; d.DesktopPanel = b; return Change.Mirror;
+                case "ShortcutDesktop": case "ShortcutStart":
+                    if (!Bool(v, out b)) return Change.None;
+                    Shortcuts.Set(key == "ShortcutDesktop", b);
+                    return Change.None;  // rien à enregistrer : l'état est celui des fichiers
                 case "TopMost": if (!Bool(v, out b)) return Change.None; d.TopMost = b; return Change.Mirror;
                 case "Scale": if (!Int(v, Settings.MinScale, Settings.MaxScale, out i)) return Change.None; d.Scale = i; return Change.Mirror;
                 case "Opacity": if (!Int(v, Settings.MinOpacity, 100, out i)) return Change.None; d.Opacity = i; return Change.Mirror;
@@ -370,9 +382,20 @@ namespace XRPerfSensors
                 case "VideoHotkey":
                     if (!Int(v, 0, 0xFFFFF, out i) || !Settings.ValidVideoHotkey(i >> 16, i & 0xFFFF)) return Change.None;
                     if (i != 0 && headsetHotkeys != null && Array.IndexOf(headsetHotkeys, i) >= 0) return Change.None;  // pris par le casque
+                    if (i != 0 && d.SnapKey != 0 && i == ((d.SnapMods << 16) | d.SnapKey)) return Change.None;      // pris par les captures
                     d.VideoKey = i & 0xFFFF;
                     if (d.VideoKey != 0) d.VideoMods = i >> 16;
                     return Change.Video;
+                case "SnapHotkey":
+                    if (!Int(v, 0, 0xFFFFF, out i) || !Settings.ValidVideoHotkey(i >> 16, i & 0xFFFF)) return Change.None;
+                    if (i != 0 && headsetHotkeys != null && Array.IndexOf(headsetHotkeys, i) >= 0) return Change.None;
+                    if (i != 0 && d.VideoKey != 0 && i == ((d.VideoMods << 16) | d.VideoKey)) return Change.None;
+                    d.SnapKey = i & 0xFFFF;
+                    if (d.SnapKey != 0) d.SnapMods = i >> 16;
+                    return Change.Video;
+                case "SnapFormat": if (Array.IndexOf(Settings.SnapFormats, text) < 0) return Change.None; d.SnapFormat = text; return Change.Video;
+                case "SnapQuality": if (!Int(v, Settings.MinSnapQuality, 100, out i)) return Change.None; d.SnapQuality = i; return Change.Video;
+                case "SnapHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.SnapHeights, i) < 0) return Change.None; d.SnapHeight = i; return Change.Video;
             }
             return Change.None;
         }

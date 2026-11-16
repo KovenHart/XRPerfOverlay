@@ -27,6 +27,8 @@ Le dossier d'installation est celui de l'installation existante s'il y en a une 
 
 Une fois l'installation faite, le dossier extrait (et l'archive) peuvent être supprimés. Seule exception : si l'archive a été extraite à l'emplacement même de l'installation par défaut (`C:\XRPerfOverlay`), le programme est rangé dans son sous-dossier `dist\` et l'installateur le signale ; il faut alors garder ce dossier.
 
+À la première installation, un raccourci **XR Perf Studio** est ajouté sur le Bureau et dans le menu Démarrer ; il ouvre la fenêtre de XRPerfSensors (ou la ramène si le programme tourne déjà). La page Interface les ajoute ou les retire ; une mise à jour ne recrée pas ceux que vous avez retirés, et `uninstall.bat` les supprime.
+
 Options, depuis une invite de commandes : `Installer.bat -Target "D:\Outils\XRPerfOverlay"` pour choisir le dossier (sans `\` à la fin ; les réglages d'une installation existante y sont repris), `-AutoStart oui` ou `-AutoStart non` pour ne pas avoir la question.
 
 ## Utilisation
@@ -236,6 +238,20 @@ XRPerfSensors peut filmer ce que vous voyez dans le casque, sans OBS : l'image d
 **D'où vient l'image.** Dans un jeu OpenXR (Direct3D 11 ou 12), la layer copie l'image de l'œil au moment où elle part vers le runtime. Si d'autres layers sont placées sous XR Perf Studio (Pimax NR et son DLSS, OpenXR Toolkit...), **Image enregistrée** choisit laquelle : *Celle du casque* (par défaut), après leur traitement, telle que le runtime la reçoit (la layer ajoute pour cela un maillon tout en bas de la chaîne OpenXR) ; *Celle du jeu*, avant elles (`source=game` dans la section `[video]`). Le choix vaut au prochain lancement du jeu. C'est l'image du jeu, sans ce que le runtime ajoute par-dessus ; l'enregistreur y remet le panneau si vous le demandez (voir plus haut), à partir de son image fournie par la layer. Avec un rendu fovéal (Quad-Views), c'est l'image large de l'œil, moins nette au centre que dans le casque. Dans un jeu SteamVR (OpenVR), XRPerfVR prend l'image miroir de SteamVR, qui contient aussi les calques (le panneau compris). La copie reste dans la carte graphique ; l'enregistreur la recadre, la convertit et l'encode, toujours sur la carte graphique (NVENC chez NVIDIA, AMF chez AMD, Quick Sync chez Intel), puce à part du rendu. Le coût pour le jeu est une copie de l'image de l'œil enregistré par image vidéo (de l'ordre de 0,1 ms sur une carte haut de gamme, quelques dixièmes sur une carte plus modeste), et rien du tout hors enregistrement. Pendant l'enregistrement, la copie et l'enregistreur occupent aussi de la mémoire vidéo : quelques centaines de Mo, davantage en 4K.
 
 **Désactiver.** L'interrupteur « Enregistrement vidéo » de la page Vidéo (ou `capture=0` dans la section `[video]` de `XRPerfOverlay.ini`) libère le raccourci et, au prochain lancement d'un jeu, la layer ne suit plus les images des jeux OpenXR.
+
+## Captures d'écran
+
+Une photo de ce que vous voyez dans le casque, avec exactement la même image que la vidéo : œil, format, cadrage, panneau, menus du jeu et filtres d'image de la page Vidéo. Jeux OpenXR (par la layer) et SteamVR (par XRPerfVR).
+
+**Prendre une capture.** `Ctrl+Alt+C` par défaut (au choix dans la page Vidéo ou Raccourcis), le bouton **Capturer** de la page Vidéo, ou « Capture d'écran du casque » dans le menu de l'icône. Le casque affiche **PHOTO** un instant en haut du panneau, et la fenêtre de XRPerfSensors le nom du fichier. Hors enregistrement, l'enregistreur se lance pour cette seule photo (une fraction de seconde, sans son ni fichier vidéo) puis s'arrête ; sans jeu VR en cours, la capture est abandonnée au bout de quelques secondes. Pendant une vidéo, un direct ou l'image pour OBS, la photo est prise dans l'image en cours, sans rien interrompre.
+
+**Réglages** (groupe *Captures d'écran* de la page Vidéo) :
+
+- **Format** : *PNG*, sans perte (fichiers de plusieurs Mo), ou *JPEG*, bien plus léger, avec sa **qualité** (50 à 100 %, 90 % par défaut).
+- **Résolution** : 1080p, 1440p, 2160p (4K, par défaut) ou 2880p (5K) ; la largeur suit le format d'image (16:9, 4:3, carré). Elle est limitée à l'image de l'œil, et pendant une vidéo ou un direct à leur résolution.
+- **Dossier** : `Images\XR Perf Studio` par défaut ; fichiers nommés d'après le jeu et l'heure (`GothicRemake-Win64-Shipping 2026-11-16 21-14-03.png`).
+
+**Désactiver.** Retirer le raccourci (bouton *Retirer*) ; l'interrupteur « Enregistrement vidéo » coupe aussi les captures.
 
 ## Source OBS (streaming)
 

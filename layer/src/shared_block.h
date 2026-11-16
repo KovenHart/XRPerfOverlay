@@ -286,7 +286,8 @@ struct VideoShareHeader {
     uint32_t panelWidth;         // 680 : taille de l'image du panneau (0 : pas d'image)
     uint32_t panelHeight;        // 684
     uint32_t recordKind;         // 688 : 0 fichier, 1 direct (Twitch, YouTube) : témoin VID ou LIVE du panneau
-    uint32_t reserved2[3];       // 692
+    uint32_t snapshotCount;      // 692 : captures d'écran écrites (le panneau montre PHOTO un instant)
+    uint32_t reserved2[2];       // 696
     // --- Écrans plats du jeu (version 5) ---------------------------------------------------------
     VideoLayerTexture layerTextures[kVideoLayers];           // 704
     VideoLayerInfo layers[kVideoSlots][kVideoLayers];        // 832

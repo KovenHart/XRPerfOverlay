@@ -27,6 +27,8 @@ The installation folder is the existing installation's, if there is one (the one
 
 Once installed, the extracted folder (and the archive) can be deleted. One exception: if the archive was extracted right where the default installation goes (`C:\XRPerfOverlay`), the program is placed in its `dist\` subfolder and the installer says so; that folder must then be kept.
 
+On first installation, an **XR Perf Studio** shortcut is added to the Desktop and the Start menu; it opens the XRPerfSensors window (or brings it back if the program is already running). The Interface page adds or removes them; an update does not recreate the ones you removed, and `uninstall.bat` deletes them.
+
 Options, from a command prompt: `Installer.bat -Target "D:\Tools\XRPerfOverlay"` to choose the folder (no trailing `\`; an existing installation's settings are carried over), `-AutoStart oui` or `-AutoStart non` (`yes` / `no` work too) to skip the question.
 
 ## Usage
@@ -236,6 +238,20 @@ XRPerfSensors can record what you see in the headset, without OBS: one eye's ima
 **Where the image comes from.** In an OpenXR game (Direct3D 11 or 12), the layer copies the eye's image when it leaves for the runtime. If other layers sit below XR Perf Studio (Pimax NR and its DLSS, OpenXR Toolkit...), **Recorded image** picks which one: *The headset's* (default), after their processing, as the runtime receives it (the layer adds a link at the very bottom of the OpenXR chain for this); *The game's*, before them (`source=game` in the `[video]` section). The choice applies from the next game launch. It is the game's image, without what the runtime adds on top; the recorder puts the panel back if you ask for it (see above), from its image provided by the layer. With foveated rendering (Quad-Views), it is the eye's wide image, less sharp in the center than in the headset. In a SteamVR (OpenVR) game, XRPerfVR takes SteamVR's mirror image, which also contains overlays (the panel included). The copy stays on the graphics card; the recorder crops, converts and encodes it, still on the graphics card (NVENC on NVIDIA, AMF on AMD, Quick Sync on Intel), a chip separate from rendering. The cost for the game is one copy of the recorded eye's image per video frame (around 0.1 ms on a high-end card, a few tenths on a more modest one), and nothing at all when not recording. While recording, the copy and the recorder also use video memory: a few hundred MB, more in 4K.
 
 **Turning it off.** The "Video recording" switch on the Video page (or `capture=0` in the `[video]` section of `XRPerfOverlay.ini`) releases the hotkey and, from the next game launch, the layer no longer follows the images of OpenXR games.
+
+## Screenshots
+
+A photo of what you see in the headset, with exactly the same image as the video: eye, aspect ratio, framing, panel, game menus and image filters from the Video page. OpenXR games (through the layer) and SteamVR games (through XRPerfVR).
+
+**Taking a screenshot.** `Ctrl+Alt+C` by default (any combination on the Video or Hotkeys page), the **Capture** button on the Video page, or "Headset screenshot" in the tray icon menu. The headset shows **PHOTO** for a moment at the top of the panel, and the XRPerfSensors window shows the file name. When not recording, the recorder starts for this one photo (a fraction of a second, no sound or video file) then stops; with no VR game running, the screenshot is abandoned after a few seconds. During a video, a live stream or the OBS image, the photo is taken from the current image, without interrupting anything.
+
+**Settings** (*Screenshots* group of the Video page):
+
+- **Format**: *PNG*, lossless (files of several MB), or *JPEG*, much lighter, with its **quality** (50 to 100%, 90% by default).
+- **Resolution**: 1080p, 1440p, 2160p (4K, default) or 2880p (5K); the width follows the aspect ratio (16:9, 4:3, square). It is limited to the eye image, and during a video or a live stream to their resolution.
+- **Folder**: `Pictures\XR Perf Studio` by default; files named after the game and the time (`GothicRemake-Win64-Shipping 2026-11-16 21-14-03.png`).
+
+**Turning it off.** Remove the hotkey (*Remove* button); the "Video recording" switch also turns screenshots off.
 
 ## OBS source (streaming)
 

@@ -991,6 +991,10 @@ static void testReportControl(const std::string& dir) {
     panel.render(d, 0.82f);
     writePpm(panel, dir + "/panel_live.ppm", 96, 128, 112, Panel::contentHeight(d));
     d.videoLive = false;
+    d.videoSeconds = -1.0; d.photo = true;
+    panel.render(d, 0.82f);
+    writePpm(panel, dir + "/panel_photo.ppm", 96, 128, 112, Panel::contentHeight(d));
+    d.photo = false;
     std::printf("tests des rapports manuels : OK\n");
 }
 

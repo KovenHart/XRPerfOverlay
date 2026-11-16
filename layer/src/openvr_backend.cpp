@@ -311,6 +311,7 @@ class OpenVrBackend final : public VrBackend {
 
     double videoSeconds() override { return m_video ? m_video->recordingSeconds(&m_videoLiveFlag) : -1.0; }
     bool videoLive() override { return m_videoLiveFlag; }
+    bool photoFlash() override { return m_video && m_video->photoFlash(); }
 
     bool videoBusy() override { return m_videoBusy; }
 

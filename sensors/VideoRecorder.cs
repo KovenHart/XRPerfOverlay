@@ -67,6 +67,19 @@ namespace XRPerfSensors
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Stream2Url;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)] public byte[] Stream2Key;
             public int ImageBlack, ImageWhite, ImageClarity;  // point noir, point blanc, clarté
+            // Capture d'écran seule (Encode = 3).
+            public uint SnapFormat;       // 0 PNG, 1 JPEG
+            public uint SnapQuality;      // JPEG, 50 à 100
+            public uint SnapHeight;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string SnapPath;  // dossier finissant par \
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct XrprSnapshotRequest
+        {
+            public uint Size;
+            public uint Format, Quality, Height;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Path;
         }
 
         // États du direct (StreamState, layer/src/rtmp.h).
@@ -92,6 +105,9 @@ namespace XRPerfSensors
             public uint StreamDropped;    // images perdues faute de débit
             public uint StreamReconnects;
             public uint Stream2State, Stream2Kbps, Stream2Dropped, Stream2Reconnects;  // seconde sortie (les deux services)
+            public uint Snapshots;        // captures d'écran écrites depuis le départ
+            public uint SnapshotFailures;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string Snapshot;  // dernière écrite
         }
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -104,6 +120,8 @@ namespace XRPerfSensors
         private delegate void StatusFn(out Status status);
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int DevicesFn(int capture, IntPtr buffer, int chars);
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate int SnapshotFn(ref XrprSnapshotRequest request);
 
         private readonly string _dllPath;
         private bool _loadTried;
@@ -112,6 +130,7 @@ namespace XRPerfSensors
         private StopFn _stop;
         private StatusFn _status;
         private DevicesFn _devices;
+        private SnapshotFn _snapshot;          // null : bibliothèque d'avant les captures d'écran
         private IntPtr _mapping, _view;
         private volatile int _codecs = -1;   // encodeurs matériels présents (bits : H.264, HEVC, AV1) ; -1 : pas encore connu
         private Task _stopping;
@@ -328,6 +347,8 @@ namespace XRPerfSensors
                     _stop = Marshal.GetDelegateForFunctionPointer<StopFn>(NativeLibrary.GetExport(library, "XrprStop"));
                     _status = Marshal.GetDelegateForFunctionPointer<StatusFn>(NativeLibrary.GetExport(library, "XrprGetStatus"));
                     _devices = Marshal.GetDelegateForFunctionPointer<DevicesFn>(NativeLibrary.GetExport(library, "XrprListDevices"));
+                    if (NativeLibrary.TryGetExport(library, "XrprSnapshot", out IntPtr snap))
+                        _snapshot = Marshal.GetDelegateForFunctionPointer<SnapshotFn>(snap);
                 }
                 catch (Exception)
                 {
@@ -350,7 +371,10 @@ namespace XRPerfSensors
                 {
                 }
             }
-            if (_obsOnly) return _lastRecording;  // image pour OBS : l'état affiché reste celui du dernier enregistrement
+            NoteSnapshots(status);
+            if (_snapOnly && status.State == StateStopped) _snapOnly = false;
+            // Image pour OBS, capture d'écran seule : l'état affiché reste celui du dernier enregistrement.
+            if (_obsOnly || _snapOnly) return _lastRecording;
             if (_stopping != null && !_stopping.IsCompleted && status.State == StateStopped) status.State = StateFinishing;
             _lastRecording = status;
             _lastRecording.State = StateStopped;
@@ -374,7 +398,7 @@ namespace XRPerfSensors
         public bool Streaming { get { return _streaming; } }
 
         /// <summary>Un enregistrement est en cours (pas l'image pour OBS seule).</summary>
-        public bool Busy { get { return !_obsOnly && Current().State != StateStopped; } }
+        public bool Busy { get { return !_obsOnly && !_snapOnly && Current().State != StateStopped; } }
 
         /// <summary>L'enregistreur tourne pour OBS seulement.</summary>
         public bool ObsOnlyRunning { get { return _obsOnly && NativeState() != StateStopped; } }
@@ -412,6 +436,7 @@ namespace XRPerfSensors
                 result = -1;
             }
             if (result != 0) return "refused " + result;
+            _seenSnaps = _seenSnapFails = 0;
             _obsOnly = true;
             return null;
         }
@@ -435,6 +460,7 @@ namespace XRPerfSensors
                 if (_codecs >= 0 && (_codecs & CodecBit(s.StreamCodecFor(targets[i]))) == 0 && noEncoder == null) noEncoder = s.StreamCodecFor(targets[i]);
             }
             StopObsOnly();  // l'image pour OBS seule laisse la place à l'enregistrement (qui la donne aussi)
+            WaitSnapshotOnly();
             _message = "";
             if (!Available)
                 _message = File.Exists(_dllPath) ? Loc.T("Enregistrement impossible : mémoire partagée indisponible.", "Recording impossible: shared memory unavailable.")
@@ -494,7 +520,7 @@ namespace XRPerfSensors
             {
                 result = -1;
             }
-            if (result == 0) return null;
+            if (result == 0) { _seenSnaps = _seenSnapFails = 0; return null; }
             _message = result == 1 ? Loc.T("Un enregistrement est déjà en cours.", "A recording is already running.")
                                    : Loc.T("Enregistrement impossible (réglages refusés).", "Recording impossible (settings rejected).");
             return _message;
@@ -552,6 +578,163 @@ namespace XRPerfSensors
             return options;
         }
 
+        // --- Captures d'écran -----------------------------------------------------------------------------
+        // Même image que la vidéo. Enregistreur en marche (vidéo, direct, image pour OBS) : la photo est prise
+        // dans l'image en cours. Sinon, il est lancé pour cette seule photo (Encode = 3, sans fichier vidéo
+        // ni son) et s'arrête de lui-même une fois le fichier écrit.
+
+        private bool _snapOnly;                 // l'enregistreur tourne pour une capture seule
+        private long _snapOnlyStarted;
+        private uint _seenSnaps, _seenSnapFails; // compteurs de l'enregistreur déjà vus (remis à zéro à chaque départ)
+        private const int SnapshotOnlyTimeoutMs = 6000;
+
+        /// <summary>Captures écrites et ratées depuis le lancement de XRPerfSensors ; dernier fichier écrit.</summary>
+        public int SnapshotsTaken { get; private set; }
+        public int SnapshotsFailed { get; private set; }
+        public string LastSnapshot { get; private set; } = "";
+
+        /// <summary>Appelé (fil de l'interface) pour chaque capture : réussie (fichier) ou ratée (raison).</summary>
+        public event Action<bool, string> SnapshotDone;
+
+        /// <summary>La bibliothèque sait prendre des captures (1.15 et plus).</summary>
+        public bool SnapshotSupported { get { return Available && Load() && _snapshot != null; } }
+
+        /// <summary>Prend une capture d'écran. Null : demandée (le résultat vient par SnapshotDone) ; sinon la raison du refus.</summary>
+        public string Snapshot(Settings s, OverlaySettings image)
+        {
+            if (!Available || !Load()) return Loc.T("XRPerfRecord.dll absente : réinstallez XR Perf Studio.", "XRPerfRecord.dll is missing: reinstall XR Perf Studio.");
+            if (_snapshot == null) return Loc.T("XRPerfRecord.dll trop ancienne : réinstallez XR Perf Studio.", "XRPerfRecord.dll is too old: reinstall XR Perf Studio.");
+            if (_snapOnly) return Loc.T("Capture d'écran déjà en cours, un instant.", "Screenshot already in progress, one moment.");
+            string folder = s.SnapFolderOrDefault.TrimEnd('\\') + "\\";
+            uint format = s.SnapFormat == "jpeg" ? 1u : 0u;
+            if (NativeState() != StateStopped)
+            {
+                var request = new XrprSnapshotRequest
+                {
+                    Size = (uint)Marshal.SizeOf<XrprSnapshotRequest>(),
+                    Format = format,
+                    Quality = (uint)s.SnapQuality,
+                    Height = (uint)s.SnapHeight,
+                    Path = folder,
+                };
+                int accepted;
+                try
+                {
+                    accepted = _snapshot(ref request);
+                }
+                catch (Exception)
+                {
+                    accepted = 0;
+                }
+                return accepted == 1 ? null : Loc.T("Capture d'écran refusée par l'enregistreur.", "Screenshot refused by the recorder.");
+            }
+            if (_stopping != null && !_stopping.IsCompleted)
+                return Loc.T("Le fichier précédent est en cours de finalisation, un instant.", "The previous file is being finalized, one moment.");
+            XrprOptions options = Options(s, image);
+            options.Encode = 3;
+            options.Obs = 0;
+            options.Fps = 30;
+            options.Height = (uint)s.SnapHeight;
+            options.GameAudio = options.MicAudio = 0;
+            options.StabilizeSeconds = 0f;  // pas d'historique : la caméra suit le casque
+            options.SnapFormat = format;
+            options.SnapQuality = (uint)s.SnapQuality;
+            options.SnapHeight = (uint)s.SnapHeight;
+            options.SnapPath = folder;
+            int result;
+            try
+            {
+                result = _start(_view, ShareSize, ref options);
+            }
+            catch (Exception)
+            {
+                result = -1;
+            }
+            if (result != 0) return Loc.T("Capture d'écran impossible (réglages refusés).", "Screenshot impossible (settings rejected).");
+            _seenSnaps = _seenSnapFails = 0;
+            _snapOnly = true;
+            _snapOnlyStarted = Environment.TickCount64;
+            return null;
+        }
+
+        /// <summary>
+        /// À appeler régulièrement (fil de l'interface) : signale les captures écrites ou ratées, et arrête une
+        /// capture seule qui attend un jeu VR depuis trop longtemps.
+        /// </summary>
+        public void PollSnapshots()
+        {
+            if (_status == null) return;
+            var status = new Status();
+            try
+            {
+                _status(out status);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+            NoteSnapshots(status);
+            if (!_snapOnly) return;
+            if (status.State == StateStopped)
+            {
+                _snapOnly = false;
+                return;
+            }
+            if (Environment.TickCount64 - _snapOnlyStarted > SnapshotOnlyTimeoutMs)
+            {
+                try
+                {
+                    _stop?.Invoke();
+                }
+                catch (Exception)
+                {
+                }
+                _snapOnly = false;
+                SnapshotsFailed++;
+                SnapshotDone?.Invoke(false, Loc.T("Capture d'écran impossible : aucun jeu VR (OpenXR ou SteamVR) en cours.",
+                                                  "Screenshot impossible: no VR game (OpenXR or SteamVR) running."));
+            }
+        }
+
+        // Nouveaux compteurs de l'enregistreur : captures écrites ou ratées.
+        private void NoteSnapshots(Status status)
+        {
+            if (status.Snapshots < _seenSnaps || status.SnapshotFailures < _seenSnapFails) _seenSnaps = _seenSnapFails = 0;  // nouveau départ
+            while (_seenSnaps < status.Snapshots)
+            {
+                _seenSnaps++;
+                SnapshotsTaken++;
+                LastSnapshot = status.Snapshot ?? "";
+                SnapshotDone?.Invoke(true, LastSnapshot);
+            }
+            while (_seenSnapFails < status.SnapshotFailures)
+            {
+                _seenSnapFails++;
+                SnapshotsFailed++;
+                SnapshotDone?.Invoke(false, Loc.T("Capture d'écran ratée : dossier inaccessible ou disque plein (détails dans XRPerfRecord.log).",
+                                                  "Screenshot failed: folder not accessible or disk full (details in XRPerfRecord.log)."));
+            }
+        }
+
+        // Capture seule en cours : un enregistrement attend qu'elle finisse (une fraction de seconde), ou l'arrête.
+        private void WaitSnapshotOnly()
+        {
+            if (!_snapOnly) return;
+            for (int i = 0; i < 60 && NativeState() != StateStopped; i++) System.Threading.Thread.Sleep(50);
+            PollSnapshots();
+            if (NativeState() != StateStopped)
+            {
+                try
+                {
+                    _stop?.Invoke();
+                }
+                catch (Exception)
+                {
+                }
+            }
+            _snapOnly = false;
+        }
+
         /// <summary>Arrête l'enregistrement ; la fin du fichier (quelques instants) se fait à part.</summary>
         public Task StopAsync()
         {
@@ -600,6 +783,8 @@ namespace XRPerfSensors
                                       "Live: server unreachable. Check the Internet connection (or a firewall blocking XRPerfSensors).");
                 case 41: return Loc.T("Direct refusé par le service : vérifiez la clé de stream (page Vidéo).", "Live refused by the service: check the stream key (Video page).");
                 case 42: return Loc.T("Direct arrêté : connexion perdue pendant plus d'une minute.", "Live stopped: connection lost for more than a minute.");
+                case 50: return "";
+                case 51: return Loc.T("Capture d'écran ratée (détails dans XRPerfRecord.log).", "Screenshot failed (details in XRPerfRecord.log).") + code;
                 default: return Loc.T("Enregistrement arrêté sur une erreur.", "Recording stopped on an error.") + code;
             }
         }

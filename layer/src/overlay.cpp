@@ -1114,9 +1114,11 @@ void Overlay::sample(double now) {
         if (videoLock.owns_lock()) {
             m_videoLive = false;
             m_videoSeconds = m_video ? m_video->recordingSeconds(&m_videoLive) : -1.0;
+            m_photo = m_video && m_video->photoFlash();
         }
         data.videoSeconds = m_videoSeconds;
         data.videoLive = m_videoLive;
+        data.photo = m_photo;
     }
     if ((data.statusElements & kWatchBattery) && m_hands) {
         for (int hand = 0; hand < 2; ++hand) {

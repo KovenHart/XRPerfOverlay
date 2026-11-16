@@ -12,6 +12,10 @@
 // 4. Source OBS (option `obs`) : l'image finale (cadrée, filtres, panneau) est aussi recopiée dans une
 //    texture partagée que lit le plugin xrperf-obs.dll (obs/). Sans `encode`, rien n'est écrit : ni
 //    fichier, ni son, ni témoin REC dans le casque (image pour OBS seulement).
+// 6. Captures d'écran : la même image (œil, cadrage, panneau, menus du jeu, filtres), en PNG ou JPEG, à la
+//    taille demandée. Pendant une vidéo, un direct ou l'image pour OBS : prise à l'instant suivant (taille de
+//    la vidéo au plus) ; sinon, un passage court de l'enregistreur (`encode` = 3) prend une image et s'arrête.
+//    L'encodage du fichier se fait à part (fil séparé), sans gêner la vidéo.
 // 5. Direct (`encode` = 2) : Twitch ou YouTube. Pas de fichier : l'encodeur matériel (H.264 ; H.265 ou AV1
 //    pour YouTube, par Enhanced RTMP) et l'encodeur
 //    AAC de Windows sont pilotés ici, leurs paquets partent par RTMP (rtmp.cpp) ; témoin LIVE dans le casque.
@@ -57,6 +61,8 @@
 
 #include "image_filter_source.h"
 #include "rtmp.h"
+
+#include <wincodec.h>
 #include "image_params.h"
 #include "shared_block.h"
 #include "video_math.h"
@@ -89,7 +95,7 @@ struct XrprOptions {
     int32_t imageMode, imageSharpen, imageSharpness, imageBrightness, imageContrast, imageSaturation;
     int32_t imageVibrance, imageGamma, imageShadows, imageTemperature, imageDeband, imageColorblind;
     int32_t imageHdr, imageSharpenLimit, imageSharpenRadius;
-    uint32_t encode;        // 1 : fichier MP4 (enregistrement) ; 2 : direct (RTMP) ; 0 : image pour OBS seulement
+    uint32_t encode;        // 1 : fichier MP4 ; 2 : direct (RTMP) ; 3 : une capture d'écran ; 0 : image pour OBS seulement
     uint32_t obs;           // 1 : image donnée à la source OBS (bloc Local\XRPerfOverlay.Obs)
     wchar_t folder[260];
     wchar_t renderDevice[256];   // sortie dont on enregistre le son ("" : celle par défaut)
@@ -103,6 +109,18 @@ struct XrprOptions {
     char stream2Url[256];
     char stream2Key[256];
     int32_t imageBlack, imageWhite, imageClarity;  // point noir, point blanc, clarté
+    // Capture d'écran (encode = 3).
+    uint32_t snapFormat;         // 0 PNG, 1 JPEG
+    uint32_t snapQuality;        // JPEG, 50 à 100
+    uint32_t snapHeight;         // hauteur voulue (la largeur suit le format d'image)
+    wchar_t snapPath[260];       // dossier (finissant par \\ : nom « jeu date.png » ajouté) ou fichier
+};
+
+// Capture demandée pendant que l'enregistreur tourne (XrprSnapshot).
+struct XrprSnapshotRequest {
+    uint32_t size;
+    uint32_t format, quality, height;
+    wchar_t path[260];
 };
 
 struct XrprStatus {
@@ -123,6 +141,9 @@ struct XrprStatus {
     uint32_t streamDropped;     // images perdues faute de débit (ou pendant une reconnexion)
     uint32_t streamReconnects;
     uint32_t stream2State, stream2Kbps, stream2Dropped, stream2Reconnects;  // seconde sortie
+    uint32_t snapshots;         // captures d'écran écrites (compteur)
+    uint32_t snapshotFailures;  // captures ratées (compteur)
+    wchar_t snapshot[260];      // dernière capture écrite
 };
 
 enum State : int32_t { kStopped = 0, kWaiting = 1, kRecording = 2, kFinishing = 3 };
@@ -146,6 +167,8 @@ enum Reason : int32_t {
     kStreamConnect = 40,   // direct : serveur injoignable
     kStreamRefused = 41,   // ... joint, mais la publication est refusée (clé de stream)
     kStreamLost = 42,      // ... connexion perdue, reconnexion impossible
+    kSnapshotDone = 50,    // capture d'écran seule : écrite
+    kSnapshotFailed = 51,  // ... ratée (dossier, encodage)
 };
 
 template <typename T>
@@ -370,6 +393,11 @@ float luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 float PsLuma(VsOut i) : SV_Target {
     float3 c = image.Load(int3(int2(i.position.xy), 0)).rgb;
     return (16.0 + 219.0 * luma(c)) / 255.0;
+}
+
+// Capture d'écran : l'image composée, à une autre taille (lecture filtrée).
+float4 PsCopy(VsOut i) : SV_Target {
+    return float4(image.SampleLevel(linearClamp, i.uv, 0).rgb, 1.0);
 }
 
 // Luminance d'une image plus petite que la vidéo (seconde sortie du direct) : lecture filtrée.
@@ -664,7 +692,10 @@ class Recorder {
             options.height > 4320 || options.bitrateKbps < 500 || options.bitrateKbps > 500000 || !(options.aspect > 0.2f && options.aspect < 5.f) ||
             options.qualityVsSpeed > 100 || options.overlay > kVideoOverlayCorner || options.overlayCorner > 3 || !(options.overlaySize >= 0.05f && options.overlaySize <= 0.9f) ||
             !(options.stabilizeSeconds >= 0.f && options.stabilizeSeconds <= 2.f) || options.level > 1 || options.imageMode < 0 || options.imageMode > 2 ||
-            options.encode > 2 || options.obs > 1 || (!options.encode && !options.obs))
+            options.encode > 3 || options.obs > 1 || (!options.encode && !options.obs))
+            return kBadOptions;
+        if (options.encode == 3 && (options.snapFormat > 1 || options.snapQuality > 100 || options.snapPath[0] == 0 ||
+                                    std::wmemchr(options.snapPath, 0, 260) == nullptr))
             return kBadOptions;
         if (options.encode == 2 && options.streamCount == 2 &&
             (options.stream2Codec > 2 || options.stream2Bitrate < 100 || options.stream2Bitrate > 200000 || std::strncmp(options.stream2Url, "rtmp://", 7) != 0 ||
@@ -715,6 +746,18 @@ class Recorder {
         std::lock_guard<std::mutex> lock(m_statusMutex);
         out = m_status;
         out.state = m_state.load();
+    }
+
+    // Capture pendant que l'enregistreur tourne : prise à l'instant suivant. false : il ne tourne pas
+    // (l'appelant lance alors un passage court, encode = 3).
+    bool requestSnapshot(const XrprSnapshotRequest& r) {
+        if (r.size != sizeof(XrprSnapshotRequest) || r.format > 1 || r.path[0] == 0 || std::wmemchr(r.path, 0, 260) == nullptr) return false;
+        const int state = m_state.load();
+        if (!m_thread.joinable() || state == kStopped || state == kFinishing || m_options.encode == 3) return false;
+        std::lock_guard<std::mutex> lock(m_snapMutex);
+        m_snapPending = true;
+        m_snapRequest = r;
+        return true;
     }
 
   private:
@@ -810,22 +853,34 @@ class Recorder {
         }
         if (m_stop) return kStoppedByUser;
         if (!got) return kNoTextures;
-        openObs();
-        if (m_options.encode) {
+        if (m_options.encode == 3) {  // capture d'écran seule
+            std::lock_guard<std::mutex> lock(m_snapMutex);
+            m_snapPending = true;
+            m_snapRequest = XrprSnapshotRequest();
+            m_snapRequest.size = sizeof(XrprSnapshotRequest);
+            m_snapRequest.format = m_options.snapFormat;
+            m_snapRequest.quality = m_options.snapQuality;
+            m_snapRequest.height = m_options.snapHeight;
+            std::memcpy(m_snapRequest.path, m_options.snapPath, sizeof(m_snapRequest.path));
+        } else {
+            openObs();
+        }
+        if (m_options.encode == 1 || m_options.encode == 2) {
             reason = m_options.encode == 2 ? setupStream() : setupWriter();
             if (reason != kOk) return reason;
-        } else if (!m_obs) {
+        } else if (!m_obs && m_options.encode != 3) {
             return fail(kNoDevice, E_FAIL, "source OBS");  // rien à faire sans fichier ni OBS
         }
 
         // 2. Son : chacun en option ; un échec n'empêche pas la vidéo. L'horloge commune part d'ici.
         m_origin = Now100ns();
         uint32_t audio = 0;
-        if (m_options.encode && m_options.gameAudio) {
+        const bool encodes = m_options.encode == 1 || m_options.encode == 2;
+        if (encodes && m_options.gameAudio) {
             m_gameSound.reset(new AudioSource());
             audio |= m_gameSound->start(true, m_options.renderDevice, m_origin) ? 1u : 4u;
         }
-        if (m_options.encode && m_options.micAudio) {
+        if (encodes && m_options.micAudio) {
             m_micSound.reset(new AudioSource());
             audio |= m_micSound->start(false, m_options.captureDevice, m_origin) ? 2u : 8u;
         }
@@ -835,7 +890,7 @@ class Recorder {
             std::lock_guard<std::mutex> lock(m_statusMutex);
             m_status.audio = audio;
         }
-        if (m_options.encode) {  // témoin REC (ou LIVE) dans le casque
+        if (encodes) {  // témoin REC (ou LIVE) dans le casque
             m_block->recordKind = m_options.encode == 2 ? 1 : 0;
             MemoryBarrier();
             m_block->recordStartTickMs = GetTickCount64();
@@ -906,15 +961,39 @@ class Recorder {
                 reason = kGameEnded;
                 break;
             }
-            if (m_options.encode) {
+            if (encodes) {
                 const int w = writeVideo(tick * period, period, fresh);
                 if (w != kOk) {
                     reason = w;
                     break;
                 }
             } else if (m_hasFrame && m_privateView && !convert(nullptr, 0, tick * period)) {
-                reason = fail(kNoConversion, E_FAIL, "image pour OBS");
+                reason = fail(kNoConversion, E_FAIL, m_options.encode == 3 ? "capture d'ecran" : "image pour OBS");
                 break;
+            }
+            // Capture d'écran demandée : l'image qui vient d'être composée.
+            if (m_hasFrame && m_convertedView) {
+                bool pending = false;
+                XrprSnapshotRequest request;
+                {
+                    std::lock_guard<std::mutex> lock(m_snapMutex);
+                    pending = m_snapPending;
+                    request = m_snapRequest;
+                    m_snapPending = false;
+                }
+                // Capture seule : quelques images d'abord (panneau et menus du jeu arrivent juste après le départ).
+                if (pending && m_options.encode == 3 && tick < 6) {
+                    std::lock_guard<std::mutex> lock(m_snapMutex);
+                    m_snapPending = true;
+                    pending = false;
+                }
+                if (pending) {
+                    const bool ok = takeSnapshot(request);
+                    if (m_options.encode == 3) {
+                        reason = ok ? kSnapshotDone : kSnapshotFailed;
+                        break;
+                    }
+                }
             }
             const int a = writeAudio((now - m_origin) - kAudioLatency100ns);
             if (a != kOk) {
@@ -947,6 +1026,12 @@ class Recorder {
     // Fin : son jusqu'à la fin de la vidéo, fichier terminé, tout libéré.
     void finish() {
         m_state = kFinishing;
+        for (std::thread& t : m_snapThreads)
+            if (t.joinable()) t.join();  // captures en cours d'écriture
+        m_snapThreads.clear();
+        m_snapTarget.reset();
+        m_snapRtv.reset();
+        m_snapStaging.reset();
         if (m_writer && m_writing && m_videoSamples == 0) m_writing = false;  // arrêt aussitôt : pas de fichier vide
         if (m_writer && m_writing) {
             if (m_gameSound) m_gameSound->stop();
@@ -991,6 +1076,7 @@ class Recorder {
         m_layerSlot = -1;
         m_psY.reset();
         m_psYScaled.reset();
+        m_psCopy.reset();
         m_psUV.reset();
         m_frame.reset();
         m_frameTarget.reset();
@@ -1078,7 +1164,7 @@ class Recorder {
         PFN_Compile compile = compiler ? reinterpret_cast<PFN_Compile>(reinterpret_cast<void*>(GetProcAddress(compiler, "D3DCompile"))) : nullptr;
         if (!compile) return fail(kNoConversion, E_NOINTERFACE);
         m_compile = compile;
-        Ptr<ID3DBlob> vs, vsPanel, psEye, psPanel, psLayer, psY, psYScaled, psUV, errors;
+        Ptr<ID3DBlob> vs, vsPanel, psEye, psPanel, psLayer, psY, psYScaled, psUV, psCopy, errors;
         const auto build = [&](const char* entry, const char* target, Ptr<ID3DBlob>& out) {
             return compile(kShaders, sizeof(kShaders) - 1, "video", nullptr, nullptr, entry, target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, out.put(), errors.put());
         };
@@ -1089,6 +1175,7 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = build("PsLayer", "ps_4_0", psLayer);
         if (SUCCEEDED(hr)) hr = build("PsLuma", "ps_4_0", psY);
         if (SUCCEEDED(hr)) hr = build("PsLumaScaled", "ps_4_0", psYScaled);
+        if (SUCCEEDED(hr)) hr = build("PsCopy", "ps_4_0", psCopy);
         if (SUCCEEDED(hr)) hr = build("PsChroma", "ps_4_0", psUV);
         if (FAILED(hr) && errors) RecordLog("Shaders : %.*s", static_cast<int>(errors->GetBufferSize()), static_cast<const char*>(errors->GetBufferPointer()));
         if (SUCCEEDED(hr)) hr = m_device->CreateVertexShader(vs->GetBufferPointer(), vs->GetBufferSize(), nullptr, m_vs.put());
@@ -1098,6 +1185,7 @@ class Recorder {
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psLayer->GetBufferPointer(), psLayer->GetBufferSize(), nullptr, m_psLayer.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psY->GetBufferPointer(), psY->GetBufferSize(), nullptr, m_psY.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psYScaled->GetBufferPointer(), psYScaled->GetBufferSize(), nullptr, m_psYScaled.put());
+        if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psCopy->GetBufferPointer(), psCopy->GetBufferSize(), nullptr, m_psCopy.put());
         if (SUCCEEDED(hr)) hr = m_device->CreatePixelShader(psUV->GetBufferPointer(), psUV->GetBufferSize(), nullptr, m_psUV.put());
         if (FAILED(hr)) return fail(kNoConversion, hr, "shaders");
         D3D11_BUFFER_DESC cb = {};
@@ -2324,6 +2412,188 @@ class Recorder {
         return true;
     }
 
+    // --- Captures d'écran -------------------------------------------------------------------------------
+    // L'image composée (m_convertedView) redessinée à la taille voulue, relue, puis encodée en PNG ou JPEG
+    // par WIC sur un fil à part. Taille : celle demandée, au plus celle de la vidéo en cours.
+    // Nom de la capture : dossier donné (finissant par \) + « jeu date.png|jpg », sans écraser une autre.
+    std::wstring snapshotPath(const XrprSnapshotRequest& r) {
+        std::wstring path = r.path;
+        if (path.empty() || (path.back() != L'\\' && path.back() != L'/')) return path;
+        std::wstring game;
+        for (int i = 0; i < 63 && m_block->game[i]; ++i) game += static_cast<wchar_t>(m_block->game[i]);
+        for (wchar_t& c : game)
+            if (c < 32 || std::wcschr(L"<>:\"/\\|?*", c)) c = L'_';
+        if (game.empty()) game = L"VR";
+        SYSTEMTIME t;
+        GetLocalTime(&t);
+        wchar_t stamp[64];
+        std::swprintf(stamp, 64, L" %04u-%02u-%02u %02u-%02u-%02u", static_cast<unsigned>(t.wYear), static_cast<unsigned>(t.wMonth),
+                      static_cast<unsigned>(t.wDay), static_cast<unsigned>(t.wHour), static_cast<unsigned>(t.wMinute), static_cast<unsigned>(t.wSecond));
+        const wchar_t* ext = r.format == 1 ? L".jpg" : L".png";
+        std::wstring base = path + game + stamp;
+        std::wstring name = base + ext;
+        for (int n = 2; n < 100 && GetFileAttributesW(name.c_str()) != INVALID_FILE_ATTRIBUTES; ++n) name = base + L" (" + std::to_wstring(n) + L")" + ext;
+        return name;
+    }
+
+    bool takeSnapshot(const XrprSnapshotRequest& r) {
+        int height = static_cast<int>(r.height);
+        if (height <= 0 || height > m_height) height = m_height;
+        int width = static_cast<int>(std::lround(static_cast<double>(height) * m_width / m_height));
+        width = std::max(2, width & ~1);
+        height = std::max(2, height & ~1);
+        HRESULT hr = S_OK;
+        if (!m_snapTarget || m_snapW != width || m_snapH != height) {
+            m_snapTarget.reset();
+            m_snapRtv.reset();
+            m_snapStaging.reset();
+            D3D11_TEXTURE2D_DESC td = {};
+            td.Width = static_cast<UINT>(width);
+            td.Height = static_cast<UINT>(height);
+            td.MipLevels = 1;
+            td.ArraySize = 1;
+            td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+            td.SampleDesc.Count = 1;
+            td.Usage = D3D11_USAGE_DEFAULT;
+            td.BindFlags = D3D11_BIND_RENDER_TARGET;
+            hr = m_device->CreateTexture2D(&td, nullptr, m_snapTarget.put());
+            if (SUCCEEDED(hr)) hr = m_device->CreateRenderTargetView(m_snapTarget.get(), nullptr, m_snapRtv.put());
+            td.Usage = D3D11_USAGE_STAGING;
+            td.BindFlags = 0;
+            td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            if (SUCCEEDED(hr)) hr = m_device->CreateTexture2D(&td, nullptr, m_snapStaging.put());
+            if (FAILED(hr)) {
+                m_snapTarget.reset();
+                return snapshotFailed(r, hr, "textures");
+            }
+            m_snapW = width;
+            m_snapH = height;
+        }
+        auto pixels = std::make_shared<std::vector<uint8_t>>(static_cast<size_t>(width) * static_cast<size_t>(height) * 3);
+        {
+            DeviceLock lock(m_multithread.get());
+            ID3D11DeviceContext* c = m_context.get();
+            c->IASetInputLayout(nullptr);
+            c->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            ID3D11SamplerState* samplers[] = {m_sampler.get()};
+            c->PSSetSamplers(0, 1, samplers);
+            c->OMSetBlendState(nullptr, nullptr, 0xFFFFFFFF);
+            c->RSSetState(nullptr);
+            ID3D11RenderTargetView* targets[] = {m_snapRtv.get()};
+            c->OMSetRenderTargets(1, targets, nullptr);
+            ID3D11ShaderResourceView* views[] = {m_convertedView};
+            c->PSSetShaderResources(0, 1, views);
+            D3D11_VIEWPORT viewport = {0.f, 0.f, static_cast<float>(width), static_cast<float>(height), 0.f, 1.f};
+            c->RSSetViewports(1, &viewport);
+            c->VSSetShader(m_vs.get(), nullptr, 0);
+            c->PSSetShader(m_psCopy.get(), nullptr, 0);
+            c->Draw(3, 0);
+            ID3D11RenderTargetView* noTarget[] = {nullptr};
+            ID3D11ShaderResourceView* noView[] = {nullptr};
+            c->OMSetRenderTargets(1, noTarget, nullptr);
+            c->PSSetShaderResources(0, 1, noView);
+            c->CopyResource(m_snapStaging.get(), m_snapTarget.get());
+            D3D11_MAPPED_SUBRESOURCE mapped;
+            hr = c->Map(m_snapStaging.get(), 0, D3D11_MAP_READ, 0, &mapped);
+            if (FAILED(hr)) return snapshotFailed(r, hr, "lecture de l'image");
+            // RGBA -> BGR (24 bits : ce que PNG et JPEG prennent tous les deux).
+            for (int y = 0; y < height; ++y) {
+                const uint8_t* src = static_cast<const uint8_t*>(mapped.pData) + static_cast<size_t>(y) * mapped.RowPitch;
+                uint8_t* dst = pixels->data() + static_cast<size_t>(y) * static_cast<size_t>(width) * 3;
+                for (int x = 0; x < width; ++x) {
+                    dst[x * 3] = src[x * 4 + 2];
+                    dst[x * 3 + 1] = src[x * 4 + 1];
+                    dst[x * 3 + 2] = src[x * 4];
+                }
+            }
+            c->Unmap(m_snapStaging.get(), 0);
+        }
+        // Encodage et écriture à part : la vidéo continue pendant ce temps.
+        XrprSnapshotRequest request = r;
+        const std::wstring path = snapshotPath(r);
+        wcsncpy_s(request.path, path.c_str(), _TRUNCATE);
+        try {
+            m_snapThreads.emplace_back([this, request, pixels, width, height] {
+                const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                const HRESULT result = WriteImage(request, *pixels, width, height);
+                if (SUCCEEDED(co)) CoUninitialize();
+                if (FAILED(result)) {
+                    snapshotFailed(request, result, "ecriture du fichier");
+                    return;
+                }
+                RecordLog("Capture d'ecran : %dx%d, %s, \"%s\".", width, height, request.format == 1 ? "JPEG" : "PNG", Utf8(request.path).c_str());
+                {
+                    std::lock_guard<std::mutex> lock(m_statusMutex);
+                    ++m_status.snapshots;
+                    wcsncpy_s(m_status.snapshot, request.path, _TRUNCATE);
+                }
+                m_block->snapshotCount = m_block->snapshotCount + 1;  // témoin PHOTO dans le casque
+            });
+        } catch (...) {
+            return snapshotFailed(r, E_OUTOFMEMORY, "fil d'ecriture");
+        }
+        // Capture seule : l'écriture est attendue (finish() joint le fil) ; le résultat vient du fil.
+        if (m_options.encode == 3) {
+            m_snapThreads.back().join();
+            m_snapThreads.pop_back();
+            std::lock_guard<std::mutex> lock(m_statusMutex);
+            return m_status.snapshots > 0;
+        }
+        return true;
+    }
+
+    bool snapshotFailed(const XrprSnapshotRequest& r, HRESULT hr, const char* what) {
+        RecordLog("Capture d'ecran ratee (%s) : 0x%08lX, \"%s\".", what, static_cast<unsigned long>(hr), Utf8(r.path).c_str());
+        std::lock_guard<std::mutex> lock(m_statusMutex);
+        ++m_status.snapshotFailures;
+        return false;
+    }
+
+    // PNG ou JPEG par WIC (composant de Windows). Dossier créé au besoin.
+    static HRESULT WriteImage(const XrprSnapshotRequest& r, const std::vector<uint8_t>& bgr, int width, int height) {
+        std::wstring folder = r.path;
+        const size_t slash = folder.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) {
+            folder.resize(slash);
+            SHCreateDirectoryExW(nullptr, folder.c_str(), nullptr);
+        }
+        Ptr<IWICImagingFactory> factory;
+        Ptr<IWICStream> stream;
+        Ptr<IWICBitmapEncoder> encoder;
+        Ptr<IWICBitmapFrameEncode> frame;
+        Ptr<IPropertyBag2> props;
+        HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, __uuidof(IWICImagingFactory), factory.putVoid());
+        if (SUCCEEDED(hr)) hr = factory->CreateStream(stream.put());
+        if (SUCCEEDED(hr)) hr = stream->InitializeFromFilename(r.path, GENERIC_WRITE);
+        if (SUCCEEDED(hr)) hr = factory->CreateEncoder(r.format == 1 ? GUID_ContainerFormatJpeg : GUID_ContainerFormatPng, nullptr, encoder.put());
+        if (SUCCEEDED(hr)) hr = encoder->Initialize(stream.get(), WICBitmapEncoderNoCache);
+        if (SUCCEEDED(hr)) hr = encoder->CreateNewFrame(frame.put(), props.put());
+        if (SUCCEEDED(hr) && r.format == 1 && props) {
+            PROPBAG2 option = {};
+            wchar_t name[] = L"ImageQuality";
+            option.pstrName = name;
+            VARIANT value;
+            VariantInit(&value);
+            value.vt = VT_R4;
+            value.fltVal = std::max(0.5f, std::min(1.f, static_cast<float>(r.quality) / 100.f));
+            props->Write(1, &option, &value);
+        }
+        if (SUCCEEDED(hr)) hr = frame->Initialize(props.get());
+        if (SUCCEEDED(hr)) hr = frame->SetSize(static_cast<UINT>(width), static_cast<UINT>(height));
+        WICPixelFormatGUID format = GUID_WICPixelFormat24bppBGR;
+        if (SUCCEEDED(hr)) hr = frame->SetPixelFormat(&format);
+        if (SUCCEEDED(hr) && format != GUID_WICPixelFormat24bppBGR) hr = WINCODEC_ERR_UNSUPPORTEDPIXELFORMAT;
+        if (SUCCEEDED(hr))
+            hr = frame->WritePixels(static_cast<UINT>(height), static_cast<UINT>(width) * 3, static_cast<UINT>(bgr.size()), const_cast<BYTE*>(bgr.data()));
+        if (SUCCEEDED(hr)) hr = frame->Commit();
+        if (SUCCEEDED(hr)) hr = encoder->Commit();
+        if (FAILED(hr)) {
+            stream.reset();
+            DeleteFileW(r.path);  // pas de fichier à moitié écrit
+        }
+        return hr;
+    }
+
     static bool DiskFull(HRESULT hr) { return hr == HRESULT_FROM_WIN32(ERROR_DISK_FULL) || hr == HRESULT_FROM_WIN32(ERROR_HANDLE_DISK_FULL); }
 
     static std::wstring EncoderName(uint32_t codec) {
@@ -2816,7 +3086,7 @@ class Recorder {
     uint64_t m_stuckValue = 0;
     Ptr<ID3D12Device> m_d3d12;
     Ptr<ID3D11VertexShader> m_vs, m_vsPanel;
-    Ptr<ID3D11PixelShader> m_psEye, m_psPanel, m_psY, m_psYScaled, m_psUV;
+    Ptr<ID3D11PixelShader> m_psEye, m_psPanel, m_psY, m_psYScaled, m_psUV, m_psCopy;
     Ptr<ID3D11Texture2D> m_frame;  // image intermédiaire de la taille de la vidéo (œil cadré, puis panneau)
     Ptr<ID3D11RenderTargetView> m_frameTarget;
     Ptr<ID3D11ShaderResourceView> m_frameView;
@@ -2895,6 +3165,14 @@ class Recorder {
     bool m_streaming = false;
     std::vector<uint8_t> m_packet;
     ID3D11ShaderResourceView* m_convertedView = nullptr;  // dernière image composée (vue d'un membre)
+    // Captures d'écran.
+    std::mutex m_snapMutex;
+    bool m_snapPending = false;
+    XrprSnapshotRequest m_snapRequest = {};
+    std::vector<std::thread> m_snapThreads;
+    Ptr<ID3D11Texture2D> m_snapTarget, m_snapStaging;
+    Ptr<ID3D11RenderTargetView> m_snapRtv;
+    int m_snapW = 0, m_snapH = 0;
 };
 
 Recorder g_recorder;
@@ -2930,6 +3208,11 @@ __declspec(dllexport) int XrprStart(void* share, uint64_t shareBytes, const Xrpr
 }
 
 __declspec(dllexport) void XrprStop() { g_recorder.stop(); }
+
+// Capture d'écran pendant que l'enregistreur tourne (vidéo, direct, image pour OBS). 0 : il ne tourne pas.
+__declspec(dllexport) int XrprSnapshot(const XrprSnapshotRequest* request) {
+    return request && g_recorder.requestSnapshot(*request) ? 1 : 0;
+}
 
 __declspec(dllexport) void XrprGetStatus(XrprStatus* status) {
     if (status) g_recorder.status(*status);
