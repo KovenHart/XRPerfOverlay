@@ -4,6 +4,17 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.16.0
+
+- **Mode simple** pour bien démarrer : cinq pages (Accueil, Dans le casque, Vidéo et direct, Image, Rapports) avec des choix tout faits : contenu du panneau *Minimal*, *Essentiel* ou *Complet*, qualité vidéo *Standard*, *Haute* ou *Maximale*, presets d'image en un clic. Un assistant de trois étapes au premier lancement. C'est le mode d'une nouvelle installation ; une installation existante reste en mode avancé. L'interrupteur **Réglages avancés**, en bas du menu, passe de l'un à l'autre.
+- **Mode avancé réorganisé par tâche** : Affichage en jeu (Panneau, Montre, Fenêtre du PC), Rendu (Filtres d'image), Capture et partage (Vidéo et direct, Panneau pour OBS), Analyse (Rapports, Capteurs et diagnostic). Apparence devient un onglet de Panneau, Mesures et Configuration sont réunies, et la longue page Vidéo passe en onglets (Enregistrement, Direct, Captures d'écran, Son, Cadrage et caméra, OBS).
+- **Thèmes Cyberpunk *Néon* et *Signal*** pour le panneau du casque, les montres, le panneau pour OBS, les vidéos et les captures, et pour la fenêtre de XRPerfSensors. *Néon* : violet nuit, bordure magenta lumineuse, mesures en cyan. *Signal* : noir et jaune, coins coupés en biais, repères jaunes. Dans la fenêtre, chacun a sa police (Orbitron et Rajdhani, Chakra Petch), livrée avec le programme. Au choix dans Panneau › Apparence, ou pour la fenêtre seule dans Préférences.
+- **Chercher un réglage** avec `Ctrl+K` : la page s'ouvre sur le réglage trouvé.
+- **Réglages modifiés** marqués d'un point, avec **Rétablir** par section.
+- Le preset d'image actif s'affiche en haut ; la liste des raccourcis quitte le tableau de bord pour un **aide-mémoire** (touche `?`).
+- Rien ne change dans le casque ni dans les réglages existants.
+- **Correction** (jeux OpenXR) : avec la montre affichée, un liseré de la couleur de la montre pouvait apparaître au bas du panneau dans certains casques (visible dans le casque, pas sur les vidéos).
+
 ## 1.15.0
 
 - **XR Perf Overlay devient XR Perf Studio** : le logiciel fait bien plus qu'afficher des mesures (vidéo, direct, source OBS, filtres d'image, fenêtre du bureau, rapports). Le nouveau nom apparaît dans l'interface, le menu de l'icône, les rapports, OBS et le paquet (`XRPerfStudio-<version>-win64.zip`). Rien ne change pour une installation existante : mêmes réglages (dossier `%LOCALAPPDATA%\XRPerfOverlay`), même layer OpenXR, même application SteamVR, même source OBS dans les scènes, même dossier des vidéos ; les anciens rapports restent lisibles.

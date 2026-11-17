@@ -23,11 +23,13 @@ struct Theme {
     Rgb warn;        // à surveiller
     Rgb bad;         // dépassement
     Rgb gpu;         // courbe GPU de la présentation graphique
+    Rgb frameColor;  // cadre des thèmes à décor (Néon : bordure lumineuse ; Signal : biseaux et repères)
+    uint8_t frame;   // décor du cadre : 0 aucun (coins arrondis), 1 Néon, 2 Signal
 };
 
 // Couleurs prédéfinies. L'ordre est celui de la liste de XRPerfSensors et des noms du .ini (Classic et
 // EVO, ajoutés après Custom, gardent les numéros des autres inchangés).
-enum class ThemeId { Dark = 0, Light, Contrast, Green, Amber, Violet, Custom, Classic, Evo, Count };
+enum class ThemeId { Dark = 0, Light, Contrast, Green, Amber, Violet, Custom, Classic, Evo, Neon, Signal, Count };
 
 // Thème prédéfini (identifiant hors bornes ou Custom : le thème sombre).
 Theme PresetTheme(ThemeId id);

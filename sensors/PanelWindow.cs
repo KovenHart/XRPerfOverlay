@@ -529,13 +529,18 @@ namespace XRPerfSensors
         public int CropLeft, CropTop, CropRight, CropBottom;  // part retirée de chaque côté, en %
 
         // Interface (fenêtre principale, ui/app.js).
-        public static readonly string[] UiThemes = { "panel", "dark", "light", "contrast", "green", "amber", "violet", "classic", "evo", "custom" };
+        public static readonly string[] UiThemes = { "panel", "dark", "light", "contrast", "green", "amber", "violet", "classic", "evo", "neon", "signal", "custom" };
         public const int MinUiScale = 85, MaxUiScale = 130;
         public string Language = "auto";       // "auto" (langue de Windows), "fr" ou "en" (Loc.Names)
         public string UiTheme = "panel";       // couleurs de l'interface : comme le panneau, un thème, ou personnalisées
         public string UiBackground = "#0E1116", UiText = "#F0F3F8", UiAccent = "#96BEF0";
         public int UiScale = 100;              // taille du texte, en %
         public bool UiAnimations = true;
+        // Interface : "simple" (cinq pages, choix tout faits) ou "advanced" (toutes les pages). Première
+        // installation : simple, avec l'assistant de bienvenue ; mise à jour (fichier sans ces clés) : avancée.
+        public static readonly string[] UiModes = { "simple", "advanced" };
+        public string UiMode = "simple";
+        public bool UiWelcome;                  // assistant de bienvenue déjà vu (ou passé)
         public bool UiStartFullscreen;
         public int WinX = int.MinValue, WinY = int.MinValue, WinWidth = 1280, WinHeight = 820; // fenêtre principale
 
@@ -664,6 +669,8 @@ namespace XRPerfSensors
             try
             {
                 if (!File.Exists(FilePath)) return settings;
+                settings.UiMode = "advanced";  // réglages d'une version précédente : on garde l'interface connue
+                settings.UiWelcome = true;
                 foreach (string line in File.ReadAllLines(FilePath))
                 {
                     int equals = line.IndexOf('=');
@@ -681,6 +688,7 @@ namespace XRPerfSensors
                     string text = line.Substring(equals + 1).Trim();
                     if (key == "language") { if (Array.IndexOf(Loc.Names, text) >= 0) settings.Language = text; continue; }
                     if (key == "ui_theme") { if (Array.IndexOf(UiThemes, text) >= 0) settings.UiTheme = text; continue; }
+                    if (key == "ui_mode") { if (Array.IndexOf(UiModes, text) >= 0) settings.UiMode = text; continue; }
                     if (key == "ui_background") { if (IsColor(text)) settings.UiBackground = text; continue; }
                     if (key == "ui_text") { if (IsColor(text)) settings.UiText = text; continue; }
                     if (key == "ui_accent") { if (IsColor(text)) settings.UiAccent = text; continue; }
@@ -713,6 +721,7 @@ namespace XRPerfSensors
                         case "crop_bottom": if (value >= 0 && value <= MaxCrop) settings.CropBottom = value; break;
                         case "ui_scale": if (value >= MinUiScale && value <= MaxUiScale) settings.UiScale = value; break;
                         case "ui_animations": settings.UiAnimations = value != 0; break;
+                        case "ui_welcome": settings.UiWelcome = value != 0; break;
                         case "ui_fullscreen": settings.UiStartFullscreen = value != 0; break;
                         case "win_x": settings.WinX = value; break;
                         case "win_y": settings.WinY = value; break;
@@ -807,6 +816,8 @@ namespace XRPerfSensors
                     "ui_accent=" + UiAccent,
                     "ui_scale=" + UiScale.ToString(CultureInfo.InvariantCulture),
                     "ui_animations=" + (UiAnimations ? 1 : 0),
+                    "ui_mode=" + UiMode,
+                    "ui_welcome=" + (UiWelcome ? 1 : 0),
                     "ui_fullscreen=" + (UiStartFullscreen ? 1 : 0),
                     "win_x=" + WinX.ToString(CultureInfo.InvariantCulture),
                     "win_y=" + WinY.ToString(CultureInfo.InvariantCulture),

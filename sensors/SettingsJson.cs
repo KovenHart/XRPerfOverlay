@@ -113,6 +113,8 @@ namespace XRPerfSensors
             w.WriteString("UiAccent", d.UiAccent);
             w.WriteNumber("UiScale", d.UiScale);
             w.WriteBoolean("UiAnimations", d.UiAnimations);
+            w.WriteString("UiMode", d.UiMode);
+            w.WriteBoolean("UiWelcome", d.UiWelcome);
             w.WriteBoolean("UiStartFullscreen", d.UiStartFullscreen);
             w.WriteString("VideoCodec", d.VideoCodec);
             w.WriteNumber("VideoHeight", d.VideoHeight);
@@ -340,6 +342,8 @@ namespace XRPerfSensors
                 case "UiAccent": if (!Settings.IsColor(text)) return Change.None; d.UiAccent = text; return Change.Interface;
                 case "UiScale": if (!Int(v, Settings.MinUiScale, Settings.MaxUiScale, out i)) return Change.None; d.UiScale = i; return Change.Interface;
                 case "UiAnimations": if (!Bool(v, out b)) return Change.None; d.UiAnimations = b; return Change.Interface;
+                case "UiMode": if (Array.IndexOf(Settings.UiModes, text) < 0) return Change.None; d.UiMode = text; return Change.Interface;
+                case "UiWelcome": if (!Bool(v, out b)) return Change.None; d.UiWelcome = b; return Change.Interface;
                 case "UiStartFullscreen": if (!Bool(v, out b)) return Change.None; d.UiStartFullscreen = b; return Change.Interface;
                 case "VideoCodec": if (Array.IndexOf(Settings.VideoCodecs, text) < 0) return Change.None; d.VideoCodec = text; return Change.Video;
                 case "VideoHeight": if (!Int(v, 0, 10000, out i) || Array.IndexOf(Settings.VideoHeights, i) < 0) return Change.None; d.VideoHeight = i; return Change.Video;

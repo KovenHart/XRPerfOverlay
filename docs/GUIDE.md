@@ -51,22 +51,44 @@ Les raccourcis fonctionnent même si la fenêtre du jeu n'a pas le focus, et les
 
 ## Fenêtre de XRPerfSensors
 
-Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit → **Ouvrir XR Perf Studio**) ouvre la fenêtre du programme. Un menu à gauche mène à chaque page ; chaque changement s'applique tout de suite, y compris dans un jeu en cours, et il est enregistré dans `XRPerfOverlay.ini`. `F11` passe en plein écran (ou le bouton en haut à droite), `Échap` en sort.
+Double-cliquer sur l'icône `XRPerfSensors` près de l'horloge (ou clic droit → **Ouvrir XR Perf Studio**) ouvre la fenêtre du programme. Chaque changement s'applique tout de suite, y compris dans un jeu en cours, et il est enregistré dans `XRPerfOverlay.ini`. `F11` passe en plein écran (ou le bouton en haut à droite), `Échap` en sort.
 
-- **Tableau de bord** : le panneau tel qu'il apparaît dans le casque (l'image du jeu en cours, sinon un aperçu avec des FPS d'exemple), des interrupteurs rapides (layer OpenXR, panneau, montre, fenêtre du bureau, jeux SteamVR, miroir pour OBS), le processeur, la carte graphique et la mémoire vidéo en direct avec leur courbe des deux dernières minutes, la dernière session et les raccourcis clavier. Une pastille en haut indique si un jeu VR tourne.
-- **Panneau** : afficher ou masquer le panneau, accroche (devant les yeux, main gauche ou droite) ; devant les yeux : emplacement (choisi sur un schéma du champ de vision), distance, écarts horizontal et vertical, orientation vers les yeux ; sur la main : emplacement sur la main, affichage seulement quand on regarde sa main, ajustements de position ; taille, opacité de l'ensemble et du fond ; dans les jeux : la layer OpenXR (voir « Désactiver la layer ») et les jeux SteamVR (OpenVR). L'aperçu reste affiché à côté.
-- **Apparence** (casque, montre et miroir) : présentation, couleurs (vignettes des neuf jeux), heure, ligne casque / résolution, ligne session / batterie.
-- **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
-- **Fenêtre** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
-- **Vidéo** comprend aussi la **source OBS** pour le streaming (voir « Source OBS »).
-- **Image** : presets, filtres de netteté, couleurs, faux HDR, débandage et mode daltonien, dans le casque ou dans la vidéo (voir « Filtres d'image »).
-- **Miroir du bureau** : la fenêtre miroir pour OBS, son emplacement, sa taille, son opacité, premier plan.
-- **Vidéo** : enregistrement vidéo du casque (voir « Vidéo du casque »).
-- **Mesures** : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
+La fenêtre a deux modes, au choix par l'interrupteur **Réglages avancés** en bas du menu. Les couleurs et toutes les fonctions sont les mêmes dans les deux ; seul le rangement change.
+
+### Mode simple
+
+Le mode d'une nouvelle installation (une installation existante s'ouvre en mode avancé). Au premier lancement, un assistant de trois étapes demande dans quels jeux s'afficher (OpenXR et SteamVR), ce qu'il montre (*Minimal*, *Essentiel* ou *Complet*) et la qualité vidéo (*Standard* 1080p, *Haute* 1440p ou *Maximale* 4K) ; **Passer** garde les réglages actuels. Cinq pages :
+
+- **Accueil** : l'aperçu du casque, les interrupteurs « Affiché en jeu » (panneau, montre, fenêtre du PC, filtres d'image), enregistrer, passer en direct ou capturer, la dernière session et les presets d'image en un clic.
+- **Dans le casque** : contenu du panneau (*Minimal*, *Essentiel*, *Complet*), place, taille, montre.
+- **Vidéo et direct** : qualité en un choix, format d'image, son du jeu et du micro, clés Twitch et YouTube, dossiers.
+- **Image** : les presets, avec leur intensité.
 - **Rapports** : voir « Rapports de session ».
-- **Configuration** : diagnostic du PC pour la VR (voir « Diagnostic de configuration »).
-- **Raccourcis** : tous les raccourcis du casque et celui de la vidéo (voir « Utilisation »).
-- **Interface** : langue (celle de Windows, français ou anglais), couleurs de la fenêtre (« comme le panneau » du casque, l'un des huit thèmes, ou trois couleurs à soi), taille du texte, animations, plein écran et ouverture en plein écran.
+
+Un lien en bas de chaque page mène aux réglages complets correspondants.
+
+### Mode avancé
+
+Toutes les pages, rangées par tâche :
+
+- **Tableau de bord** : le panneau tel qu'il apparaît dans le casque (l'image du jeu en cours, sinon un aperçu avec des FPS d'exemple), des interrupteurs rapides (layer OpenXR, panneau, montre, fenêtre du bureau, jeux SteamVR, panneau pour OBS), le processeur, la carte graphique et la mémoire vidéo en direct avec leur courbe des deux dernières minutes, la dernière session. Le bouton **Aide-mémoire** (ou la touche `?`) liste les raccourcis clavier. En haut, une pastille indique si un jeu VR tourne, et une autre le preset d'image actif.
+- **Affichage en jeu**
+  - **Panneau**, onglet *Affichage et place* : afficher ou masquer le panneau, accroche (devant les yeux, main gauche ou droite) ; devant les yeux : emplacement (choisi sur un schéma du champ de vision), distance, écarts horizontal et vertical, orientation vers les yeux ; sur la main : emplacement sur la main, affichage seulement quand on regarde sa main, ajustements de position ; taille, opacité de l'ensemble et du fond ; dans les jeux : la layer OpenXR (voir « Désactiver la layer ») et les jeux SteamVR (OpenVR). Onglet *Apparence* (casque, montre et panneau pour OBS) : présentation, couleurs (vignettes des onze jeux, dont les deux thèmes Cyberpunk *Néon* et *Signal*), heure, ligne casque / résolution, ligne session / batterie.
+  - **Montre** : afficher la montre, accroche, emplacement sur la main, style, éléments, affichage au regard, taille, opacité, ajustements de position, avec son aperçu (voir « Montre et accroche aux manettes »).
+  - **Fenêtre du PC** : la fenêtre du bureau affichée dans le casque (voir « Fenêtre du bureau dans le casque »).
+- **Rendu** : **Filtres d'image** : presets, netteté, couleurs, faux HDR, débandage et mode daltonien, dans le casque ou dans la vidéo (voir « Filtres d'image »).
+- **Capture et partage**
+  - **Vidéo et direct**, en onglets : *Enregistrement* (voir « Vidéo du casque »), *Direct* (voir « Direct sur Twitch et YouTube »), *Captures d'écran*, *Son*, *Cadrage et caméra*, *OBS* (voir « Source OBS »).
+  - **Panneau pour OBS** (l'ancien « Miroir du bureau ») : la fenêtre du panneau sur le bureau, son emplacement, sa taille, son opacité, premier plan.
+- **Analyse**
+  - **Rapports** : voir « Rapports de session ».
+  - **Capteurs et diagnostic** : onglet *Diagnostic* (voir « Diagnostic de configuration ») et onglet *Mesures et rapports* : mesure réelle du temps GPU (sinon estimation), écriture des rapports (à chaque session, au raccourci `Ctrl+Alt+S` ou jamais : appliqué aussitôt, même en jeu), modèles du processeur et de la carte graphique dans les rapports, dossier des rapports. La mesure GPU et les modèles valent au prochain lancement d'un jeu.
+- En bas du menu : **Raccourcis clavier** (tous les raccourcis du casque, de la vidéo et de la capture, voir « Utilisation ») et **Préférences** : langue (celle de Windows, français ou anglais), couleurs de la fenêtre (« comme le panneau » du casque, l'un des dix thèmes, ou trois couleurs à soi), taille du texte, animations, plein écran et ouverture en plein écran.
+
+Pour s'y retrouver :
+
+- **Chercher un réglage** (`Ctrl+K`, ou le champ en haut du menu) : taper une partie du nom (« opac », « codec », « clé ») ; `↑` `↓` puis `Entrée` ouvre la page et surligne le réglage.
+- **Réglages modifiés** : un point orange marque chaque réglage qui n'a plus sa valeur d'origine ; **Rétablir** en tête d'une section remet toute la section à ses valeurs d'origine.
 
 Le rapport d'une session, avec l'analyse en phrases à gauche et les courbes minute par minute à droite :
 

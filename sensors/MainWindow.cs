@@ -25,7 +25,7 @@ namespace XRPerfSensors
     internal sealed class MainWindow : Form
     {
         private const string HostName = "xrperf.ui";
-        private static readonly string[] PanelPages = { "dashboard", "panel", "appearance", "desktop" };
+        private static readonly string[] PanelPages = { "dashboard", "panel", "appearance", "desktop", "home", "simple-headset" };
 
         private readonly TrayApp _app;
         private readonly ReportStore _reports;
@@ -376,6 +376,13 @@ namespace XRPerfSensors
                 SettingsJson.WriteOverlay(w, _app.Overlay);
                 w.WritePropertyName("desktop");
                 SettingsJson.WriteDesktop(w, _app.Desktop);
+                // Valeurs par défaut : l'interface marque les réglages modifiés et peut les rétablir par section.
+                w.WriteStartObject("defaults");
+                w.WritePropertyName("overlay");
+                SettingsJson.WriteOverlay(w, new OverlaySettings());
+                w.WritePropertyName("desktop");
+                SettingsJson.WriteDesktop(w, new Settings());
+                w.WriteEndObject();
                 if (_app.Unavailable != null) w.WriteString("unavailable", _app.Unavailable);
                 w.WriteBoolean("captureAvailable", _app.Capture != null && _app.Capture.Available);
                 w.WriteBoolean("previewAvailable", _app.PreviewAvailable);

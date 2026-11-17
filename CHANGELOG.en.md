@@ -4,6 +4,17 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.16.0
+
+- **Simple mode** to get started: five pages (Home, In the headset, Video and live, Image, Reports) with ready-made choices: panel contents *Minimal*, *Essential* or *Full*, video quality *Standard*, *High* or *Maximum*, one-click image presets. A three-step assistant on first launch. It is the mode of a new installation; an existing installation stays in advanced mode. The **Advanced settings** switch, at the bottom of the menu, goes from one to the other.
+- **Advanced mode reorganized by task**: In-game display (Panel, Watch, PC window), Rendering (Image filters), Capture and sharing (Video and live, Panel for OBS), Analysis (Reports, Sensors and diagnosis). Appearance becomes a tab of Panel, Measurements and Configuration are merged, and the long Video page moves to tabs (Recording, Live, Screenshots, Sound, Framing and camera, OBS).
+- **Cyberpunk themes *Neon* and *Signal*** for the headset panel, the watches, the panel for OBS, videos and screenshots, and for the XRPerfSensors window. *Neon*: night violet, glowing magenta border, cyan measurements. *Signal*: black and yellow, bevelled corners, yellow marks. In the window, each has its own font (Orbitron and Rajdhani, Chakra Petch), shipped with the program. Chosen in Panel › Appearance, or for the window alone in Preferences.
+- **Search a setting** with `Ctrl+K`: the page opens on the setting found.
+- **Changed settings** marked with a dot, with **Reset** per section.
+- The active image preset shows at the top; the shortcut list leaves the dashboard for a **cheat sheet** (`?` key).
+- Nothing changes in the headset or in existing settings.
+- **Fix** (OpenXR games): with the watch shown, a thin line in the watch's color could appear at the bottom of the panel in some headsets (visible in the headset, not in videos).
+
 ## 1.15.0
 
 - **XR Perf Overlay becomes XR Perf Studio**: the software does much more than show measurements (video, live streaming, OBS source, image filters, desktop window, reports). The new name appears in the interface, the tray menu, reports, OBS and the package (`XRPerfStudio-<version>-win64.zip`). Nothing changes for an existing installation: same settings (`%LOCALAPPDATA%\XRPerfOverlay` folder), same OpenXR layer, same SteamVR application, same OBS source in scenes, same video folder; older reports stay readable.
