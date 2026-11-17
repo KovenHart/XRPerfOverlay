@@ -13,6 +13,8 @@ window.App = (function () {
     layerVersion: "",
     overlay: {},
     desktop: {},
+    defaults: { overlay: {}, desktop: {} },  // valeurs par défaut : réglages modifiés, « Rétablir »
+    tab: { panel: "panel", diagnostics: "config", video: "rec" },  // onglet ouvert de chaque page à onglets
     unavailable: null,
     captureAvailable: true,
     previewAvailable: true,
@@ -107,6 +109,10 @@ window.App = (function () {
     refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
     folder: '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/>',
+    search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
+    close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    camera: '<path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.5"/>',
+    chevron: '<path d="M9 6l6 6-6 6"/>',
     text: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 12h6M10 15h6M10 18h4"/>',
     alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4.5M12 17.5h.01"/>',
     good: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16.5 9"/>',
@@ -126,7 +132,9 @@ window.App = (function () {
 
   // --- Échanges avec le programme -----------------------------------------------------------------
 
+  let indexing = false;  // recherche : les pages sont construites hors écran, sans rien envoyer
   function send(type, payload) {
+    if (indexing) return;
     const msg = Object.assign({ type }, payload || {});
     if (host) host.postMessage(msg);
     else if (window.Mock) window.Mock.receive(msg);
@@ -142,13 +150,16 @@ window.App = (function () {
           pawnio: msg.pawnio !== false, fullscreen: !!msg.fullscreen, reportsFolder: msg.reportsFolder || "",
           layer: msg.layer || { state: "enabled", busy: false, elevated: false },
         });
+        state.defaults = msg.defaults || { overlay: {}, desktop: {} };
         state.lang = msg.lang === "en" ? "en" : "fr";
         state.readMode = msg.readMode === "detailed" ? "detailed" : "simple";
         state.ready = true;
         document.getElementById("app").hidden = false;
         applyTheme();
+        state.page = homePage();
         renderAll();
-        if (msg.page) go(msg.page);
+        go(msg.page || homePage());
+        if (simpleMode() && !get("desktop", "UiWelcome")) openWelcome();
         break;
       case "overlay":
       case "desktop": {
@@ -156,9 +167,12 @@ window.App = (function () {
         const key = msg.type;
         const fresh = msg[key] || state[key];
         const changed = JSON.stringify(fresh) !== JSON.stringify(state[key]);
+        const modeChanged = key === "desktop" && fresh.UiMode !== state.desktop.UiMode;
         state[key] = fresh;
         if (!changed) break;
         applyTheme();
+        if (modeChanged) { go(homePage()); break; }
+        renderTopbar();
         if (!isDragging() && state.page !== "reports") renderPage();
         break;
       }
@@ -229,7 +243,7 @@ window.App = (function () {
           if (state.selected.length === 0 && visibleReports().length) selectReports([visibleReports()[0].id]);
           else renderReportList();
         }
-        if (state.page === "dashboard") renderPage();
+        if (state.page === "dashboard" || state.page === "home") renderPage();
         break;
       case "report":
         state.report = msg.report || null;
@@ -245,21 +259,21 @@ window.App = (function () {
         // Envoyé juste avant le relevé ("config") ; seul, il redessine la page si le bouton apparaît ou disparaît.
         if (state.xrUndo !== !!msg.available) {
           state.xrUndo = !!msg.available;
-          if (state.page === "config" && state.config !== undefined && !state.configLoading) renderPage();
+          if (currentSub() === "config" && state.config !== undefined && !state.configLoading) renderPage();
         }
         break;
       case "layer":
         // Layer activée ou désactivée (ici, depuis le menu de l'icône ou par l'installateur).
         if (!msg.layer || JSON.stringify(msg.layer) === JSON.stringify(state.layer)) break;
         state.layer = msg.layer;
-        if ((state.page === "dashboard" || state.page === "panel") && !isDragging()) renderPage();
-        if (state.page === "config") requestConfig();
+        if (["dashboard", "home", "panel", "simple-headset"].includes(state.page) && !isDragging()) renderPage();
+        if (currentSub() === "config") requestConfig();
         break;
       case "config":
         state.config = msg.config || null;
         state.configLoading = false;
         state.xrBusy = false;
-        if (state.page === "config") renderPage();
+        if (currentSub() === "config") renderPage();
         break;
       case "go":
         go(msg.page);
@@ -405,29 +419,60 @@ window.App = (function () {
 
   // --- Navigation -----------------------------------------------------------------------------------
 
-  const PAGES = [
+  // Deux interfaces : simple (cinq pages, choix tout faits, pour commencer) et avancée (tout, rangé par
+  // tâche). Les pages avancées restent ouvertes depuis le mode simple (liens « Tous les réglages »).
+  const SIMPLE_PAGES = [
+    { id: "home", icon: "dashboard" },
+    { id: "simple-headset", icon: "panel" },
+    { id: "simple-video", icon: "video" },
+    { id: "simple-image", icon: "image" },
+    { id: "reports", icon: "reports" },
+  ];
+  const ADVANCED_PAGES = [
     { id: "dashboard", icon: "dashboard" },
-    { group: "nav.group.headset" },
+    { group: "nav.group.ingame" },
     { id: "panel", icon: "panel" },
-    { id: "appearance", icon: "appearance" },
     { id: "watch", icon: "watch" },
     { id: "window", icon: "window" },
+    { group: "nav.group.image" },
     { id: "image", icon: "image" },
-    { group: "nav.group.pc" },
-    { id: "desktop", icon: "mirror" },
+    { group: "nav.group.capture" },
     { id: "video", icon: "video" },
-    { id: "measures", icon: "measures" },
+    { id: "desktop", icon: "mirror" },
+    { group: "nav.group.analysis" },
     { id: "reports", icon: "reports" },
-    { id: "config", icon: "config" },
-    { id: "hotkeys", icon: "hotkeys" },
-    { id: "interface", icon: "interface" },
+    { id: "diagnostics", icon: "config" },
   ];
+  const BOTTOM_PAGES = [{ id: "hotkeys", icon: "hotkeys" }, { id: "interface", icon: "interface" }];
+  // Anciennes pages devenues des onglets (liens du programme, du menu de l'icône).
+  const ALIASES = { appearance: ["panel", "appearance"], measures: ["diagnostics", "measures"], config: ["diagnostics", "config"] };
+  const TABS = {
+    panel: [{ id: "panel", label: "tab.panel.place" }, { id: "appearance", label: "tab.panel.look" }],
+    diagnostics: [{ id: "config", label: "tab.diag.config" }, { id: "measures", label: "tab.diag.measures" }],
+    video: ["rec", "live", "snap", "sound", "camera", "obs"].map(id => ({ id, label: "tab.video." + id })),
+  };
+  const ALL_PAGES = SIMPLE_PAGES.concat(ADVANCED_PAGES, BOTTOM_PAGES).filter(p => p.id);
 
-  function go(page) {
+  const simpleMode = () => get("desktop", "UiMode") === "simple";
+  const homePage = () => (simpleMode() ? "home" : "dashboard");
+
+  // Nom de la page « au sens du programme » (aperçus à envoyer, relevé de configuration) : l'onglet ouvert.
+  function currentSub() {
+    if (state.page === "panel") return state.tab.panel === "appearance" ? "appearance" : "panel";
+    if (state.page === "diagnostics") return state.tab.diagnostics === "measures" ? "measures" : "config";
+    return state.page;
+  }
+
+  function go(page, tab) {
     stopHotkeyCapture();
-    if (!PAGES.some(p => p.id === page)) page = "dashboard";
+    closeSearch();
+    if (ALIASES[page]) [page, tab] = ALIASES[page];
+    if (page === "dashboard" && simpleMode()) page = "home";
+    if (page === "home" && !simpleMode()) page = "dashboard";
+    if (!ALL_PAGES.some(p => p.id === page)) page = homePage();
+    if (tab && TABS[page] && TABS[page].some(x => x.id === tab)) state.tab[page] = tab;
     state.page = page;
-    send("page", { name: page });
+    send("page", { name: currentSub() });
     renderRail();
     renderTopbar();
     renderPage();
@@ -435,7 +480,18 @@ window.App = (function () {
     main.scrollTop = 0;
     if (page === "reports") send("listReports");
     if (page === "window") send("listWindows");
-    if (page === "config") requestConfig();
+    if (currentSub() === "config") requestConfig();
+  }
+
+  // Barre d'onglets en haut d'une page ; `before` : contenu commun à tous les onglets (sous la barre).
+  function tabBar(pageId) {
+    const bar = h("div", { class: "tabs", role: "tablist", "aria-label": t("nav." + pageId) });
+    for (const x of TABS[pageId]) {
+      const selected = state.tab[pageId] === x.id;
+      bar.appendChild(h("button", { type: "button", role: "tab", "aria-selected": String(selected), class: "tab", text: t(x.label),
+        onclick: () => { if (!selected) go(pageId, x.id); } }));
+    }
+    return bar;
   }
 
   function renderAll() {
@@ -452,17 +508,30 @@ window.App = (function () {
     return s.firstChild;
   }
 
+  function navItem(p) {
+    const item = h("button", { class: "nav-item", type: "button", title: t("nav." + p.id), "aria-current": state.page === p.id ? "page" : null, onclick: () => go(p.id) },
+      icon(p.icon), h("span", { text: t("nav." + p.id) }));
+    if ((p.id === "dashboard" || p.id === "home") && (!state.pawnio || versionMismatch())) item.appendChild(h("i", { class: "nav-badge", "aria-hidden": "true" }));
+    return item;
+  }
+
   function renderRail() {
     const rail = document.getElementById("rail");
     rail.replaceChildren();
     rail.appendChild(h("div", { class: "brand" }, brandMark(), h("div", { class: "brand-name" }, "XR Perf Studio", h("span", { text: t("app.sub") }))));
-    for (const p of PAGES) {
+    rail.appendChild(h("button", { class: "nav-search", type: "button", onclick: openSearch, "aria-keyshortcuts": "Control+K" },
+      icon("search"), h("span", { text: t("search.open") }), h("kbd", { text: "Ctrl K" })));
+    for (const p of simpleMode() ? SIMPLE_PAGES : ADVANCED_PAGES) {
       if (p.group) { rail.appendChild(h("div", { class: "nav-group", text: t(p.group) })); continue; }
-      const item = h("button", { class: "nav-item", type: "button", title: t("nav." + p.id), "aria-current": state.page === p.id ? "page" : null, onclick: () => go(p.id) },
-        icon(p.icon), h("span", { text: t("nav." + p.id) }));
-      if (p.id === "dashboard" && (!state.pawnio || versionMismatch())) item.appendChild(h("i", { class: "nav-badge", "aria-hidden": "true" }));
-      rail.appendChild(item);
+      rail.appendChild(navItem(p));
     }
+    const bottom = h("div", { class: "rail-bottom" });
+    if (!simpleMode()) BOTTOM_PAGES.forEach(p => bottom.appendChild(navItem(p)));
+    const mode = h("input", { type: "checkbox", role: "switch", "aria-label": t("mode.advanced") });
+    mode.checked = !simpleMode();
+    mode.addEventListener("change", () => { setValue("desktop", "UiMode", mode.checked ? "advanced" : "simple"); go(homePage()); });
+    bottom.appendChild(h("label", { class: "mode-switch", title: t("mode.advanced.help") }, h("span", { text: t("mode.advanced") }), h("span", { class: "switch" }, mode, h("span"))));
+    rail.appendChild(bottom);
     rail.appendChild(h("div", { class: "rail-foot", id: "rail-foot" }));
     renderRailFoot();
   }
@@ -491,7 +560,12 @@ window.App = (function () {
       ? h("button", { class: "pill rec" + (v.state === 2 ? " on" : ""), type: "button", title: t("nav.video"), onclick: () => go("video") }, h("i", { class: "dot" }),
           v.state === 2 ? (v.streaming ? "LIVE " : "REC ") + clock(v.seconds) : t(v.state === 1 ? "vid.pill.waiting" : "vid.pill.finishing"))
       : null;
-    bar.replaceChildren(h("h1", { text: t("nav." + state.page) }), h("div", { class: "actions" }, rec, pill, fs));
+    // Preset d'image en cours (filtres actifs) : rappel discret, mène à la page Image.
+    const preset = currentPreset();
+    const presetChip = preset && (get("overlay", "ImageMode") || "off") !== "off"
+      ? h("button", { class: "pill", type: "button", title: t("nav.image"), onclick: () => go(simpleMode() ? "simple-image" : "image") }, icon("image"), presetLabel(preset))
+      : null;
+    bar.replaceChildren(h("h1", { text: t("nav." + state.page) }), h("div", { class: "actions" }, rec, presetChip, pill, fs));
   }
 
   function toggleFullscreen() {
@@ -520,12 +594,8 @@ window.App = (function () {
     if (!page || !state.ready) return;
     Charts.hideTip();
     page.className = "page";
-    const builder = {
-      dashboard: renderDashboard, panel: renderPanelPage, appearance: renderAppearancePage, watch: renderWatchPage,
-      window: renderWindowPage, image: renderImagePage, desktop: renderDesktopPage, video: renderVideoPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage, hotkeys: renderHotkeysPage,
-      interface: renderInterfacePage,
-    }[state.page];
     page.replaceChildren();
+    const builder = PAGE_BUILDERS[state.page];
     if (builder) builder(page);
     updateLive();
   }
@@ -547,6 +617,30 @@ window.App = (function () {
   const get = (scope, key) => state[scope][key];
   const locked = scope => scope === "overlay" && !!state.unavailable;
 
+  // Réglage à sa valeur par défaut ? (valeurs envoyées par le programme ; inconnu : oui)
+  function isDefault(scope, key) {
+    const d = state.defaults[scope] || {};
+    if (!(key in d)) return true;
+    const a = get(scope, key), b = d[key];
+    if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) < 1e-4;
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  // Mode avancé : pastille sur un réglage modifié ; la ligne garde son réglage pour « Rétablir » (group).
+  function trackDefault(r, scope, key) {
+    r.dataset.scope = scope;
+    r.dataset.key = key;
+    if (simpleMode()) return r;
+    const label = r.querySelector(".row-label");
+    if (!label || !(key in (state.defaults[scope] || {}))) return r;
+    const dot = h("i", { class: "mod-dot", title: t("set.modified"), role: "img", "aria-label": t("set.modified") });
+    label.appendChild(dot);
+    const f = () => { dot.hidden = isDefault(scope, key); };
+    refreshers.push(f);
+    f();
+    return r;
+  }
+
   function row(label, help, control, opts) {
     opts = opts || {};
     const r = h("div", { class: "row" + (opts.stack ? " stack" : "") },
@@ -565,7 +659,7 @@ window.App = (function () {
     input.checked = !!get(scope, key);
     input.disabled = locked(scope);
     input.addEventListener("change", () => setValue(scope, key, input.checked));
-    return row(label, help, h("label", { class: "switch" }, input, h("span")), opts);
+    return trackDefault(row(label, help, h("label", { class: "switch" }, input, h("span")), opts), scope, key);
   }
 
   // Interrupteur de la layer OpenXR : l'état vient du registre (message "layer"), pas des réglages.
@@ -604,7 +698,7 @@ window.App = (function () {
   function segRow(scope, key, label, help, options, opts) {
     const seg = segmented(options, get(scope, key), v => setValue(scope, key, v), label);
     if (locked(scope)) seg.querySelectorAll("button").forEach(b => (b.disabled = true));
-    return row(label, help, seg, opts);
+    return trackDefault(row(label, help, seg, opts), scope, key);
   }
 
   function selectRow(scope, key, label, help, options, opts) {
@@ -613,7 +707,7 @@ window.App = (function () {
     sel.value = String(get(scope, key));
     sel.disabled = locked(scope);
     sel.addEventListener("change", () => setValue(scope, key, typeof options[0].value === "number" ? Number(sel.value) : sel.value));
-    return row(label, help, sel, opts);
+    return trackDefault(row(label, help, sel, opts), scope, key);
   }
 
   /** Curseur : la valeur enregistrée vaut position / factor (par exemple des mètres pour des centimètres affichés). */
@@ -632,7 +726,7 @@ window.App = (function () {
     input.disabled = locked(scope);
     input.addEventListener("input", () => { show(); setValue(scope, key, Number(input.value) / factor); });
     show();
-    return row(label, help, h("div", { class: "slider" }, input, out), opts);
+    return trackDefault(row(label, help, h("div", { class: "slider" }, input, out), opts), scope, key);
   }
 
   const cm = v => num(v) + " " + t("unit.cm");
@@ -641,10 +735,24 @@ window.App = (function () {
   const meters = v => num(v / 100, 2) + " " + t("unit.m");
 
   function group(title, help, children, enabled) {
-    const g = h("section", { class: "group", "data-off": t("set.offWhen") },
-      h("div", { class: "group-head" }, h("h2", { text: title }), help ? h("p", { text: help }) : null), children);
+    const head = h("div", { class: "group-head" }, h("h2", { text: title }), help ? h("p", { text: help }) : null);
+    const g = h("section", { class: "group", "data-off": t("set.offWhen") }, head, children);
     if (enabled) {
       const f = () => g.setAttribute("aria-disabled", String(!enabled()));
+      refreshers.push(f);
+      f();
+    }
+    // Mode avancé : « Rétablir » remet les réglages modifiés de la section à leur valeur par défaut.
+    const tracked = Array.from(g.querySelectorAll(".row[data-key]")).map(r => [r.dataset.scope, r.dataset.key])
+      .filter(([scope, key]) => key in (state.defaults[scope] || {}));
+    if (tracked.length && !simpleMode()) {
+      const reset = h("button", { class: "btn small ghost group-reset", type: "button", text: t("set.resetSection"), onclick: () => {
+        for (const [scope, key] of tracked) if (!isDefault(scope, key) && !locked(scope)) setValue(scope, key, state.defaults[scope][key]);
+        renderPage();
+        toast(t("set.resetSection.done"));
+      } });
+      head.appendChild(reset);
+      const f = () => { reset.hidden = tracked.every(([scope, key]) => isDefault(scope, key)); };
       refreshers.push(f);
       f();
     }
@@ -678,9 +786,8 @@ window.App = (function () {
 
   // --- Tableau de bord --------------------------------------------------------------------------------
 
-  function renderDashboard(page) {
-    refreshers = [];
-    const dash = h("div", { class: "dash" });
+  // Avertissements du tableau de bord et de l'accueil (layer coupée, versions, PawnIO).
+  function dashNotes(dash) {
     const layerOff = state.layer && state.layer.state === "disabled";
     if (!state.pawnio || versionMismatch() || layerOff) {
       const notes = [];
@@ -692,6 +799,12 @@ window.App = (function () {
       notes.forEach(n => { n.style.margin = "0"; });
       dash.appendChild(h("div", { class: "span", style: { display: "grid", gap: "8px" } }, notes));
     }
+  }
+
+  function renderDashboard(page) {
+    refreshers = [];
+    const dash = h("div", { class: "dash" });
+    dashNotes(dash);
 
     // Le panneau tel qu'il est dans le casque.
     const stageCard = h("section", { class: "card dash-stage" },
@@ -716,7 +829,18 @@ window.App = (function () {
       h("div", { class: "tile", id: "tile-vram" }));
     dash.appendChild(h("section", { class: "card span" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.sensors") })), tiles));
 
-    // Dernière session.
+    dash.appendChild(lastSessionCard());
+
+    // Raccourcis : l'aide-mémoire complet s'ouvre à la demande (touche « ? »).
+    dash.appendChild(h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.keys") })),
+      h("p", { class: "muted", style: { margin: "0 0 14px" }, text: t("dash.keys.short", { panel: hotkeyText(get("overlay", "Hotkey.toggle") || 0) || "--",
+        video: hotkeyText(get("desktop", "VideoHotkey") || 0) || "--" }) }),
+      h("button", { class: "btn", type: "button", onclick: openCheatSheet }, icon("hotkeys"), t("dash.keys.all"), h("kbd", { text: "?" }))));
+    page.appendChild(dash);
+  }
+
+  // Dernière session : anneau de cible tenue, verdict, lien vers le rapport.
+  function lastSessionCard() {
     const last = state.reports.find(r => r.readable);
     const lastCard = h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.last") })));
     if (!last) lastCard.appendChild(h("p", { class: "muted", text: t("dash.last.none") }));
@@ -731,18 +855,20 @@ window.App = (function () {
           h("div", { class: "tile-sub", style: { marginTop: "10px" } }, h("span", null, h("b", { text: num(last.fpsAvg, 1) }), " " + t("dash.last.fps")))),
         h("button", { class: "btn", type: "button", onclick: () => { state.selected = [last.id]; go("reports"); send("openReport", { ids: [last.id] }); } }, t("dash.last.open"))));
     }
-    dash.appendChild(lastCard);
+    return lastCard;
+  }
 
-    // Raccourcis.
-    // Raccourcis du moment (page Raccourcis) ; ceux retirés n'apparaissent pas.
+  // Aide-mémoire : raccourcis du moment (page Raccourcis) ; ceux retirés n'apparaissent pas.
+  function openCheatSheet() {
     const k = combo => h("span", { class: "combo" }, hotkeyParts(combo).map(x => h("kbd", { text: x })));
     const keyList = HOTKEYS.filter(x => get("overlay", "Hotkey." + x.name))
       .map(x => [k(get("overlay", "Hotkey." + x.name)), h("span", { text: t(x.label) })]);
-    dash.appendChild(h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.keys") })),
+    openModal(t("dash.keys"), h("div", null,
       h("div", { class: "keys" }, keyList,
         videoEnabled() && get("desktop", "VideoHotkey") ? [k(get("desktop", "VideoHotkey")), h("span", { text: t("key.video") })] : null,
-        videoEnabled() && get("desktop", "SnapHotkey") ? [k(get("desktop", "SnapHotkey")), h("span", { text: t("key.snap") })] : null)));
-    page.appendChild(dash);
+        videoEnabled() && get("desktop", "SnapHotkey") ? [k(get("desktop", "SnapHotkey")), h("span", { text: t("key.snap") })] : null),
+      h("p", { class: "muted small", style: { marginTop: "16px" } }, t("dash.keys.change") + " ",
+        h("a", { href: "#", onclick: e => { e.preventDefault(); closeModal(); go("hotkeys"); }, text: t("nav.hotkeys") }))));
   }
 
   function tile(id, label, name, value, unit, subs, spark, color, min, max, meter) {
@@ -763,7 +889,7 @@ window.App = (function () {
       if (state.panelImage) { if (img.getAttribute("src") !== state.panelImage) img.src = state.panelImage; img.hidden = false; if (empty) empty.hidden = true; }
       else { img.hidden = true; if (empty) empty.hidden = state.previewAvailable; if (empty && !state.previewAvailable) empty.hidden = false; }
       const cap = document.getElementById("panel-caption");
-      if (cap && state.page === "dashboard") cap.textContent = state.panelLive ? t("dash.preview.live") : t("dash.preview.sample");
+      if (cap && (state.page === "dashboard" || state.page === "home")) cap.textContent = state.panelLive ? t("dash.preview.live") : t("dash.preview.sample");
     }
     const watch = document.getElementById("watch-img");
     if (watch && state.watchImage) watch.src = state.watchImage;
@@ -779,7 +905,7 @@ window.App = (function () {
       else if (!text && !state.overlay.WindowEnabled) text = t("win.disabledNote");
       status.textContent = text;
     }
-    if (state.page === "dashboard") {
+    if (state.page === "dashboard" || state.page === "home") {
       const s = state.sensors || {};
       const hist = state.history;
       tile("tile-cpu", t("dash.cpu"), s.cpuName, num(s.cpuLoad), " %", [[num(s.cpuTemp) + " °C", t("dash.temp")], [num(s.cpuMHz), "MHz"]].concat(s.cpuWatts != null ? [[num(s.cpuWatts), "W"]] : []), hist.cpuLoad, "var(--s-cpu)", 0, 100);
@@ -1388,7 +1514,11 @@ window.App = (function () {
         row(t("vid.obs.state"), null, h("span", { class: "row-help", id: "obs-state", "aria-live": "polite" }), { enabled: () => !!get("desktop", "VideoObs") }),
       ], videoEnabled),
     ];
-    settingsLayout(page, form, null);
+    // Onglets : l'état et le bouton (premier groupe) restent visibles sur chacun.
+    const [status, stream, twitch, youtube, image, motion, overlay, sound, files, snap, obs] = form;
+    const byTab = { rec: [image, files], live: [stream, twitch, youtube], snap: [snap], sound: [sound], camera: [motion, overlay], obs: [obs] };
+    page.appendChild(tabBar("video"));
+    settingsLayout(page, [status].concat(byTab[state.tab.video] || byTab.rec), null);
     refreshers.push(updateVideo);
     updateVideo();
     if (!state.videoDevices) send("videoDevices");
@@ -1682,7 +1812,7 @@ window.App = (function () {
   function requestConfig() {
     state.configLoading = true;
     send("diagnose");
-    if (state.page === "config") renderPage();
+    if (currentSub() === "config") renderPage();
   }
 
   const FINDING_ICON = { Good: "good", Problem: "problem", Warning: "alert", Info: "info" };
@@ -1754,7 +1884,7 @@ window.App = (function () {
       }
     }
     settingsLayout(page, form, null);
-    page.firstChild.classList.add("cfg");
+    page.lastChild.classList.add("cfg");
   }
 
   // --- Rapports -------------------------------------------------------------------------------
@@ -2180,6 +2310,377 @@ window.App = (function () {
   // --- Divers ------------------------------------------------------------------------------------
 
   let toastTimer = 0;
+  // --- Fenêtres modales (aide-mémoire, bienvenue) ------------------------------------------------
+
+  let modal = null;
+
+  function openModal(title, body, opts) {
+    closeModal();
+    opts = opts || {};
+    const box = h("div", { class: "modal" + (opts.wide ? " wide" : ""), role: "dialog", "aria-modal": "true", "aria-label": title },
+      h("div", { class: "modal-head" }, h("h2", { text: title }),
+        opts.noClose ? null : h("button", { class: "btn icon ghost", type: "button", "aria-label": t("modal.close"), onclick: () => closeModal() }, icon("close"))),
+      h("div", { class: "modal-body" }, body),
+      opts.foot ? h("div", { class: "modal-foot" }, opts.foot) : null);
+    const back = h("div", { class: "modal-back" }, box);
+    back.addEventListener("mousedown", e => { if (e.target === back && !opts.noClose) closeModal(); });
+    document.body.appendChild(back);
+    modal = { back, onClose: opts.onClose };
+    const focus = box.querySelector("input, button.primary, button");
+    if (focus) focus.focus();
+    return box;
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    const m = modal;
+    modal = null;
+    m.back.remove();
+    if (m.onClose) m.onClose();
+  }
+
+  // --- Recherche d'un réglage (Ctrl+K) -----------------------------------------------------------
+
+  // Pages (et onglets) où chercher : construites hors écran pour lire leurs réglages, dans la langue du moment.
+  const SEARCH_TARGETS = [["panel", "panel"], ["panel", "appearance"], ["watch"], ["window"], ["image"],
+    ["video", "rec"], ["video", "live"], ["video", "snap"], ["video", "sound"], ["video", "camera"], ["video", "obs"],
+    ["desktop"], ["diagnostics", "measures"], ["hotkeys"], ["interface"]];
+  const fold = text => (text || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+  function buildSearchIndex() {
+    const saved = { refreshers, page: state.page, tab: Object.assign({}, state.tab) };
+    const items = [];
+    indexing = true;
+    try {
+      for (const [pageId, tab] of SEARCH_TARGETS) {
+        state.page = pageId;
+        if (tab) state.tab[pageId] = tab;
+        const box = h("div");
+        try { PAGE_BUILDERS[pageId](box); } catch (e) { continue; }
+        const where = t("nav." + pageId) + (tab && TABS[pageId] ? " › " + t(TABS[pageId].find(x => x.id === tab).label) : "");
+        items.push({ page: pageId, tab, label: where, where: "", page_only: true });
+        box.querySelectorAll(".row").forEach(r => {
+          const labelEl = r.querySelector(".row-label");
+          const label = labelEl ? labelEl.firstChild && labelEl.firstChild.nodeType === 3 ? labelEl.firstChild.textContent : labelEl.textContent : "";
+          if (!label || !label.trim()) return;
+          const groupEl = r.closest(".group");
+          const groupTitle = groupEl ? groupEl.querySelector(".group-head h2").textContent : "";
+          const helpEl = r.querySelector(".row-help");
+          items.push({ page: pageId, tab, label: label.trim(), where: where + (groupTitle && groupTitle !== label ? " › " + groupTitle : ""), help: helpEl ? helpEl.textContent : "" });
+        });
+      }
+    } finally {
+      indexing = false;
+      refreshers = saved.refreshers;
+      state.page = saved.page;
+      state.tab = saved.tab;
+    }
+    return items;
+  }
+
+  let search = null;
+
+  function openSearch() {
+    if (search || hotkeyCapture) return;
+    const items = buildSearchIndex();
+    const input = h("input", { class: "search-input", type: "search", placeholder: t("search.placeholder"), "aria-label": t("search.open"), autocomplete: "off", spellcheck: "false" });
+    const list = h("div", { class: "search-results", role: "listbox" });
+    let results = [], active = 0;
+    const show = () => {
+      const q = fold(input.value.trim());
+      const words = q.split(/\s+/).filter(Boolean);
+      results = !words.length ? items.filter(x => x.page_only)
+        : items.map(x => {
+            const label = fold(x.label), all = label + " " + fold(x.where) + " " + fold(x.help);
+            if (!words.every(w => all.includes(w))) return null;
+            const score = (words.every(w => label.includes(w)) ? 0 : 2) + (label.startsWith(words[0]) ? 0 : 1) + (x.page_only ? 1 : 0);
+            return { x, score };
+          }).filter(Boolean).sort((a, b) => a.score - b.score).map(r => r.x);
+      results = results.slice(0, 40);
+      active = Math.min(active, Math.max(0, results.length - 1));
+      list.replaceChildren(...(results.length ? results.map((x, i) => h("button", { type: "button", class: "search-item", role: "option", "aria-selected": String(i === active),
+          onmousemove: () => { if (active !== i) { active = i; mark(); } }, onclick: () => pick(x) },
+          h("span", { class: "search-label", text: x.label }), x.where ? h("span", { class: "search-where", text: x.where }) : null))
+        : [h("p", { class: "muted", style: { padding: "14px 16px" }, text: t("search.none") })]));
+    };
+    const mark = () => list.querySelectorAll(".search-item").forEach((b, i) => {
+      b.setAttribute("aria-selected", String(i === active));
+      if (i === active) b.scrollIntoView({ block: "nearest" });
+    });
+    const pick = x => {
+      closeSearch();
+      go(x.page, x.tab);
+      if (x.page_only) return;
+      // Le réglage trouvé est amené à l'écran et signalé un instant.
+      const target = Array.from(document.querySelectorAll("#page .row")).find(r => {
+        const l = r.querySelector(".row-label");
+        return l && (l.firstChild ? l.firstChild.textContent : l.textContent).trim() === x.label;
+      });
+      if (target) {
+        target.scrollIntoView({ block: "center" });
+        target.classList.add("found");
+        setTimeout(() => target.classList.remove("found"), 1800);
+        const control = target.querySelector("input, select, button");
+        if (control) control.focus({ preventScroll: true });
+      }
+    };
+    input.addEventListener("input", () => { active = 0; show(); });
+    input.addEventListener("keydown", e => {
+      if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(results.length - 1, active + 1); mark(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(0, active - 1); mark(); }
+      else if (e.key === "Enter" && results[active]) { e.preventDefault(); pick(results[active]); }
+      else if (e.key === "Escape") { e.preventDefault(); closeSearch(); }
+    });
+    const box = h("div", { class: "search-box", role: "dialog", "aria-modal": "true", "aria-label": t("search.open") },
+      h("label", { class: "search-field" }, icon("search"), input, h("kbd", { text: t("search.esc") })), list,
+      h("div", { class: "search-foot" }, h("span", null, h("kbd", { text: "↑ ↓" }), " " + t("search.move")), h("span", null, h("kbd", { text: t("search.enter") }), " " + t("search.go"))));
+    const back = h("div", { class: "modal-back search-back" }, box);
+    back.addEventListener("mousedown", e => { if (e.target === back) closeSearch(); });
+    document.body.appendChild(back);
+    search = back;
+    show();
+    input.focus();
+  }
+
+  function closeSearch() {
+    if (!search) return;
+    search.remove();
+    search = null;
+  }
+
+  // --- Choix tout faits (mode simple, bienvenue) ----------------------------------------------------
+
+  // Contenu du panneau : disposition et éléments affichés (page Apparence).
+  const CONTENT_CHOICES = [
+    { id: "minimal", values: { Layout: 2, Clock: false, HeadsetInfo: false, PanelSession: false, PanelBattery: false, PowerColumn: false } },
+    { id: "essential", values: { Layout: 1, Clock: true, HeadsetInfo: false, PanelSession: true, PanelBattery: false, PowerColumn: false } },
+    { id: "full", values: { Layout: 0, Clock: true, HeadsetInfo: true, PanelSession: true, PanelBattery: true, PowerColumn: true } },
+  ];
+  // Qualité de la vidéo : résolution et qualité (le codec et le débit suivent).
+  const QUALITY_CHOICES = [
+    { id: "standard", values: { VideoHeight: 1080, VideoQuality: "balanced" } },
+    { id: "high", values: { VideoHeight: 1440, VideoQuality: "high" } },
+    { id: "max", values: { VideoHeight: 2160, VideoQuality: "max" } },
+  ];
+
+  // Grandes cartes à choix unique ; la carte en cours suit les réglages (aucune : réglages personnels).
+  function choiceCards(scope, choices, prefix, opts) {
+    opts = opts || {};
+    const box = h("div", { class: "choices", role: "group" });
+    const matches = c => Object.keys(c.values).every(k => get(scope, k) === c.values[k]);
+    const cards = choices.map(c => {
+      const b = h("button", { type: "button", class: "choice", onclick: () => {
+        for (const k of Object.keys(c.values)) if (get(scope, k) !== c.values[k]) setValue(scope, k, c.values[k]);
+        refresh();
+      } },
+        h("span", { class: "choice-title" }, t(prefix + c.id), c.id === opts.recommended ? h("span", { class: "choice-tag", text: t("choice.recommended") }) : null),
+        h("span", { class: "choice-help", text: t(prefix + c.id + ".help") }));
+      b.disabled = locked(scope);
+      box.appendChild(b);
+      return b;
+    });
+    const refresh = () => cards.forEach((b, i) => b.setAttribute("aria-pressed", String(matches(choices[i]))));
+    refreshers.push(refresh);
+    refresh();
+    return box;
+  }
+
+  // Lien vers la page avancée correspondante.
+  function moreLink(text, pageId, tab) {
+    return h("p", { class: "more-link" }, h("a", { href: "#", onclick: e => { e.preventDefault(); go(pageId, tab); } }, t(text), icon("chevron")));
+  }
+
+  // Preset d'image dont les réglages sont ceux du moment (null : réglages personnels).
+  function currentPreset() {
+    const presets = get("overlay", "ImagePresets") || [];
+    return presets.find(p => Object.keys(p.values).every(k => get("overlay", k) === p.values[k])) || null;
+  }
+  const presetLabel = p => (p.builtin ? t("img.preset." + p.id) : p.name);
+
+  // --- Mode simple ---------------------------------------------------------------------------------
+
+  function renderHome(page) {
+    refreshers = [];
+    const dash = h("div", { class: "dash" });
+    dashNotes(dash);
+    dash.appendChild(h("section", { class: "card dash-stage" },
+      h("div", { class: "card-head" }, h("h2", { text: t("dash.preview") }), h("span", { class: "muted small", id: "panel-caption" })),
+      h("div", { class: "stage", id: "panel-stage" }, h("img", { id: "panel-img", alt: t("dash.preview") }), h("div", { class: "stage-empty", id: "panel-empty", hidden: true, text: t("dash.preview.none") }))));
+    dash.appendChild(h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("home.headset") }),
+        h("a", { href: "#", class: "small", onclick: e => { e.preventDefault(); go("simple-headset"); }, text: t("home.customize") })),
+      h("div", { class: "quick" },
+        switchCtl("overlay", "Visible", t("home.panel"), t("home.panel.help", { key: hotkeyText(get("overlay", "Hotkey.toggle") || 0) || "--" })),
+        switchCtl("overlay", "WatchEnabled", t("home.watch")),
+        switchCtl("overlay", "WindowEnabled", t("home.window"), t("home.window.help")))));
+
+    // Enregistrer et partager : état et bouton de la vidéo (page Vidéo), capture d'écran.
+    const snap = h("button", { class: "btn", type: "button", disabled: !videoEnabled(), onclick: () => send("snapshot") }, icon("camera"), t("snap.take"));
+    dash.appendChild(h("section", { class: "card span" }, h("div", { class: "card-head" }, h("h2", { text: t("home.share") }),
+        h("a", { href: "#", class: "small", onclick: e => { e.preventDefault(); go("simple-video"); }, text: t("home.customize") })),
+      videoEnabled()
+        ? h("div", { class: "home-share" },
+            segmented([{ value: "file", label: t("home.share.file") }, { value: "stream", label: t("home.share.live") }], get("desktop", "VideoTarget"),
+              v => { setValue("desktop", "VideoTarget", v); updateVideo(); }, t("vid.target")),
+            h("div", { class: "video-card", id: "video-card", "aria-live": "polite" }),
+            h("div", { class: "row-buttons" }, snap,
+              h("button", { class: "btn ghost", type: "button", onclick: () => send("videoOpenFolder") }, icon("folder"), t("home.share.folder"))))
+        : h("div", { class: "row-buttons" }, h("span", { class: "muted", text: t("home.share.off") }),
+            h("button", { class: "btn", type: "button", onclick: () => setValue("overlay", "VideoCapture", true) }, t("home.share.enable")))));
+
+    // Capteurs en direct.
+    dash.appendChild(h("section", { class: "card span" }, h("div", { class: "card-head" }, h("h2", { text: t("dash.sensors") })),
+      h("div", { class: "tiles" }, h("div", { class: "tile", id: "tile-cpu" }), h("div", { class: "tile", id: "tile-gpu" }), h("div", { class: "tile", id: "tile-vram" }))));
+
+    // Dernière session, puis le rendu de l'image (presets en un clic).
+    dash.appendChild(lastSessionCard());
+    dash.appendChild(h("section", { class: "card" }, h("div", { class: "card-head" }, h("h2", { text: t("home.image") }),
+        h("a", { href: "#", class: "small", onclick: e => { e.preventDefault(); go("simple-image"); }, text: t("home.image.more") })),
+      presetChips(6)));
+    page.appendChild(dash);
+    refreshers.push(updateVideo);
+    updateVideo();
+  }
+
+  // Presets d'image en pastilles : « Aucun effet », puis les fournis (et les vôtres) ; `max` : nombre de fournis.
+  function presetChips(max) {
+    const presets = get("overlay", "ImagePresets") || [];
+    const now = currentPreset();
+    const off = (get("overlay", "ImageMode") || "off") === "off";
+    const list = presets.filter(p => p.builtin).slice(0, max || 99).concat(max ? [] : presets.filter(p => !p.builtin));
+    if (max && now && !list.includes(now)) list.push(now);
+    const chip = (label, pressed, onclick) => {
+      const b = h("button", { type: "button", class: "chip-btn", "aria-pressed": String(pressed), text: label, onclick });
+      b.disabled = locked("overlay");
+      return b;
+    };
+    return h("div", { class: "chip-row", role: "group", "aria-label": t("img.preset") },
+      chip(t("home.image.none"), off, () => setValue("overlay", "ImageMode", "off")),
+      list.map(p => chip(presetLabel(p), !off && now === p, () => send("imagePresetApply", { id: p.id }))));
+  }
+
+  function renderSimpleHeadset(page) {
+    refreshers = [];
+    const o = state.overlay;
+    const form = [
+      group(t("s.perf"), t("s.perf.help"), [
+        switchCtl("overlay", "Visible", t("s.perf.show"), t("home.panel.help", { key: hotkeyText(get("overlay", "Hotkey.toggle") || 0) || "--" })),
+        row(t("s.content"), null, choiceCards("overlay", CONTENT_CHOICES, "content.", { recommended: "essential" }), { stack: true }),
+        segRow("overlay", "Anchor", t("s.where"), t("s.where.help"), anchorOptions()),
+        sliderRow("overlay", "Width", t("s.size"), null, 10, 150, cm, { factor: 100 }),
+        row(t("app.colors"), null, themeChips("overlay", "Theme", PANEL_THEME_ORDER, v => t("theme." + v),
+          v => v === 6 ? customPalette(o.CustomBackground || "#0e1116", o.CustomText || "#f0f3f8", o.CustomAccent || "#96bef0") : PANEL_THEMES[v]), { stack: true }),
+      ]),
+      group(t("nav.watch"), t("s.watch.help"), [
+        switchCtl("overlay", "WatchEnabled", t("watch.show")),
+        segRow("overlay", "WatchStyle", t("watch.style"), null, [0, 1, 2].map(v => ({ value: v, label: t("wstyle." + v) })), { enabled: () => !!get("overlay", "WatchEnabled") }),
+        segRow("overlay", "WatchAnchor", t("watch.anchor"), null, anchorOptions(), { enabled: () => !!get("overlay", "WatchEnabled") }),
+      ]),
+      group(t("s.window"), t("s.window.help"), [
+        switchCtl("overlay", "WindowEnabled", t("s.window.show"), t("home.window.help")),
+        row(t("s.window.pick"), null, h("button", { class: "btn", type: "button", onclick: () => go("window") }, t("s.window.pick.button"))),
+      ]),
+      moreLink("s.more.headset", "panel"),
+    ];
+    settingsLayout(page, form, panelStage());
+  }
+
+  function renderSimpleVideo(page) {
+    refreshers = [];
+    const snapKey = get("desktop", "SnapHotkey");
+    const form = [
+      group(t("s.video"), t("s.video.help"), [
+        switchCtl("overlay", "VideoCapture", t("vid.enable"), t("s.video.enable.help")),
+        segRow("desktop", "VideoTarget", t("s.video.target"), null, [{ value: "file", label: t("home.share.file") }, { value: "stream", label: t("home.share.live") }],
+          { enabled: videoEnabled }),
+        h("div", { class: "video-card", id: "video-card", "aria-live": "polite" }),
+        row(t("snap.title"), snapKey ? t("s.snap.help", { key: hotkeyText(snapKey) }) : null,
+          h("button", { class: "btn", type: "button", disabled: !videoEnabled(), onclick: () => send("snapshot") }, icon("camera"), t("snap.take")), { enabled: videoEnabled }),
+      ]),
+      group(t("s.quality"), t("s.quality.help"), [
+        row("", null, choiceCards("desktop", QUALITY_CHOICES, "quality.", { recommended: "high" }), { stack: true }),
+        segRow("desktop", "VideoAspect", t("vid.aspect"), t("s.aspect.help"), ["16:9", "4:3", "1:1"].map(a => ({ value: a, label: t("s.aspect." + a.replace(":", "")) }))),
+      ], videoEnabled),
+      group(t("vid.sound"), null, [
+        switchCtl("desktop", "VideoGameAudio", t("vid.game")),
+        switchCtl("desktop", "VideoMic", t("vid.mic")),
+      ], videoEnabled),
+      group(t("s.live"), t("s.live.help"), [
+        segRow("desktop", "StreamService", t("vid.stream.service"), null, ["twitch", "youtube", "both"].map(x => ({ value: x, label: t("vid.stream.service." + x) }))),
+        streamKeyRow("twitch"),
+        streamKeyRow("youtube"),
+      ], () => videoEnabled() && streaming()),
+      group(t("s.files"), null, [
+        row(t("s.files.videos"), null, h("button", { class: "btn", type: "button", onclick: () => send("videoOpenFolder") }, icon("folder"), t("vid.folder.open"))),
+        row(t("s.files.snaps"), null, h("button", { class: "btn", type: "button", onclick: () => send("snapOpenFolder") }, icon("folder"), t("vid.folder.open"))),
+      ]),
+      moreLink("s.more.video", "video"),
+    ];
+    settingsLayout(page, form, null);
+    refreshers.push(updateVideo);
+    updateVideo();
+  }
+
+  function renderSimpleImage(page) {
+    refreshers = [];
+    const mode = () => get("overlay", "ImageMode") || "off";
+    const compare = get("overlay", "Hotkey.image");
+    const form = [
+      group(t("s.image"), t("s.image.help"), [row("", null, presetChips(0), { stack: true })]),
+      group(t("s.image.where"), null, [
+        liveHelp(segRow("overlay", "ImageMode", t("img.mode"), " ", ["off", "headset", "video"].map(m => ({ value: m, label: t("img.mode." + m) }))),
+          () => t("img.mode.help." + mode())),
+        compare ? row(t("img.compare"), t("img.compare.help"), h("span", { class: "combo" }, hotkeyParts(compare).map(x => h("kbd", { text: x })))) : null,
+      ]),
+      moreLink("s.more.image", "image"),
+    ];
+    settingsLayout(page, form, null);
+  }
+
+  // --- Bienvenue (premier lancement, mode simple) ------------------------------------------------------
+
+  function openWelcome() {
+    let step = 0;
+    const finish = () => { closeModal(); setValue("desktop", "UiWelcome", true); go("home"); };
+    const draw = () => {
+      const saved = refreshers;
+      refreshers = [];
+      const steps = [
+        h("div", { class: "welcome" }, h("p", { class: "lead", text: t("w.1.text") }),
+          h("div", { class: "quick" }, layerSwitch(t("layer.label"), true), switchCtl("overlay", "OpenVR", t("panel.openvr.label"), t("panel.openvr.help")))),
+        h("div", { class: "welcome" }, h("p", { class: "lead", text: t("w.2.text") }),
+          choiceCards("overlay", CONTENT_CHOICES, "content.", { recommended: "essential" }),
+          h("div", { class: "quick" }, switchCtl("overlay", "Visible", t("s.perf.show"), t("home.panel.help", { key: hotkeyText(get("overlay", "Hotkey.toggle") || 0) || "--" })),
+            switchCtl("overlay", "WatchEnabled", t("home.watch")))),
+        h("div", { class: "welcome" }, h("p", { class: "lead", text: t("w.3.text") }),
+          h("div", { class: "quick" }, switchCtl("overlay", "VideoCapture", t("vid.enable"), t("w.3.keys", {
+            video: hotkeyText(get("desktop", "VideoHotkey") || 0) || "--", snap: hotkeyText(get("desktop", "SnapHotkey") || 0) || "--" }))),
+          choiceCards("desktop", QUALITY_CHOICES, "quality.", { recommended: "high" })),
+      ];
+      const ownRefreshers = refreshers;
+      refreshers = saved;
+      const dots = h("ol", { class: "steps", "aria-label": t("w.steps") }, [0, 1, 2].map(i => h("li", { "aria-current": i === step ? "step" : null, text: t("w.step." + (i + 1)) })));
+      const foot = [
+        h("button", { class: "btn ghost", type: "button", onclick: finish, text: t("w.skip") }),
+        h("span", { style: { flex: "1" } }),
+        step > 0 ? h("button", { class: "btn", type: "button", onclick: () => { step--; draw(); }, text: t("w.back") }) : null,
+        h("button", { class: "btn primary", type: "button", onclick: () => { if (step < 2) { step++; draw(); } else finish(); }, text: t(step < 2 ? "w.next" : "w.done") }),
+      ];
+      const box = openModal(t("w.title." + (step + 1)), h("div", null, dots, steps[step]), { wide: true, foot, noClose: true });
+      // Les contrôles de la fenêtre se mettent à jour entre eux (et ceux de la page, derrière).
+      box.addEventListener("click", () => setTimeout(() => ownRefreshers.forEach(f => f()), 0));
+    };
+    draw();
+  }
+
+  const PAGE_BUILDERS = {
+    dashboard: renderDashboard, home: renderHome, "simple-headset": renderSimpleHeadset, "simple-video": renderSimpleVideo, "simple-image": renderSimpleImage,
+    panel: page => { page.appendChild(tabBar("panel")); (state.tab.panel === "appearance" ? renderAppearancePage : renderPanelPage)(page); },
+    watch: renderWatchPage, window: renderWindowPage, image: renderImagePage, video: renderVideoPage, desktop: renderDesktopPage,
+    reports: renderReportsPage,
+    diagnostics: page => { page.appendChild(tabBar("diagnostics")); (state.tab.diagnostics === "measures" ? renderMeasuresPage : renderConfigPage)(page); },
+    hotkeys: renderHotkeysPage, interface: renderInterfacePage,
+  };
+
   function toast(text) {
     const el = document.getElementById("toast");
     el.textContent = text;
@@ -2189,8 +2690,13 @@ window.App = (function () {
   }
 
   document.addEventListener("keydown", e => {
+    if (hotkeyCapture) return;
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || "");
     if (e.key === "F11") { e.preventDefault(); toggleFullscreen(); }
-    else if (e.key === "Escape" && state.fullscreen) { send("fullscreen", { on: false }); }
+    else if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "k" || e.key === "K")) { e.preventDefault(); if (search) closeSearch(); else openSearch(); }
+    else if (e.key === "Escape" && modal && !search) { if (modal.back.querySelector(".modal-head .btn")) closeModal(); }
+    else if (e.key === "?" && !typing && !modal && !search && state.ready) { e.preventDefault(); openCheatSheet(); }
+    else if (e.key === "Escape" && state.fullscreen && !modal && !search) { send("fullscreen", { on: false }); }
   });
 
   // Démarrage : le programme répond à "ready" par "init".

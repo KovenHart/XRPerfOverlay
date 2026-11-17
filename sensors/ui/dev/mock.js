@@ -44,7 +44,7 @@
   const desktop = {
     DesktopPanel: false, TopMost: true, Scale: 100, Opacity: 100, Anchor: 0,
     CaptureFps: 5, CaptureOpacity: 100, CropLeft: 0, CropTop: 0, CropRight: 0, CropBottom: 0,
-    UiTheme: params.get("theme") || "panel", UiBackground: "#12161c", UiText: "#eef2f7", UiAccent: "#f2a65a", UiScale: 100, UiAnimations: true, UiStartFullscreen: false,
+    UiTheme: params.get("theme") || "panel", UiBackground: "#12161c", UiText: "#eef2f7", UiAccent: "#f2a65a", UiScale: 100, UiAnimations: true, UiStartFullscreen: false, UiMode: params.get("mode") || "advanced", UiWelcome: params.get("welcome") !== "1",
     Language: params.get("lang") || "auto",
     VideoCodec: "hevc", VideoHeight: 1440, VideoFps: 60, VideoQuality: "high", VideoBitrate: 40, VideoEye: 0, VideoAspect: "16:9", VideoField: 75, VideoOverlay: "corner", VideoOverlayCorner: "topleft", VideoOverlaySize: 30, VideoStabilize: "light", VideoLevel: false, VideoObs: true,
     VideoGameAudio: true, VideoMic: params.get("video") === "rec", VideoRenderDevice: "", VideoCaptureDevice: "", VideoFolder: "C:\\Users\\Player\\Videos\\XR Perf Overlay", VideoHotkey: (3 << 16) | 86,
@@ -99,7 +99,7 @@
   }
 
   function images() {
-    if (["dashboard", "panel", "appearance", "desktop"].includes(page)) panelImage();
+    if (["dashboard", "panel", "appearance", "desktop", "home", "simple-headset"].includes(page)) panelImage();
     if (page === "watch") reply({ type: "watchImage", png: (window.MOCK_IMAGES["watch_" + (overlay.WatchStyle || 0)] || {}).png });
     if (page === "window") reply({ type: "windowImage", png: null, status: lang === "en" ? "Window « Chat - Twitch » found, capture ready." : "Fenêtre « Chat - Twitch » trouvée, capture prête." });
   }
@@ -169,7 +169,10 @@
       switch (msg.type) {
         case "ready":
           Promise.all([load("dev/mock_images.js"), load("dev/mock_reports.js")]).then(() => {
-            reply({ type: "init", version: "1.9.0", layerVersion: "1.9.0", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
+            // Valeurs par défaut : celles du simulateur, avec quelques écarts pour voir les pastilles « modifié ».
+            const defaults = { overlay: Object.assign(JSON.parse(JSON.stringify(overlay)), { Width: 0.30, Distance: 1.0, Theme: 0 }),
+              desktop: Object.assign(JSON.parse(JSON.stringify(desktop)), { VideoHeight: 1080, VideoCodec: "h264" }) };
+            reply({ type: "init", defaults, version: "1.9.0", layerVersion: "1.9.0", lang, overlay, desktop, unavailable: null, captureAvailable: true, previewAvailable: true,
               pawnio: params.get("pawnio") !== "0", fullscreen, layer, reportsFolder: "C:\\XRPerfOverlay\\sessions", page: params.get("page") || "dashboard" });
             reply({ type: "status", game: params.get("game") || "none", sensors: "ok" });
             reply(reportsData().list);
