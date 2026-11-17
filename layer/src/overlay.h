@@ -38,8 +38,11 @@ class Overlay {
     // La texture de l'overlay contient le panneau en haut et la montre en dessous ; chaque calque
     // n'en montre que sa partie.
     static constexpr int kTextureWidth = Panel::kWidth;
-    static constexpr int kTextureHeight = Panel::kHeight + WatchFace::kSize;
-    static constexpr int kWatchTop = Panel::kHeight;  // première ligne de la montre dans la texture
+    // Bande transparente entre le panneau et la montre : le compositeur filtre l'image un peu au-delà du
+    // rectangle de chaque calque, et sans cette marge le haut de la montre débordait sous le panneau.
+    static constexpr int kWatchGap = 8;
+    static constexpr int kTextureHeight = Panel::kHeight + kWatchGap + WatchFace::kSize;
+    static constexpr int kWatchTop = Panel::kHeight + kWatchGap;  // première ligne de la montre dans la texture
     static constexpr int kMaxQuads = 3;               // fenêtre capturée + panneau + montre
 
     Overlay(const NextFunctions& next, const Config& config, XrInstance instance, std::shared_ptr<HandInput> hands = nullptr);

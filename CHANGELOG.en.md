@@ -13,6 +13,7 @@ What's new in each version of XR Perf Overlay, most recent first.
 - **Changed settings** marked with a dot, with **Reset** per section.
 - The active image preset shows at the top; the shortcut list leaves the dashboard for a **cheat sheet** (`?` key).
 - Nothing changes in the headset or in existing settings.
+- **Fix** (OpenXR games): with the watch shown, a thin line in the watch's color could appear at the bottom of the panel in some headsets (visible in the headset, not in videos).
 
 ## 1.15.0
 

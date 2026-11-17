@@ -13,6 +13,7 @@ Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier
 - **Réglages modifiés** marqués d'un point, avec **Rétablir** par section.
 - Le preset d'image actif s'affiche en haut ; la liste des raccourcis quitte le tableau de bord pour un **aide-mémoire** (touche `?`).
 - Rien ne change dans le casque ni dans les réglages existants.
+- **Correction** (jeux OpenXR) : avec la montre affichée, un liseré de la couleur de la montre pouvait apparaître au bas du panneau dans certains casques (visible dans le casque, pas sur les vidéos).
 
 ## 1.15.0
 
