@@ -148,7 +148,7 @@ struct SettingsBlock {
     float touchOpacity;         // 336 : 0.2 à 1
     float touchAlong;           // 340 : mètres
     float touchLift;            // 344 : mètres
-    float touchTip;             // 348 : point de contact devant la poignée de l'autre manette, mètres
+    float touchTip;             // 348 : point de contact devant l'avant de l'autre manette, mètres
     uint32_t touchActions;      // 352 : tuiles affichées (bit i = TouchAction i, touch_pad.h)
     uint32_t reserved10;        // 356
 };                              // 360 octets

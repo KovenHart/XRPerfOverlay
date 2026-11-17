@@ -4,7 +4,8 @@
 // jeu, et certaines étapes ne peuvent être faites qu'une fois par session, par le jeu. La layer se
 // glisse donc dans trois appels du jeu, sans jamais rien retirer :
 //   - xrSuggestInteractionProfileBindings : à chaque profil de manette que le jeu déclare, elle ajoute
-//     une seule liaison, la position de la poignée (grip/pose) de chaque main. Elle n'ajoute jamais de
+//     la position de la poignée (grip/pose) de chaque main, et pour l'écran tactile celle de la visée
+//     (aim/pose : l'avant de la manette, d'où part le rayon de pointage). Elle n'ajoute jamais de
 //     profil que le jeu n'a pas déclaré : le runtime choisit son profil de manette parmi ceux-là ;
 //   - xrAttachSessionActionSets : elle ajoute son petit groupe d'actions à ceux du jeu ;
 //   - xrSyncActions : idem, à chaque mise à jour.
@@ -26,8 +27,9 @@ namespace xrpo {
 
 class HandInput {
   public:
-    // `trackHands` : préparer les positions des mains ; `battery` : l'extension de batterie est active.
-    HandInput(XrInstance instance, PFN_xrGetInstanceProcAddr getProcAddr, bool trackHands, bool battery);
+    // `trackHands` : préparer les positions des mains ; `aim` : aussi la visée (écran tactile) ;
+    // `battery` : l'extension de batterie est active.
+    HandInput(XrInstance instance, PFN_xrGetInstanceProcAddr getProcAddr, bool trackHands, bool aim, bool battery);
 
     bool tracking() const { return m_trackHands.load(); }
     XrInstance instance() const { return m_instance; }
@@ -44,6 +46,8 @@ class HandInput {
 
     // Espace de la poignée d'une main (0 gauche, 1 droite), ou XR_NULL_HANDLE si indisponible.
     XrSpace handSpace(XrSession session, int hand);
+    // Espace de la visée d'une main (avant de la manette, -Z vers où elle pointe), ou XR_NULL_HANDLE.
+    XrSpace aimSpace(XrSession session, int hand);
 
     // Batterie d'une main, de 0 à 1 (false si inconnue). Lue au plus toutes les deux secondes.
     bool battery(XrSession session, int hand, double now, float& level, bool& charging);
@@ -69,14 +73,18 @@ class HandInput {
 
     XrActionSet m_actionSet = XR_NULL_HANDLE;
     XrAction m_poseAction = XR_NULL_HANDLE;
+    XrAction m_aimAction = XR_NULL_HANDLE;  // seulement si l'écran tactile est activé au lancement
+    bool m_wantAim = false;
     XrPath m_handPaths[2] = {XR_NULL_PATH, XR_NULL_PATH};
     XrPath m_posePaths[2] = {XR_NULL_PATH, XR_NULL_PATH};
+    XrPath m_aimPaths[2] = {XR_NULL_PATH, XR_NULL_PATH};
     bool m_actionsTried = false;
     std::vector<XrPath> m_profiles;         // profils auxquels la position des mains a été ajoutée
     std::vector<XrPath> m_refusedProfiles;  // profils sans position de main (manette de jeu...)
 
     XrSession m_session = XR_NULL_HANDLE;   // session à laquelle notre groupe d'actions est attaché
     XrSpace m_spaces[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
+    XrSpace m_aimSpaces[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
     bool m_syncFailed = false;
     bool m_attachedOnce = false;            // groupe déjà attaché : ses liaisons ne peuvent plus changer
 

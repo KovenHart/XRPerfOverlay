@@ -157,6 +157,7 @@ class OpenVrBackend final : public VrBackend {
             return false;
         }
         for (Grip& grip : m_grips) grip = Grip();
+        for (Grip& tip : m_tips) tip = Grip();
         for (CachedIndex& cached : m_handIndex) cached = CachedIndex();
         m_posesTime = -1.0;
         return true;
@@ -351,6 +352,20 @@ class OpenVrBackend final : public VrBackend {
         if (!head.bPoseIsValid || !device.bPoseIsValid || !device.bDeviceIsConnected) return false;
         const Pose gripInWorld = Compose(FromMatrix(device.mDeviceToAbsoluteTracking), gripOffset(hand, index));
         out = Compose(Inverse(FromMatrix(head.mDeviceToAbsoluteTracking)), gripInWorld);
+        return true;
+    }
+
+    bool aimInHead(int hand, Pose& out) override {
+        const vr::TrackedDeviceIndex_t index = handIndex(hand);
+        if (index == vr::k_unTrackedDeviceIndexInvalid || index >= vr::k_unMaxTrackedDeviceCount) return false;
+        updatePoses();
+        const vr::TrackedDevicePose_t& head = m_poses[vr::k_unTrackedDeviceIndex_Hmd];
+        const vr::TrackedDevicePose_t& device = m_poses[index];
+        if (!head.bPoseIsValid || !device.bPoseIsValid || !device.bDeviceIsConnected) return false;
+        const Pose* tip = tipOffset(hand, index);
+        if (!tip) return false;
+        const Pose aimInWorld = Compose(FromMatrix(device.mDeviceToAbsoluteTracking), *tip);
+        out = Compose(Inverse(FromMatrix(head.mDeviceToAbsoluteTracking)), aimInWorld);
         return true;
     }
 
@@ -725,6 +740,43 @@ class OpenVrBackend final : public VrBackend {
 
     // Position de la poignée (composant « handgrip » du modèle de la manette) dans le repère de suivi
     // de la manette. Relue quand la manette ou son modèle change.
+    // Avant de la manette (composant « tip » du modèle), dans son repère de suivi ; nullptr sans ce composant.
+    const Pose* tipOffset(int hand, vr::TrackedDeviceIndex_t index) {
+        Grip& tip = m_tips[hand];
+        const double t = now();
+        if (tip.known && tip.index == index && t - tip.checkedAt < (tip.found ? 2.0 : 10.0)) return tip.found ? &tip.offset : nullptr;
+        char model[256] = "";
+        vr::ETrackedPropertyError error = vr::TrackedProp_Success;
+        m_system->GetStringTrackedDeviceProperty(index, vr::Prop_RenderModelName_String, model, sizeof(model), &error);
+        if (error != vr::TrackedProp_Success) model[0] = '\0';
+        const bool wasKnown = tip.known && tip.index == index && tip.model == model;
+        const bool wasFound = tip.found;
+        tip = Grip();
+        tip.index = index;
+        tip.model = model;
+        tip.known = true;
+        tip.checkedAt = t;
+        bool found = false;
+        if (m_renderModels && model[0]) {
+            vr::RenderModel_ControllerMode_State_t mode = {};
+            vr::RenderModel_ComponentState_t state = {};
+            vr::VRInputValueHandle_t source = vr::k_ulInvalidInputValueHandle;
+            if (m_input && m_input->GetInputSourceHandle(hand == 0 ? "/user/hand/left" : "/user/hand/right", &source) == vr::VRInputError_None &&
+                m_renderModels->GetComponentStateForDevicePath(model, vr::k_pch_Controller_Component_Tip, source, &mode, &state)) {
+                found = true;
+            } else if (m_renderModels->RenderModelHasComponent(model, vr::k_pch_Controller_Component_Tip)) {
+                vr::VRControllerState_t controller = {};
+                found = m_renderModels->GetComponentState(model, vr::k_pch_Controller_Component_Tip, &controller, &mode, &state);
+            }
+            if (found) tip.offset = FromMatrix(state.mTrackingToComponentLocal);
+        }
+        tip.found = found;
+        if (!(wasKnown && wasFound == found))
+            Log("XRPerfVR : manette %s : %s.", hand == 0 ? "gauche" : "droite",
+                found ? "avant de la manette (visee) trouve" : "pas de visee dans le modele, l'ecran tactile utilisera la poignee");
+        return found ? &tip.offset : nullptr;
+    }
+
     const Pose& gripOffset(int hand, vr::TrackedDeviceIndex_t index) {
         Grip& grip = m_grips[hand];
         // Modèle relu toutes les 2 s au plus ; un modèle sans poignée est réessayé toutes les 10 s (les
@@ -803,6 +855,7 @@ class OpenVrBackend final : public VrBackend {
     vr::TrackedDevicePose_t m_poses[vr::k_unMaxTrackedDeviceCount] = {};
     double m_posesTime = -1.0;
     Grip m_grips[2];
+    Grip m_tips[2];  // composant « tip » : avant de la manette, d'où part le rayon de pointage
     CachedIndex m_handIndex[2];
     vr::EVRInitError m_lastInitError = vr::VRInitError_None;
 };

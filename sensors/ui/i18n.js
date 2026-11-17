@@ -195,7 +195,7 @@ window.I18N = {
     "touch.look": "Taille et toucher",
     "touch.size": "Largeur",
     "touch.tip": "Point de contact",
-    "touch.tip.help": "Distance entre la poignée de l'autre manette et l'endroit qui touche. Un rond suit ce point sur l'écran : s'il est décalé de l'avant de la manette, ajustez ce réglage.",
+    "touch.tip.help": "Distance entre l'avant de l'autre manette (là d'où part son rayon de pointage) et l'endroit qui touche. Un rond suit ce point sur l'écran : s'il n'est pas au bout de votre doigt dans le jeu, ajustez ce réglage.",
 
     // Fenêtre capturée
     "win.show": "Afficher la fenêtre dans le casque",
@@ -881,7 +881,7 @@ window.I18N = {
     "touch.look": "Size and touch",
     "touch.size": "Width",
     "touch.tip": "Contact point",
-    "touch.tip.help": "Distance between the other controller's grip and the spot that touches. A circle follows this point on the screen: if it is off from the front of the controller, adjust this setting.",
+    "touch.tip.help": "Distance between the front of the other controller (where its pointing ray starts) and the spot that touches. A circle follows this point on the screen: if it is not at your in-game fingertip, adjust this setting.",
 
     "win.show": "Show the window in the headset",
     "win.show.help": "In game: {key}. Capture only runs during a VR game and while the preview is shown.",

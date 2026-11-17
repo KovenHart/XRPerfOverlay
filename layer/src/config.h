@@ -46,7 +46,7 @@ struct TouchConfig {
     float size = 0.09f;                                   // largeur (m) ; la hauteur suit l'image (portrait)
     float opacity = 1.f;
     float along = 0.f, lift = 0.f;                        // ajustements de position sur la main (m)
-    float tip = 0.07f;                                    // point de contact devant la poignée de l'autre manette (m)
+    float tip = 0.04f;                                    // point de contact devant l'avant de l'autre manette (m)
     uint32_t actions = kTouchAllActions;                  // tuiles affichées (bit i = TouchAction i)
     int hand() const { return anchor == Anchor::RightHand ? 1 : 0; }
 };

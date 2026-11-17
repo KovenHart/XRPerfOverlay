@@ -755,9 +755,24 @@ bool VrHost::displayTouch(double now) {
         const Pose padInHead = Compose(grip, local);
         // Doigt sur l'écran : il reste affiché même si la main n'est plus tout à fait regardée.
         looked = !t.gazeOnly || m_touch.touching() || IsLookedAt(padInHead, looked);
+        // Avant de l'autre manette (sa visée ; à défaut sa poignée).
         Pose other;
-        if (looked && m_vr.gripInHead(1 - hand, other))
-            finger = FingerOnPad(Compose(Inverse(padInHead), other), t.size, height, TouchPad::kWidth, TouchPad::kHeight, t.tip);
+        const char* source = "visee";
+        bool found = looked && m_vr.aimInHead(1 - hand, other);
+        if (looked && !found) {
+            source = "poignee";
+            found = m_vr.gripInHead(1 - hand, other);
+        }
+        if (found) finger = FingerOnPad(Compose(Inverse(padInHead), other), t.size, height, TouchPad::kWidth, TouchPad::kHeight, t.tip);
+        if (looked && m_touchLogCount < 40 && (m_touchLogAt < 0.0 || now - m_touchLogAt >= 3.0)) {
+            m_touchLogAt = now;
+            ++m_touchLogCount;
+            if (finger.valid)
+                Log("XRPerfVR : ecran tactile, point de contact (%s) x=%.0f y=%.0f px, %.1f cm devant l'ecran.", source, finger.x, finger.y,
+                    finger.depth * 100.f);
+            else
+                Log("XRPerfVR : ecran tactile, autre manette introuvable.");
+        }
     } else {
         looked = false;
     }

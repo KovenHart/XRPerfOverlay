@@ -173,6 +173,8 @@ class VrHost {
     double m_remoteReadAt = -1.0;
     TouchState m_touchShown;
     bool m_touchReportPulse = false;  // tuile « rapport » : comme un appui sur le raccourci
+    double m_touchLogAt = -1.0;       // journal de diagnostic : position du doigt, toutes les 3 s au plus
+    int m_touchLogCount = 0;
 
     // Fenêtre capturée (image lue dans la mémoire partagée de XRPerfSensors).
     WindowShareReader m_windowShare;

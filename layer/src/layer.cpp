@@ -772,7 +772,7 @@ XrResult XRAPI_CALL layer_xrCreateApiLayerInstance(const XrInstanceCreateInfo* i
         try {
             const bool track = WantsHandTracking(config) && next.LocateSpace && next.SuggestInteractionProfileBindings &&
                                next.AttachSessionActionSets && next.SyncActions;
-            handInput = std::make_shared<HandInput>(*instance, getProcAddr, track, batteryExtension);
+            handInput = std::make_shared<HandInput>(*instance, getProcAddr, track, config.touch.enabled, batteryExtension);
             Log("Manettes : %s.", handInput->describe().c_str());
         } catch (...) {
             handInput.reset();

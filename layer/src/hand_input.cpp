@@ -17,11 +17,13 @@ void resolve(PFN_xrGetInstanceProcAddr getProcAddr, XrInstance instance, const c
 
 const char* const kHandNames[2] = {"/user/hand/left", "/user/hand/right"};
 const char* const kPoseNames[2] = {"/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose"};
+const char* const kAimNames[2] = {"/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose"};
 
 }  // namespace
 
-HandInput::HandInput(XrInstance instance, PFN_xrGetInstanceProcAddr getProcAddr, bool trackHands, bool battery)
+HandInput::HandInput(XrInstance instance, PFN_xrGetInstanceProcAddr getProcAddr, bool trackHands, bool aim, bool battery)
     : m_instance(instance), m_trackHands(trackHands), m_batteryExtension(battery) {
+    m_wantAim = aim;
     resolve(getProcAddr, instance, "xrStringToPath", m_stringToPath);
     resolve(getProcAddr, instance, "xrPathToString", m_pathToString);
     resolve(getProcAddr, instance, "xrCreateActionSet", m_createActionSet);
@@ -66,6 +68,18 @@ bool HandInput::createActions() {
         Log("Suivi des manettes : creation de l'action refusee par le runtime.");
         return false;
     }
+    // Visée (écran tactile) : facultative, sans elle l'écran se touche avec la poignée.
+    if (m_wantAim) {
+        bool paths = true;
+        for (int hand = 0; hand < 2; ++hand) paths = paths && XR_SUCCEEDED(m_stringToPath(m_instance, kAimNames[hand], &m_aimPaths[hand]));
+        XrActionCreateInfo aimInfo = actionInfo;
+        std::snprintf(aimInfo.actionName, sizeof(aimInfo.actionName), "hand_aim");
+        std::snprintf(aimInfo.localizedActionName, sizeof(aimInfo.localizedActionName), "Visee de la main (overlay)");
+        if (!paths || XR_FAILED(m_createAction(m_actionSet, &aimInfo, &m_aimAction))) {
+            m_aimAction = XR_NULL_HANDLE;
+            Log("Suivi des manettes : visee indisponible, l'ecran tactile utilisera la poignee.");
+        }
+    }
     return true;
 }
 
@@ -89,11 +103,19 @@ XrResult HandInput::suggestBindings(PFN_xrSuggestInteractionProfileBindings next
 
     std::vector<XrActionSuggestedBinding> bindings(suggested->suggestedBindings, suggested->suggestedBindings + suggested->countSuggestedBindings);
     for (int hand = 0; hand < 2; ++hand) bindings.push_back({m_poseAction, m_posePaths[hand]});
+    const size_t withoutAim = bindings.size();
+    if (m_aimAction != XR_NULL_HANDLE)
+        for (int hand = 0; hand < 2; ++hand) bindings.push_back({m_aimAction, m_aimPaths[hand]});
     XrInteractionProfileSuggestedBinding extended = *suggested;  // même chaîne `next`
     extended.countSuggestedBindings = static_cast<uint32_t>(bindings.size());
     extended.suggestedBindings = bindings.data();
     // À partir d'ici, plus aucune exception ne sort : l'appel du jeu ne doit jamais être rejoué.
-    const XrResult result = next(instance, &extended);
+    XrResult result = next(instance, &extended);
+    if (XR_FAILED(result) && bindings.size() != withoutAim) {
+        // Profil sans visée : la poignée seule.
+        extended.countSuggestedBindings = static_cast<uint32_t>(withoutAim);
+        result = next(instance, &extended);
+    }
     if (XR_SUCCEEDED(result)) {
         try {
             if (!profileAccepted(suggested->interactionProfile)) m_profiles.push_back(suggested->interactionProfile);
@@ -155,10 +177,14 @@ XrResult HandInput::attach(PFN_xrAttachSessionActionSets next, XrSession session
         spaceInfo.subactionPath = m_handPaths[hand];
         spaceInfo.poseInActionSpace.orientation.w = 1.f;
         if (XR_FAILED(m_createActionSpace(session, &spaceInfo, &m_spaces[hand]))) m_spaces[hand] = XR_NULL_HANDLE;
+        if (m_aimAction != XR_NULL_HANDLE) {
+            spaceInfo.action = m_aimAction;
+            if (XR_FAILED(m_createActionSpace(session, &spaceInfo, &m_aimSpaces[hand]))) m_aimSpaces[hand] = XR_NULL_HANDLE;
+        }
     }
     try {
-        Log("Suivi des manettes actif (%u profil(s) de manette, espaces %s / %s).", static_cast<unsigned>(m_profiles.size()),
-            m_spaces[0] ? "gauche" : "-", m_spaces[1] ? "droite" : "-");
+        Log("Suivi des manettes actif (%u profil(s) de manette, espaces %s / %s, visee %s / %s).", static_cast<unsigned>(m_profiles.size()),
+            m_spaces[0] ? "gauche" : "-", m_spaces[1] ? "droite" : "-", m_aimSpaces[0] ? "gauche" : "-", m_aimSpaces[1] ? "droite" : "-");
     } catch (...) {
     }
     return result;
@@ -221,6 +247,7 @@ void HandInput::sessionDestroying(XrSession session) {
     // Les espaces d'action disparaissent avec la session. Le groupe d'actions, lui, appartient à
     // l'instance : si le jeu ouvre une nouvelle session, il sera de nouveau ajouté aux siens.
     m_spaces[0] = m_spaces[1] = XR_NULL_HANDLE;
+    m_aimSpaces[0] = m_aimSpaces[1] = XR_NULL_HANDLE;
     m_session = XR_NULL_HANDLE;
 }
 
@@ -228,6 +255,12 @@ XrSpace HandInput::handSpace(XrSession session, int hand) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_trackHands || m_syncFailed || session != m_session || hand < 0 || hand > 1) return XR_NULL_HANDLE;
     return m_spaces[hand];
+}
+
+XrSpace HandInput::aimSpace(XrSession session, int hand) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_trackHands || m_syncFailed || session != m_session || hand < 0 || hand > 1) return XR_NULL_HANDLE;
+    return m_aimSpaces[hand];
 }
 
 bool HandInput::battery(XrSession session, int hand, double now, float& level, bool& charging) {

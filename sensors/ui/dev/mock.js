@@ -18,7 +18,7 @@
     ImagePresets: [], Layout: Number(params.get("layout") || 0), Theme: Number(params.get("ptheme") || 0),
     CustomBackground: "#101820", CustomText: "#f0f3f8", CustomAccent: "#7fd1c7", HeadsetName: "Pimax Dream Air",
     Anchor: 0, HandPlacement: 2, GazeOnly: false, HandAlong: 0, HandLift: 0,
-    TouchEnabled: true, TouchAnchor: 1, TouchPlacement: 1, TouchGazeOnly: true, TouchSize: 0.09, TouchOpacity: 1, TouchAlong: 0, TouchLift: 0, TouchTip: 0.07, TouchActions: 2047,
+    TouchEnabled: true, TouchAnchor: 1, TouchPlacement: 1, TouchGazeOnly: true, TouchSize: 0.09, TouchOpacity: 1, TouchAlong: 0, TouchLift: 0, TouchTip: 0.04, TouchActions: 2047,
     WatchEnabled: true, WatchAnchor: 1, WatchPlacement: 0, WatchStyle: 0, WatchSession: true, WatchBattery: true, WatchFps: true, WatchGazeOnly: true,
     WatchSize: 0.06, WatchOpacity: 1, WatchAlong: 0, WatchLift: 0,
     WindowEnabled: false, WindowAnchor: 2, WindowPlacement: 2, WindowGazeOnly: false, WindowWidth: 0.4, WindowAlong: 0, WindowLift: 0, WindowDistance: 0.8,

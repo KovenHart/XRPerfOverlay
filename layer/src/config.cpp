@@ -259,7 +259,7 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
     t.opacity = readFloat(c, L"touch", L"opacity", t.opacity, kMinWatchOpacity, kMaxWatchOpacity);
     t.along = readFloat(c, L"touch", L"hand_along", t.along, kMinHandAlong, kMaxHandAlong);
     t.lift = readFloat(c, L"touch", L"hand_lift", t.lift, kMinHandLift, kMaxHandLift);
-    t.tip = readFloat(c, L"touch", L"tip", t.tip, kMinTouchTip, kMaxTouchTip);
+    t.tip = readFloat(c, L"touch", L"contact", t.tip, kMinTouchTip, kMaxTouchTip);
     t.actions = static_cast<uint32_t>(readInt(c, L"touch", L"actions", static_cast<int>(kTouchAllActions), 0, static_cast<int>(kTouchAllActions)));
 
     // Fenêtre capturée.

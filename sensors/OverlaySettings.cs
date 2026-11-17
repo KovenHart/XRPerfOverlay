@@ -96,7 +96,7 @@ namespace XRPerfSensors
         public float TouchSize = 0.09f;
         public float TouchOpacity = 1f;
         public float TouchAlong, TouchLift;
-        public float TouchTip = 0.07f;
+        public float TouchTip = 0.04f;          // devant l'avant de l'autre manette
         public uint TouchActions = TouchAllActions;
         // Tuiles, dans l'ordre de TouchAction (layer/src/touch_pad.h) : bit i = tuile i.
         public static readonly string[] TouchActionNames = { "video", "live", "snapshot", "report", "filters", "preset", "panel", "panelPlace", "window", "windowPlace", "resetStats" };
@@ -381,7 +381,7 @@ namespace XRPerfSensors
             s.TouchOpacity = ReadFloat(path, "touch", "opacity", s.TouchOpacity, MinWatchOpacity, 1f);
             s.TouchAlong = ReadFloat(path, "touch", "hand_along", s.TouchAlong, MinHandAlong, MaxHandAlong);
             s.TouchLift = ReadFloat(path, "touch", "hand_lift", s.TouchLift, MinHandLift, MaxHandLift);
-            s.TouchTip = ReadFloat(path, "touch", "tip", s.TouchTip, MinTouchTip, MaxTouchTip);
+            s.TouchTip = ReadFloat(path, "touch", "contact", s.TouchTip, MinTouchTip, MaxTouchTip);
             s.TouchActions = (uint)ReadNumber(path, "touch", "actions", (int)s.TouchActions) & TouchAllActions;
             s.WindowEnabled = ReadBool(path, "window", "enabled", s.WindowEnabled);
             s.WindowAnchor = ReadName(path, "window", "anchor", WindowAnchorNames, s.WindowAnchor);
@@ -509,7 +509,7 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW("touch", "opacity", Number(TouchOpacity), path);
             ok &= WritePrivateProfileStringW("touch", "hand_along", Number(TouchAlong), path);
             ok &= WritePrivateProfileStringW("touch", "hand_lift", Number(TouchLift), path);
-            ok &= WritePrivateProfileStringW("touch", "tip", Number(TouchTip), path);
+            ok &= WritePrivateProfileStringW("touch", "contact", Number(TouchTip), path);
             ok &= WritePrivateProfileStringW("touch", "actions", TouchActions.ToString(CultureInfo.InvariantCulture), path);
             // La pose dans l'espace (« world ») est écrite par la layer et XRPerfVR (Ctrl+Alt+G) : jamais ici.
             ok &= WritePrivateProfileStringW("window", "enabled", WindowEnabled ? "1" : "0", path);

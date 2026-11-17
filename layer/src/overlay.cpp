@@ -1731,17 +1731,35 @@ bool Overlay::touchQuad(double now, XrTime displayTime, XrCompositionLayerQuad& 
     // Doigt sur l'écran : il reste affiché même si la main n'est plus tout à fait regardée.
     const HandResult shown = handQuadAt(hand, local, t.gazeOnly && !m_touch.touching(), displayTime, m_touchLooked, space, pose);
 
-    // Bout de l'autre manette, dans le repère de l'écran.
+    // Avant de l'autre manette (sa visée ; à défaut sa poignée), dans le repère de l'écran.
     TouchFinger finger;
     const float height = t.size * static_cast<float>(TouchPad::kHeight) / static_cast<float>(TouchPad::kWidth);
+    const char* source = "-";
     if (shown == HandResult::Show) {
-        const XrSpace other = m_hands->handSpace(m_session, 1 - hand);
+        XrSpace other = m_hands->aimSpace(m_session, 1 - hand);
+        source = "visee";
+        if (other == XR_NULL_HANDLE) {
+            other = m_hands->handSpace(m_session, 1 - hand);
+            source = "poignee";
+        }
         XrSpaceLocation location = {XR_TYPE_SPACE_LOCATION};
-        if (other != XR_NULL_HANDLE && XR_SUCCEEDED(m_next.LocateSpace(other, space, displayTime, &location)) &&
-            (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) && (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+        const XrResult located = other != XR_NULL_HANDLE ? m_next.LocateSpace(other, space, displayTime, &location) : XR_ERROR_HANDLE_INVALID;
+        if (XR_SUCCEEDED(located) && (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) &&
+            (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
             const Pose fingerInHand = {{location.pose.position.x, location.pose.position.y, location.pose.position.z},
                                        {location.pose.orientation.x, location.pose.orientation.y, location.pose.orientation.z, location.pose.orientation.w}};
             finger = FingerOnPad(Compose(Inverse(local), fingerInHand), t.size, height, TouchPad::kWidth, TouchPad::kHeight, t.tip);
+        }
+        // Diagnostic : où est le point de contact par rapport à l'écran (40 lignes par session au plus).
+        if (m_touchLogCount < 40 && (m_touchLogAt < 0.0 || now - m_touchLogAt >= 3.0)) {
+            m_touchLogAt = now;
+            ++m_touchLogCount;
+            if (finger.valid)
+                Log("Ecran tactile : point de contact (%s) x=%.0f y=%.0f px, %.1f cm devant l'ecran (image %dx%d).", source, finger.x, finger.y,
+                    finger.depth * 100.f, TouchPad::kWidth, TouchPad::kHeight);
+            else
+                Log("Ecran tactile : autre manette introuvable (%s, resultat %d, drapeaux 0x%llx).", source, static_cast<int>(located),
+                    static_cast<unsigned long long>(location.locationFlags));
         }
     }
     const bool wasActive = m_touch.active();

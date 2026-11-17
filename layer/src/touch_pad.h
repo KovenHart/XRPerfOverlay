@@ -70,9 +70,9 @@ struct TouchFinger {
     float x = 0.f, y = 0.f, depth = 0.f;
 };
 
-// Calcul du point de contact. `fingerInPad` : poignée de la manette qui touche, dans le repère de
-// l'écran (centre de l'écran, X à droite, Y en haut, Z sortant de la face visible) ; `tip` : distance du
-// point de contact devant la poignée (m, le long de -Z de la poignée, vers l'avant de la manette).
+// Calcul du point de contact. `fingerInPad` : visée de la manette qui touche (avant de la manette, -Z
+// vers où elle pointe ; à défaut sa poignée), dans le repère de l'écran (centre de l'écran, X à droite,
+// Y en haut, Z sortant de la face visible) ; `tip` : distance du point de contact devant (m, le long de -Z).
 inline TouchFinger FingerOnPad(const Pose& fingerInPad, float widthM, float heightM, int widthPx, int heightPx, float tip) {
     TouchFinger f;
     if (!(widthM > 0.f) || !(heightM > 0.f)) return f;
@@ -97,11 +97,11 @@ class TouchPad {
     static constexpr int kViewHeight = kHeight - kHeaderHeight;  // partie qui défile
 
     // Seuils de contact (m) : le bout de la manette doit arriver par l'avant de l'écran.
-    static constexpr float kHoverDepth = 0.08f;     // plus près : le curseur apparaît
+    static constexpr float kHoverDepth = 0.15f;     // plus près : le curseur apparaît
     static constexpr float kPressDepth = 0.004f;    // contact
     static constexpr float kReleaseDepth = 0.012f;  // fin du contact (un peu plus loin : pas de rebond)
     static constexpr float kThroughDepth = 0.07f;   // écran traversé de plus : l'appui est abandonné
-    static constexpr float kEdge = 24.f;            // marge (px) autour de l'image où le doigt compte encore
+    static constexpr float kEdge = 40.f;            // marge (px) autour de l'image où le doigt compte encore
     static constexpr float kDragStart = 14.f;       // déplacement (px) au-delà duquel l'appui devient un défilement
 
     TouchPad() : m_px(static_cast<size_t>(kWidth) * kHeight * 4, 0) { setActions(kTouchAllActions); }

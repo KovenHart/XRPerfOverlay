@@ -82,8 +82,10 @@ class VrBackend {
     virtual void videoStop() {}
     // Durée de l'enregistrement en cours (témoin du panneau), négative s'il n'y en a pas.
     virtual double videoSeconds() { return -1.0; }
-    virtual bool videoLive() { return false; }
-    virtual bool photoFlash() { return false; }  // capture d'écran à l'instant  // ... en direct (Twitch, YouTube)
+    virtual bool videoLive() { return false; }  // ... en direct (Twitch, YouTube)
+    virtual bool photoFlash() { return false; }  // capture d'écran à l'instant
+    // Visée d'une main (avant de la manette, -Z vers où elle pointe) dans le repère du casque ; false si inconnue.
+    virtual bool aimInHead(int hand, Pose& out) { (void)hand; (void)out; return false; }
     // Des images sont fournies en ce moment : la boucle de XRPerfVR tourne plus vite.
     virtual bool videoBusy() { return false; }
 };

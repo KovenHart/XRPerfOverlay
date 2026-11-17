@@ -206,6 +206,8 @@ class Overlay {
     double m_touchRenderedAt = -1.0;
     bool m_touchLooked = false;
     bool m_touchReportPulse = false;       // tuile « rapport » : comme un appui sur le raccourci, à la prochaine image
+    double m_touchLogAt = -1.0;            // journal de diagnostic : position du doigt, toutes les 3 s au plus
+    int m_touchLogCount = 0;
     XrSwapchain m_touchSwapchain = XR_NULL_HANDLE;
     bool m_touchFormatBgra = false, m_touchFormatSrgb = true;
     bool m_touchTried = false;
