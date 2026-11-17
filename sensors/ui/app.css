@@ -14,6 +14,16 @@
 @font-face { font-family: "Inter"; font-weight: 500; src: url("fonts/Inter-Medium.woff") format("woff"); font-display: block; }
 @font-face { font-family: "Inter"; font-weight: 600; src: url("fonts/Inter-SemiBold.woff") format("woff"); font-display: block; }
 
+/* Orbitron (thème Néon, variable 400-900), Rajdhani (Néon), Chakra Petch (Signal). */
+@font-face { font-family: "Orbitron"; font-weight: 400 900; src: url("fonts/Orbitron.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Rajdhani"; font-weight: 500; src: url("fonts/Rajdhani-Medium.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Rajdhani"; font-weight: 600; src: url("fonts/Rajdhani-SemiBold.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Rajdhani"; font-weight: 700; src: url("fonts/Rajdhani-Bold.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Chakra Petch"; font-weight: 400; src: url("fonts/ChakraPetch-Regular.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Chakra Petch"; font-weight: 500; src: url("fonts/ChakraPetch-Medium.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Chakra Petch"; font-weight: 600; src: url("fonts/ChakraPetch-SemiBold.woff") format("woff"); font-display: block; }
+@font-face { font-family: "Chakra Petch"; font-weight: 700; src: url("fonts/ChakraPetch-Bold.woff") format("woff"); font-display: block; }
+
 :root {
   color-scheme: dark;
   --canvas: #0e1116;
@@ -650,6 +660,73 @@ table.grid .delta-cell { width: 26%; min-width: 120px; }
 [data-style="evo"] .slider input[type="range"]::-webkit-slider-thumb { background: var(--surface); border: 3px solid var(--accent); box-shadow: none; }
 [data-style="evo"] .select, [data-style="evo"] .color-pick, [data-style="evo"] .win-list, [data-style="evo"] .theme-chip { border-radius: 3px; }
 [data-style="evo"] .theme-chip .name { text-transform: uppercase; font-size: .75rem; font-weight: 600; letter-spacing: .08em; }
+
+/* --- Thèmes Cyberpunk : Néon et Signal (fenêtre ; le panneau du casque a les mêmes, voir panel.cpp) --- */
+
+/* Néon : violet nuit, magenta lumineux, cyan pour les liens, titres en Orbitron. */
+:root[data-style="neon"] { --font: "Rajdhani", "Segoe UI", system-ui, sans-serif; --font-cond: "Orbitron", "Rajdhani", sans-serif;
+  --radius-s: 4px; --radius: 6px; --radius-l: 10px; --neon-2: #00e5f5; --glow: rgba(255, 43, 214, .45); }
+:root[data-style="neon"] { font-size: calc(16px * var(--ui-scale)); }
+[data-style="neon"] body { font-weight: 500;
+  background: radial-gradient(1200px 520px at 90% -10%, rgba(255, 43, 214, .09), transparent 60%),
+              radial-gradient(900px 520px at 5% 110%, rgba(0, 229, 245, .07), transparent 60%), var(--canvas); }
+[data-style="neon"] a { color: var(--neon-2); }
+[data-style="neon"] h1 { font-family: "Orbitron", sans-serif; font-weight: 800; font-size: 1.45rem; text-transform: uppercase; letter-spacing: .08em; text-shadow: 0 0 18px var(--glow); }
+[data-style="neon"] .rhead h1 { text-transform: none; }
+[data-style="neon"] :is(.card-head h2, .group-head h2) { font-family: "Orbitron", sans-serif; font-weight: 600; font-size: .95rem; text-transform: uppercase; letter-spacing: .08em; }
+[data-style="neon"] .brand-name { font-family: "Orbitron", sans-serif; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; font-size: .95rem; }
+[data-style="neon"] .brand-name span { font-family: var(--font); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: .8rem; }
+[data-style="neon"] .brand-mark { filter: drop-shadow(0 0 6px var(--glow)); }
+[data-style="neon"] .nav-group { text-transform: uppercase; letter-spacing: .14em; font-size: .75rem; font-weight: 600; }
+[data-style="neon"] .nav-item { border: 1px solid transparent; }
+[data-style="neon"] .nav-item[aria-current="page"] { background: linear-gradient(90deg, rgba(255, 43, 214, .22), rgba(255, 43, 214, .04)); border-color: rgba(255, 43, 214, .55);
+  box-shadow: 0 0 14px rgba(255, 43, 214, .25), inset 3px 0 0 var(--accent); }
+[data-style="neon"] .nav-item[aria-current="page"]::before { display: none; }
+[data-style="neon"] :is(.card, .group) { background: linear-gradient(180deg, #140c24, #10091d); }
+[data-style="neon"] .dash-stage { border-color: rgba(0, 229, 245, .35); box-shadow: 0 0 28px rgba(0, 229, 245, .08); }
+[data-style="neon"] .tile-value { font-family: "Orbitron", sans-serif; font-weight: 800; font-size: 1.8rem; }
+[data-style="neon"] .btn { background: transparent; border-color: var(--line-strong); letter-spacing: .04em; }
+[data-style="neon"] .btn:hover { background: var(--raised); }
+[data-style="neon"] .btn.primary { background: transparent; border-color: var(--accent); color: #ff7ae6; box-shadow: 0 0 10px rgba(255, 43, 214, .25); }
+[data-style="neon"] .btn.primary:hover { background: rgba(255, 43, 214, .12); }
+[data-style="neon"] .pill { border-radius: 4px; box-shadow: inset 0 0 0 1px currentColor; }
+[data-style="neon"] .pill .dot { box-shadow: 0 0 8px currentColor; }
+[data-style="neon"] .switch input:checked + span { background: var(--accent); box-shadow: 0 0 12px var(--glow); }
+[data-style="neon"] .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); box-shadow: 0 0 10px var(--glow); }
+[data-style="neon"] .slider input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 8px var(--glow); }
+[data-style="neon"] .tab[aria-selected="true"] { text-shadow: 0 0 10px var(--glow); }
+
+/* Signal : noir et jaune, coins coupés, repères jaunes, filets gradués, police Chakra Petch. */
+:root[data-style="signal"] { --font: "Chakra Petch", "Segoe UI", system-ui, sans-serif; --font-cond: var(--font);
+  --radius-s: 0px; --radius: 0px; --radius-l: 0px; --cut: 14px; }
+[data-style="signal"] h1 { text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+[data-style="signal"] .rhead h1 { text-transform: none; }
+[data-style="signal"] :is(.card-head h2, .group-head h2) { text-transform: uppercase; letter-spacing: .1em; font-size: 1rem; font-weight: 700; }
+[data-style="signal"] .brand-name span { color: var(--accent); }
+[data-style="signal"] .nav-group { display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: .12em; font-size: .75rem; font-weight: 600; }
+[data-style="signal"] .nav-group::after { content: ""; flex: 1; height: 1px; background: repeating-linear-gradient(90deg, var(--line-strong) 0 6px, transparent 6px 9px); }
+[data-style="signal"] .nav-item { border-radius: 0; }
+[data-style="signal"] .nav-item[aria-current="page"] { background: var(--accent); color: var(--accent-ink); font-weight: 700;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%); }
+[data-style="signal"] .nav-item[aria-current="page"] svg { color: var(--accent-ink); }
+[data-style="signal"] .nav-item[aria-current="page"]::before { display: none; }
+[data-style="signal"] :is(.card, .group) { position: relative;
+  background: linear-gradient(var(--accent), var(--accent)) top left / 56px 3px no-repeat, var(--surface);
+  clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut))); }
+[data-style="signal"] .btn { text-transform: uppercase; letter-spacing: .08em; font-weight: 600; font-size: .85rem;
+  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%); }
+[data-style="signal"] .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+[data-style="signal"] .btn.primary:hover { background: #fff59a; }
+[data-style="signal"] .btn.icon { clip-path: none; }
+[data-style="signal"] .pill { border-radius: 0; clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%); padding-left: 14px; padding-right: 14px; }
+[data-style="signal"] .pill .dot { border-radius: 0; }
+[data-style="signal"] .switch span { border-radius: 0; clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%); }
+[data-style="signal"] .switch span::after { border-radius: 0; }
+[data-style="signal"] .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+[data-style="signal"] .slider input[type="range"]::-webkit-slider-thumb { border-radius: 0; }
+[data-style="signal"] kbd { border-radius: 0; }
+[data-style="signal"] .topbar h1::after { content: ""; display: block; width: 200px; max-width: 100%; height: 6px; margin-top: 4px;
+  background: repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 10px); }
 
 /* --- Modes simple et avancé : recherche, onglets, réglages modifiés, fenêtres modales --- */
 .nav-search { display: flex; align-items: center; gap: 10px; margin: 0 4px 10px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--canvas); color: var(--muted); font: inherit; font-size: .92rem; cursor: pointer; text-align: left; }

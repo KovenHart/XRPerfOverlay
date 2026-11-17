@@ -73,7 +73,7 @@ Every page, grouped by task:
 
 - **Dashboard**: the panel as it appears in the headset (the running game's image, otherwise a preview with sample FPS), quick switches (OpenXR layer, panel, watch, desktop window, SteamVR games, panel for OBS), the processor, graphics card and video memory live with their graph of the last two minutes, the last session. The **Cheat sheet** button (or the `?` key) lists the keyboard shortcuts. At the top, a badge shows whether a VR game is running, and another the active image preset.
 - **In-game display**
-  - **Panel**, *Display and position* tab: show or hide the panel, attachment (in front of the eyes, left or right hand); in front of the eyes: position (chosen on a diagram of the field of view), distance, horizontal and vertical offsets, turning towards the eyes; on the hand: position on the hand, show only when looking at the hand, position adjustments; size, overall and background opacity; in games: the OpenXR layer (see "Turning the layer off") and SteamVR (OpenVR) games. *Appearance* tab (headset, watch and panel for OBS): layout, colors (thumbnails of the nine sets), clock, headset / resolution line, session / battery line.
+  - **Panel**, *Display and position* tab: show or hide the panel, attachment (in front of the eyes, left or right hand); in front of the eyes: position (chosen on a diagram of the field of view), distance, horizontal and vertical offsets, turning towards the eyes; on the hand: position on the hand, show only when looking at the hand, position adjustments; size, overall and background opacity; in games: the OpenXR layer (see "Turning the layer off") and SteamVR (OpenVR) games. *Appearance* tab (headset, watch and panel for OBS): layout, colors (thumbnails of the eleven sets, including the two Cyberpunk themes *Neon* and *Signal*), clock, headset / resolution line, session / battery line.
   - **Watch**: show the watch, attachment, position on the hand, style, elements, show on gaze, size, opacity, position adjustments, with its preview (see "Watch and attaching to the controllers").
   - **PC window**: the desktop window shown in the headset (see "Desktop window in the headset").
 - **Rendering**: **Image filters**: presets, sharpening, colors, fake HDR, debanding and colorblind mode, in the headset or in the video (see "Image filters").
@@ -83,7 +83,7 @@ Every page, grouped by task:
 - **Analysis**
   - **Reports**: see "Session reports".
   - **Sensors and diagnosis**: *Diagnosis* tab (see "Configuration diagnosis") and *Measurements and reports* tab: real GPU time measurement (otherwise an estimate), writing reports (every session, on the `Ctrl+Alt+S` hotkey or never: applies immediately, even in game), processor and graphics card models in the reports, reports folder. GPU measurement and models apply the next time a game starts.
-- At the bottom of the menu: **Keyboard shortcuts** (every headset, video and capture shortcut, see "Usage") and **Preferences**: language (Windows', French or English), window colors ("same as the panel" in the headset, one of the eight themes, or three colors of your own), text size, animations, full screen and opening in full screen.
+- At the bottom of the menu: **Keyboard shortcuts** (every headset, video and capture shortcut, see "Usage") and **Preferences**: language (Windows', French or English), window colors ("same as the panel" in the headset, one of the ten themes, or three colors of your own), text size, animations, full screen and opening in full screen.
 
 Finding your way:
 

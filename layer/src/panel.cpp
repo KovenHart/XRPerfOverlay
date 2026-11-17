@@ -22,6 +22,8 @@ Theme PresetTheme(ThemeId id) {
         {{14, 17, 22}, {240, 243, 248}, {142, 152, 170}, {150, 190, 240}, {70, 78, 94}, {110, 225, 140}, {255, 190, 70}, {255, 100, 90}, {120, 220, 150}},
         /* Classic    */ {{30, 30, 30}, {243, 243, 243}, {156, 156, 156}, {255, 140, 31}, {59, 59, 59}, {53, 193, 53}, {255, 210, 63}, {255, 90, 79}, {53, 193, 53}},
         /* EVO        */ {{24, 24, 30}, {236, 236, 242}, {143, 143, 157}, {109, 124, 255}, {59, 59, 72}, {47, 191, 99}, {255, 181, 71}, {255, 93, 99}, {47, 191, 99}},
+        /* Néon       */ {{12, 7, 22}, {244, 238, 255}, {165, 150, 204}, {0, 229, 245}, {52, 36, 86}, {61, 255, 162}, {255, 210, 61}, {255, 61, 110}, {255, 122, 230}, {255, 43, 214}, 1},
+        /* Signal     */ {{12, 12, 10}, {242, 240, 230}, {168, 165, 148}, {245, 230, 38}, {60, 60, 48}, {46, 230, 197}, {255, 154, 46}, {255, 59, 59}, {46, 230, 197}, {245, 230, 38}, 2},
     };
     static_assert(sizeof(kPresets) / sizeof(kPresets[0]) == static_cast<size_t>(ThemeId::Count), "un jeu de couleurs par ThemeId");
     const int index = static_cast<int>(id);
@@ -40,7 +42,7 @@ Rgb mix(Rgb a, Rgb b, int t) {
 }  // namespace
 
 Theme CustomTheme(Rgb background, Rgb text, Rgb accent) {
-    Theme theme;
+    Theme theme{};
     theme.background = background;
     theme.text = text;
     theme.accent = accent;
@@ -106,6 +108,55 @@ class Canvas {
                 blend(x + i, y + j, c, static_cast<int>(fullCoverage * a + 0.5f));
             }
         }
+    }
+
+    // Distance (positive à l'intérieur) d'un point au bord d'un rectangle arrondi de `radius`.
+    static float roundRectInside(float cx, float cy, float w, float h, float radius) {
+        const float dx = std::fmax(std::fmax(radius - cx, cx - (w - radius)), 0.f);
+        const float dy = std::fmax(std::fmax(radius - cy, cy - (h - radius)), 0.f);
+        const float edge = std::fmin(std::fmin(cx, w - cx), std::fmin(cy, h - cy));
+        return (dx > 0.f && dy > 0.f) ? radius - std::sqrt(dx * dx + dy * dy) : (dx > 0.f || dy > 0.f ? radius - std::fmax(dx, dy) : edge);
+    }
+
+    // Bordure lumineuse : trait plein de `width` px puis halo qui s'éteint vers l'intérieur sur `glow` px.
+    void glowFrame(int x, int y, int w, int h, float radius, Color c, float width, float glow, int glowCoverage) {
+        for (int j = 0; j < h; ++j)
+            for (int i = 0; i < w; ++i) {
+                const float d = roundRectInside(i + 0.5f, j + 0.5f, static_cast<float>(w), static_cast<float>(h), radius);
+                if (d <= -0.5f || d >= width + glow) continue;
+                if (d < width) {
+                    const float a = std::fmin(1.f, d + 0.5f);
+                    blend(x + i, y + j, c, static_cast<int>(255.f * a + 0.5f));
+                } else {
+                    const float t = 1.f - (d - width) / glow;
+                    blend(x + i, y + j, c, static_cast<int>(glowCoverage * t * t + 0.5f));
+                }
+            }
+    }
+
+    // Rectangle à coins coupés en biais (haut-droit et bas-gauche), de `cut` px.
+    void fillCutRect(int x, int y, int w, int h, int cut, Color c, int coverage) {
+        for (int j = 0; j < h; ++j)
+            for (int i = 0; i < w; ++i) {
+                const float cx = i + 0.5f, cy = j + 0.5f;
+                const float a1 = ((w - cx) + cy - cut) * 0.7071f, a2 = (cx + (h - cy) - cut) * 0.7071f;
+                float a = std::fmin(a1, a2) + 0.5f;
+                if (a <= 0.f) continue;
+                if (a > 1.f) a = 1.f;
+                blend(x + i, y + j, c, static_cast<int>(coverage * a + 0.5f));
+            }
+    }
+
+    // Trait de 1 px le long des bords d'un rectangle à coins coupés (même forme que fillCutRect).
+    void cutFrame(int w, int h, int cut, Color c, int coverage) {
+        for (int j = 0; j < h; ++j)
+            for (int i = 0; i < w; ++i) {
+                const float cx = i + 0.5f, cy = j + 0.5f;
+                const float d = std::fmin(std::fmin(std::fmin(cx, w - cx), std::fmin(cy, h - cy)),
+                                          std::fmin(((w - cx) + cy - cut) * 0.7071f, (cx + (h - cy) - cut) * 0.7071f));
+                if (d <= 0.f || d >= 1.5f) continue;
+                blend(i, j, c, static_cast<int>(coverage * std::fmin(1.f, 1.5f - d) + 0.5f));
+            }
     }
 
     static int textWidth(const FontAtlas& f, const char* s) { return static_cast<int>(std::strlen(s)) * f.cellW; }
@@ -692,12 +743,35 @@ void drawStatus(Canvas& cv, const PanelData& d, int y) {
     }
 }
 
+// Décor des montres pour les thèmes à cadre (Néon, Signal).
+// Néon : anneau lumineux de `rOuter`, halo vers l'intérieur.
+void neonRing(Canvas& cv, float c, float rOuter, Color color) {
+    cv.ring(c, c, rOuter - 3.f, rOuter, color);
+    for (int k = 0; k < 14; ++k) {
+        const float t = 1.f - static_cast<float>(k) / 14.f;
+        cv.ring(c, c, rOuter - 4.f - k, rOuter - 3.f - k, color, static_cast<int>(70.f * t * t + 0.5f));
+    }
+}
+
+// Signal : repères jaunes sur la lunette, large à 12 h, courts à 3, 6 et 9 h.
+void signalNotches(Canvas& cv, float c, float rIn, float rOut, Color color) {
+    for (int q = 0; q < 4; ++q) {
+        const float half = q == 0 ? 14.f : 4.f;  // degrés
+        for (float deg = -half; deg <= half; deg += 0.5f) {
+            const float a = (q * 90.f + deg) * kPi / 180.f, sx = std::sin(a), cy = -std::cos(a);
+            cv.segment(c + sx * rIn, c + cy * rIn, c + sx * rOut, c + cy * rOut, 2.f, color);
+        }
+    }
+}
+
 void drawClassicWatch(Canvas& cv, const WatchData& d) {
     const Theme& th = d.theme;
     const float c = WatchFace::kSize * 0.5f;
-    cv.disc(c, c, 158.f, mix(th.line, th.accent, 90));     // lunette
-    cv.disc(c, c, 148.f, th.background);                   // cadran
+    cv.disc(c, c, 158.f, th.frame ? th.line : mix(th.line, th.accent, 90));  // lunette
+    cv.disc(c, c, 148.f, th.background);                                    // cadran
     cv.ring(c, c, 146.f, 148.f, mix(th.background, th.text, 40));
+    if (th.frame == 1) neonRing(cv, c, 158.f, th.frameColor);
+    if (th.frame == 2) signalNotches(cv, c, 149.f, 158.f, th.frameColor);
     for (int i = 0; i < 60; ++i) {
         const float a = static_cast<float>(i) * kPi / 30.f, sx = std::sin(a), cy = -std::cos(a);
         const bool hourMark = i % 5 == 0, cardinal = i % 15 == 0;
@@ -744,8 +818,22 @@ void drawClassicWatch(Canvas& cv, const WatchData& d) {
 void drawDigitalWatch(Canvas& cv, const WatchData& d) {
     const Theme& th = d.theme;
     const int s = WatchFace::kSize;
-    cv.fillRoundRect(0, 0, s, s, 56.f, mix(th.line, th.accent, 90), 255);
-    cv.fillRoundRect(8, 8, s - 16, s - 16, 50.f, th.background, 255);
+    if (th.frame == 2) {
+        // Signal : boîtier à coins coupés, biseau jaune en haut à droite, repère en haut à gauche.
+        const int cut = 48;
+        cv.fillCutRect(0, 0, s, s, cut, th.line, 255);
+        cv.fillCutRect(6, 6, s - 12, s - 12, cut - 3, th.background, 255);
+        for (int j = 0; j < cut + 6; ++j)
+            for (int i = s - cut - 6; i < s; ++i) {
+                const float a = ((s - (i + 0.5f)) + (j + 0.5f) - cut) * 0.7071f;
+                if (a > 0.f && a < 5.f) cv.blend(i, j, th.frameColor, static_cast<int>(255.f * std::fmin(1.f, std::fmin(a, 5.f - a)) + 0.5f));
+            }
+        cv.fillRect(6, 6, 64, 5, th.frameColor);
+    } else {
+        cv.fillRoundRect(0, 0, s, s, 56.f, th.frame == 1 ? th.frameColor : mix(th.line, th.accent, 90), 255);
+        cv.fillRoundRect(8, 8, s - 16, s - 16, 50.f, th.background, 255);
+        if (th.frame == 1) cv.glowFrame(8, 8, s - 16, s - 16, 50.f, th.frameColor, 0.f, 16.f, 80);  // Néon
+    }
     char buf[24];
     if (d.elements & kWatchFps) fpsLine(cv, d, s / 2, 34, kFontValue);
     bigTime(cv, d, s / 2, 82);
@@ -775,6 +863,11 @@ void drawSportWatch(Canvas& cv, const WatchData& d) {
         const bool lit = d.hour >= 0 && i <= d.second % 60;
         const float inner = i % 5 == 0 ? 136.f : 142.f;
         cv.segment(c + sx * inner, c + cy * inner, c + sx * 152.f, c + cy * 152.f, i % 5 == 0 ? 4.f : 3.f, lit ? th.accent : th.line);
+    }
+    if (th.frame == 1) neonRing(cv, c, 158.f, th.frameColor);
+    if (th.frame == 2) {
+        cv.ring(c, c, 155.f, 157.f, th.line);
+        signalNotches(cv, c, 154.f, 158.f, th.frameColor);
     }
     char buf[24];
     if (d.elements & kWatchFps) fpsLine(cv, d, static_cast<int>(c), 58, kFontValue);
@@ -807,7 +900,23 @@ void Panel::buildBase(const PanelData& d, int opacity, int scale) {
     const int body = bodyHeight(d.layout);
     m_base.assign(m_px.size(), 0);
     Canvas cv(m_base.data(), kWidth, kHeight, scale);
-    cv.fillRoundRect(0, 0, kWidth, contentHeight(d), 18.f, th.background, opacity);
+    const int height = contentHeight(d);
+    if (th.frame == 2) {
+        // Signal : coins coupés, filet fin, repère jaune en haut à gauche et sur le biseau, graduations en bas.
+        const int cut = 22;
+        cv.fillCutRect(0, 0, kWidth, height, cut, th.background, opacity);
+        cv.cutFrame(kWidth, height, cut, th.line, 255);
+        cv.fillRect(0, 0, 72, 4, th.frameColor);
+        for (int j = 0; j < cut + 4; ++j)  // biseau haut-droit souligné de jaune
+            for (int i = kWidth - cut - 4; i < kWidth; ++i) {
+                const float a = ((kWidth - (i + 0.5f)) + (j + 0.5f) - cut) * 0.7071f;
+                if (a > 0.f && a < 3.5f) cv.blend(i, j, th.frameColor, static_cast<int>(255.f * std::fmin(1.f, std::fmin(a, 3.5f - a)) + 0.5f));
+            }
+        for (int x = kWidth - kPad - 120; x <= kWidth - kPad; x += 10) cv.fillRect(x, height - 9, 1, x % 50 == 0 ? 6 : 3, th.line);
+    } else {
+        cv.fillRoundRect(0, 0, kWidth, height, th.frame == 1 ? 14.f : 18.f, th.background, opacity);
+        if (th.frame == 1) cv.glowFrame(0, 0, kWidth, height, 14.f, th.frameColor, 2.f, 14.f, 70);  // Néon
+    }
 
     const char* statName[3] = {"AVG", "MIN", "MAX"};
     for (int i = 0; i < 3; ++i) cv.textRight(kFontLabel, kStatRight[i], 16, statName[i], th.muted);

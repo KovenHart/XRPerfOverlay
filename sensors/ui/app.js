@@ -307,11 +307,13 @@ window.App = (function () {
     ["#0e1116", "#f0f3f8", "#8e98aa", "#96bef0", "#464e5e", "#6ee18c", "#ffbe46", "#ff645a"],  // 6 : personnalisé (voir customPalette)
     ["#1e1e1e", "#f3f3f3", "#9c9c9c", "#ff8c1f", "#3b3b3b", "#35c135", "#ffd23f", "#ff5a4f"],  // 7 : Classic
     ["#18181e", "#ececf2", "#8f8f9d", "#6d7cff", "#3b3b48", "#2fbf63", "#ffb547", "#ff5d63"],  // 8 : EVO
+    ["#0c0716", "#f4eeff", "#a596cc", "#00e5f5", "#342456", "#3dffa2", "#ffd23d", "#ff3d6e"],  // 9 : Néon
+    ["#0c0c0a", "#f2f0e6", "#a8a594", "#f5e626", "#3c3c30", "#2ee6c5", "#ff9a2e", "#ff3b3b"],  // 10 : Signal
   ];
   // Panneau en Classic ou EVO : avec « comme le panneau », la fenêtre prend aussi l'allure de ce thème.
-  const PANEL_STYLES = { 7: "classic", 8: "evo" };
-  const PANEL_THEME_ORDER = [0, 1, 2, 3, 4, 5, 7, 8, 6];
-  const UI_THEMES = ["panel", "dark", "light", "contrast", "green", "amber", "violet", "classic", "evo", "custom"];
+  const PANEL_STYLES = { 7: "classic", 8: "evo", 9: "neon", 10: "signal" };
+  const PANEL_THEME_ORDER = [0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 6];
+  const UI_THEMES = ["panel", "dark", "light", "contrast", "green", "amber", "violet", "classic", "evo", "neon", "signal", "custom"];
 
   // Thèmes de la fenêtre seulement, avec leur propre allure (formes, typographie) en plus des couleurs :
   // « Classic » (gris, accent vert, titres arrondis) et « EVO » (bleu nuit, accent indigo, capitales,
@@ -328,6 +330,20 @@ window.App = (function () {
       vars: { "--canvas": "#111115", "--rail": "#141419", "--surface": "#18181e", "--raised": "#1e1e26", "--hover": "#22222c",
         "--line": "#2a2a34", "--line-strong": "#3b3b48", "--text": "#ececf2", "--text-2": "#c4c4ce", "--muted": "#8f8f9d",
         "--accent": "#6d7cff", "--accent-ink": "#ffffff", "--accent-strong": "#4b5ae0", "--title": "#ececf2" },
+    },
+    // Néon : violet nuit, accent magenta lumineux, cyan pour les liens et repères (thème Cyberpunk).
+    neon: {
+      palette: ["#0a0612", "#f4eeff", "#a596cc", "#ff2bd6", "#2e1f4d", "#3dffa2", "#ffd23d", "#ff3d6e"],
+      vars: { "--canvas": "#0a0612", "--rail": "#0d0818", "--surface": "#120b20", "--raised": "#1a1030", "--hover": "#20143a",
+        "--line": "#2e1f4d", "--line-strong": "#4a3577", "--text": "#f4eeff", "--text-2": "#c9bfe6", "--muted": "#a596cc",
+        "--accent": "#ff2bd6", "--accent-ink": "#0a0612", "--accent-strong": "#ff2bd6", "--title": "#f4eeff" },
+    },
+    // Signal : noir et jaune, coins coupés, sans halo (thème Cyberpunk).
+    signal: {
+      palette: ["#0b0b09", "#f2f0e6", "#a8a594", "#f5e626", "#33332a", "#2ee6c5", "#ff9a2e", "#ff3b3b"],
+      vars: { "--canvas": "#0b0b09", "--rail": "#0f0f0c", "--surface": "#141410", "--raised": "#1d1d17", "--hover": "#232319",
+        "--line": "#33332a", "--line-strong": "#4a4a3c", "--text": "#f2f0e6", "--text-2": "#d6d3c4", "--muted": "#a8a594",
+        "--accent": "#f5e626", "--accent-ink": "#0b0b09", "--accent-strong": "#f5e626", "--title": "#f2f0e6" },
     },
   };
 

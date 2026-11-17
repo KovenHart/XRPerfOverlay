@@ -134,6 +134,17 @@ Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter) — SIL
 (texte complet dans `sensors/ui/fonts/OFL-Inter.txt`). Instances statiques (300, 400, 500, 600), sous-ensembles
 latins convertis au format WOFF. Utilisée par les thèmes Classic et EVO de la fenêtre.
 
+## Polices Orbitron, Rajdhani et Chakra Petch (`sensors/ui/fonts/`)
+
+Utilisées par les thèmes Néon (Orbitron, Rajdhani) et Signal (Chakra Petch) de la fenêtre. SIL Open Font License 1.1 :
+
+- Orbitron : Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron), nom réservé « Orbitron »
+  (texte complet dans `sensors/ui/fonts/OFL-Orbitron.txt`). Police variable d'origine, non modifiée, au format WOFF.
+- Rajdhani : Copyright (c) 2014, Indian Type Foundry (texte complet dans `sensors/ui/fonts/OFL-Rajdhani.txt`).
+  Graisses 500, 600 et 700, sous-ensembles latins convertis au format WOFF.
+- Chakra Petch : Copyright 2018 The Chakra Petch Project Authors (https://github.com/m4rc1e/Chakra-Petch)
+  (texte complet dans `sensors/ui/fonts/OFL-ChakraPetch.txt`). Graisses 400 à 700 converties au format WOFF.
+
 ## .NET (paquet de distribution)
 
 Le paquet de distribution contient le runtime .NET et Windows Forms dans `programme\sensors\`, pour que
