@@ -661,7 +661,7 @@ table.grid .delta-cell { width: 26%; min-width: 120px; }
 [data-style="evo"] .select, [data-style="evo"] .color-pick, [data-style="evo"] .win-list, [data-style="evo"] .theme-chip { border-radius: 3px; }
 [data-style="evo"] .theme-chip .name { text-transform: uppercase; font-size: .75rem; font-weight: 600; letter-spacing: .08em; }
 
-/* --- Thèmes Cyberpunk : Néon et Signal (fenêtre ; le panneau du casque a les mêmes, voir panel.cpp) --- */
+/* --- Thèmes Néon et Signal (fenêtre ; le panneau du casque a les mêmes, voir panel.cpp) --- */
 
 /* Néon : violet nuit, magenta lumineux, cyan pour les liens, titres en Orbitron. */
 :root[data-style="neon"] { --font: "Rajdhani", "Segoe UI", system-ui, sans-serif; --font-cond: "Orbitron", "Rajdhani", sans-serif;

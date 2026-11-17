@@ -331,14 +331,14 @@ window.App = (function () {
         "--line": "#2a2a34", "--line-strong": "#3b3b48", "--text": "#ececf2", "--text-2": "#c4c4ce", "--muted": "#8f8f9d",
         "--accent": "#6d7cff", "--accent-ink": "#ffffff", "--accent-strong": "#4b5ae0", "--title": "#ececf2" },
     },
-    // Néon : violet nuit, accent magenta lumineux, cyan pour les liens et repères (thème Cyberpunk).
+    // Néon : violet nuit, accent magenta lumineux, cyan pour les liens et repères.
     neon: {
       palette: ["#0a0612", "#f4eeff", "#a596cc", "#ff2bd6", "#2e1f4d", "#3dffa2", "#ffd23d", "#ff3d6e"],
       vars: { "--canvas": "#0a0612", "--rail": "#0d0818", "--surface": "#120b20", "--raised": "#1a1030", "--hover": "#20143a",
         "--line": "#2e1f4d", "--line-strong": "#4a3577", "--text": "#f4eeff", "--text-2": "#c9bfe6", "--muted": "#a596cc",
         "--accent": "#ff2bd6", "--accent-ink": "#0a0612", "--accent-strong": "#ff2bd6", "--title": "#f4eeff" },
     },
-    // Signal : noir et jaune, coins coupés, sans halo (thème Cyberpunk).
+    // Signal : noir et jaune, coins coupés, sans halo.
     signal: {
       palette: ["#0b0b09", "#f2f0e6", "#a8a594", "#f5e626", "#33332a", "#2ee6c5", "#ff9a2e", "#ff3b3b"],
       vars: { "--canvas": "#0b0b09", "--rail": "#0f0f0c", "--surface": "#141410", "--raised": "#1d1d17", "--hover": "#232319",
