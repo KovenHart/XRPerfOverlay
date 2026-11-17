@@ -311,46 +311,82 @@ void Overlay::captureVideo(const XrFrameEndInfo& frameEndInfo, SwapchainRegistry
     const int64_t y1 = std::min<int64_t>(info.height, static_cast<int64_t>(rect.offset.y) + rect.extent.height);
     const bool rectOk = x1 - x0 >= 16 && y1 - y0 >= 16;
 
+    // Publication de la copie en attente : l'œil (x0, y0)-(x1, y1) est à (bx0, by0) près en haut à gauche de
+    // la texture partagée.
+    const auto publishFrame = [&](int64_t bx0, int64_t by0) {
+        VideoFrameInfo frame;
+        frame.x = static_cast<uint32_t>(x0 - bx0);  // la zone copiée est en haut à gauche de la texture partagée
+        frame.y = static_cast<uint32_t>(y0 - by0);
+        frame.width = static_cast<uint32_t>(x1 - x0);
+        frame.height = static_cast<uint32_t>(y1 - y0);
+        frame.linear = VideoFormatIsLinear(info.format);
+        frame.tanLeft = std::tan(view.fov.angleLeft);
+        frame.tanRight = std::tan(view.fov.angleRight);
+        frame.tanUp = std::tan(view.fov.angleUp);
+        frame.tanDown = std::tan(view.fov.angleDown);
+        const auto quat = [](const XrQuaternionf& q) { return Normalized(Quat{q.x, q.y, q.z, q.w}); };
+        frame.eyeOrientation = quat(view.pose.orientation);
+        frame.headOrientation = frame.eyeOrientation;
+        if (projection->viewCount >= 2) {
+            const Quat left = quat(projection->views[0].pose.orientation), right = quat(projection->views[1].pose.orientation);
+            HeadForwardInEye(frame.eyeOrientation, left, right, frame.centerX, frame.centerY);
+            frame.headOrientation = MidOrientation(left, right);
+        }
+        frame.poseValid = true;  // dans le repère de la scène du jeu (celui de la couche projetée)
+        // Filtres d'image : déjà dans la copie, à faire par l'enregistreur (appliqués plus bas dans la
+        // chaîne), ou pas de filtres dans le casque.
+        bool imageLater = false;
+        {
+            std::lock_guard<std::mutex> imageLock(m_imageMutex);
+            imageLater = m_imageActive && m_imageFilter && !m_imageFilter->failed() && m_imageBelowVideo.load(std::memory_order_relaxed);
+        }
+        frame.imageState = m_videoCopiedFiltered ? kVideoImageFiltered : (imageLater ? kVideoImageLater : kVideoImageNone);
+        videoGameLayers(frameEndInfo, projectionIndex, *projection, view, viewIndex, swapchains, enumerate);
+        videoPanelPlacement(*projection, view, frameEndInfo.displayTime, frame);
+        m_video->publish(frame);
+    };
+
     // Image copiée quand le jeu l'a rendue : c'est bien celle qu'il soumet (même swapchain, même image,
     // même tranche, et l'œil dans la zone copiée) ? Alors elle est publiée avec ce qu'elle montre.
     if (m_video->pending()) {
         const int64_t bx0 = previous.x, by0 = previous.y, bx1 = bx0 + previous.width, by1 = by0 + previous.height;
         if (swapchain == m_videoCopiedSwapchain && info.released == static_cast<int64_t>(m_videoCopiedIndex) && slice == previous.slice && rectOk &&
             x0 >= bx0 && y0 >= by0 && x1 <= bx1 && y1 <= by1) {
-            {
-                VideoFrameInfo frame;
-                frame.x = static_cast<uint32_t>(x0 - bx0);  // la zone copiée est en haut à gauche de la texture partagée
-                frame.y = static_cast<uint32_t>(y0 - by0);
-                frame.width = static_cast<uint32_t>(x1 - x0);
-                frame.height = static_cast<uint32_t>(y1 - y0);
-                frame.linear = VideoFormatIsLinear(info.format);
-                frame.tanLeft = std::tan(view.fov.angleLeft);
-                frame.tanRight = std::tan(view.fov.angleRight);
-                frame.tanUp = std::tan(view.fov.angleUp);
-                frame.tanDown = std::tan(view.fov.angleDown);
-                const auto quat = [](const XrQuaternionf& q) { return Normalized(Quat{q.x, q.y, q.z, q.w}); };
-                frame.eyeOrientation = quat(view.pose.orientation);
-                frame.headOrientation = frame.eyeOrientation;
-                if (projection->viewCount >= 2) {
-                    const Quat left = quat(projection->views[0].pose.orientation), right = quat(projection->views[1].pose.orientation);
-                    HeadForwardInEye(frame.eyeOrientation, left, right, frame.centerX, frame.centerY);
-                    frame.headOrientation = MidOrientation(left, right);
-                }
-                frame.poseValid = true;  // dans le repère de la scène du jeu (celui de la couche projetée)
-                // Filtres d'image : déjà dans la copie, à faire par l'enregistreur (appliqués plus bas dans la
-                // chaîne), ou pas de filtres dans le casque.
-                bool imageLater = false;
-                {
-                    std::lock_guard<std::mutex> imageLock(m_imageMutex);
-                    imageLater = m_imageActive && m_imageFilter && !m_imageFilter->failed() && m_imageBelowVideo.load(std::memory_order_relaxed);
-                }
-                frame.imageState = m_videoCopiedFiltered ? kVideoImageFiltered : (imageLater ? kVideoImageLater : kVideoImageNone);
-                videoGameLayers(frameEndInfo, projectionIndex, *projection, view, viewIndex, swapchains, enumerate);
-                videoPanelPlacement(*projection, view, frameEndInfo.displayTime, frame);
-                m_video->publish(frame);
-            }
+            publishFrame(bx0, by0);
+            m_videoMisses = 0;
+        } else {
+            ++m_videoMisses;  // copiée à sa libération, mais une autre image (ou swapchain) est soumise
         }
         m_video->dropPending();
+    }
+
+    // Images soumises qui ne sont jamais celles copiées à leur libération (ou plus de copie du tout) :
+    // copie à la soumission, de la dernière image libérée, celle que le runtime va afficher.
+    if (!m_videoAtSubmit.load(std::memory_order_relaxed) && (m_videoMisses >= 8 || ++m_videoFramesSinceCopy >= 150)) {
+        m_videoAtSubmit.store(true, std::memory_order_relaxed);
+        Log("Video : l'image soumise n'est pas celle rendue juste avant (%s) ; copie faite a la soumission.",
+            m_videoMisses >= 8 ? "images preparees en avance, generation d'images ?" : "aucune copie a la liberation");
+    }
+    if (m_videoAtSubmit.load(std::memory_order_relaxed)) {
+        if (!rectOk || info.released < 0 || static_cast<size_t>(info.released) >= info.images.size() || !info.images[static_cast<size_t>(info.released)])
+            return;
+        if (!m_video->due(nowSeconds())) return;
+        const size_t index = static_cast<size_t>(info.released);
+        VideoSource source;
+        source.texture = info.images[index];
+        source.subresource = slice * info.mipCount;  // niveau 0 de la tranche
+        source.x = static_cast<uint32_t>(x0);
+        source.y = static_cast<uint32_t>(y0);
+        source.width = static_cast<uint32_t>(x1 - x0);
+        source.height = static_cast<uint32_t>(y1 - y0);
+        if (!m_video->copy(source)) return;
+        {
+            std::lock_guard<std::mutex> imageLock(m_imageMutex);
+            m_videoCopiedFiltered = m_imageLastSwapchain == swapchain && m_imageLastIndex == static_cast<uint32_t>(index);
+        }
+        publishFrame(x0, y0);
+        m_video->dropPending();
+        return;
     }
     // Prochaine copie : cette swapchain, cette tranche, l'œil seul (pas l'autre œil d'une texture partagée).
     // Avec une résolution dynamique, l'œil change de taille d'une image à l'autre : la zone copiée réunit
@@ -674,6 +710,7 @@ void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains)
     // Direct3D 11 : le contexte immédiat du jeu n'est pas fait pour deux fils à la fois ; on ne copie que sur
     // le fil qui soumet les images (le cas de presque tous les moteurs). La file Direct3D 12 n'a pas ce souci.
     if (!m_videoD3D12 && GetCurrentThreadId() != m_videoEndFrameThread.load(std::memory_order_relaxed)) return;
+    if (m_videoAtSubmit.load(std::memory_order_relaxed)) return;  // copie faite à xrEndFrame
     std::lock_guard<std::mutex> lock(m_videoMutex);
     if (!m_video || m_video->failed() || m_videoTarget.swapchain == XR_NULL_HANDLE || swapchain != m_videoTarget.swapchain) return;
     uint32_t index = 0;
@@ -690,6 +727,7 @@ void Overlay::videoRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains)
     if (m_video->copy(source)) {
         m_videoCopiedSwapchain = swapchain;
         m_videoCopiedIndex = index;
+        m_videoFramesSinceCopy = 0;
         std::lock_guard<std::mutex> imageLock(m_imageMutex);
         m_videoCopiedFiltered = m_imageLastSwapchain == swapchain && m_imageLastIndex == index;
     }

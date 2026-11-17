@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.16.1
+
+- **Video with a frame generation layer** (OFXR Bridge, for example): the recorded image stayed frozen or stuttered, while the sound was fine. These layers prepare their images ahead of time; the layer now detects this and copies the image when it is submitted to the headset. Generated frames are recorded too.
+
 ## 1.16.0
 
 - **Simple mode** to get started: five pages (Home, In the headset, Video and live, Image, Reports) with ready-made choices: panel contents *Minimal*, *Essential* or *Full*, video quality *Standard*, *High* or *Maximum*, one-click image presets. A three-step assistant on first launch. It is the mode of a new installation; an existing installation stays in advanced mode. The **Advanced settings** switch, at the bottom of the menu, goes from one to the other.
