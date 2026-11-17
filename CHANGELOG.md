@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.16.1
+
+- **Vidéo avec une layer de génération d'images** (OFXR Bridge, par exemple) : l'image enregistrée restait figée ou saccadée, le son étant bon. Ces layers préparent leurs images en avance ; la layer le détecte et copie alors l'image au moment où elle est soumise au casque. Les images générées sont aussi enregistrées.
+
 ## 1.16.0
 
 - **Mode simple** pour bien démarrer : cinq pages (Accueil, Dans le casque, Vidéo et direct, Image, Rapports) avec des choix tout faits : contenu du panneau *Minimal*, *Essentiel* ou *Complet*, qualité vidéo *Standard*, *Haute* ou *Maximale*, presets d'image en un clic. Un assistant de trois étapes au premier lancement. C'est le mode d'une nouvelle installation ; une installation existante reste en mode avancé. L'interrupteur **Réglages avancés**, en bas du menu, passe de l'un à l'autre.

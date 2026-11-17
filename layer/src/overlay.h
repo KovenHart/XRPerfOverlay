@@ -277,6 +277,12 @@ class Overlay {
     bool m_videoLive = false;
     bool m_photo = false;
     bool m_videoCopiedFiltered = false;  // la copie en attente a été faite après les filtres d'image
+    // Copie à la soumission plutôt qu'à la libération : quand l'image soumise n'est jamais celle copiée à sa
+    // libération (une layer de génération d'images prépare ses images en avance, par exemple), on copie à
+    // xrEndFrame la dernière image libérée de la swapchain, celle que le runtime affiche.
+    std::atomic<bool> m_videoAtSubmit{false};
+    int m_videoMisses = 0;          // copies faites à la libération mais pas soumises, d'affilée
+    int m_videoFramesSinceCopy = 0;  // images soumises sans copie à la libération
 
     // Filtres d'image : périphérique du jeu (lié à la session), filtre créé au premier besoin.
     bool readImages(SwapchainRegistry& swapchains, XrSwapchain swapchain, SwapchainRegistry::Info& info, PFN_xrEnumerateSwapchainImages enumerate);
