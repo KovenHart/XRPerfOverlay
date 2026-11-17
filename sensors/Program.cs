@@ -325,6 +325,8 @@ namespace XRPerfSensors
         // ont été changés ici, et lesquels l'ont été en jeu par les raccourcis (à reprendre du .ini).
         private OverlaySettings _baseline;
         private readonly SettingsShare _settingsShare;
+        private TouchCommands _touch;                 // commandes de l'écran tactile au poignet
+        private System.Windows.Forms.Timer _touchTimer;
         private readonly OverlayPreview _preview;
         private MainWindow _main;
         private readonly string _installFolder;
@@ -462,6 +464,23 @@ namespace XRPerfSensors
             };
             _uiTimer.Start();
 
+            // Écran tactile au poignet : état publié et commandes exécutées cinq fois par seconde.
+            try
+            {
+                _touch = new TouchCommands();
+            }
+            catch (Exception)
+            {
+                _touch = null;  // sans cette mémoire, les tuiles vidéo, direct, capture et preset restent grisées
+            }
+            if (_touch != null)
+            {
+                _touchTimer = new System.Windows.Forms.Timer { Interval = 200 };
+                _touchTimer.Tick += (s, e) => TouchTick();
+                _touchTimer.Start();
+                TouchTick();
+            }
+
             // Relancé par un raccourci alors qu'il tourne : la fenêtre s'ouvre.
             _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
             _showTimer = new System.Windows.Forms.Timer { Interval = 250 };
@@ -470,6 +489,69 @@ namespace XRPerfSensors
         }
 
         public const string ShowEventName = @"Local\XRPerfOverlay.SensorsShow";
+
+        // --- Écran tactile au poignet ----------------------------------------------------------------------
+
+        private void TouchTick()
+        {
+            if (_touch == null) return;
+            try
+            {
+                foreach (int action in _touch.Take()) TouchCommand(action);
+                uint flags = 0;
+                if (VideoEnabled) flags |= TouchCommands.VideoReady;
+                string[] targets = _settings.StreamTargets();
+                if (VideoEnabled && targets.Length > 0 && Array.TrueForAll(targets, t => _settings.StreamKeyStored(t).Length > 0)) flags |= TouchCommands.LiveReady;
+                if (_settings.CaptureProcess.Length > 0 || _settings.CaptureTitle.Length > 0) flags |= TouchCommands.WindowReady;
+                bool english = _overlay.Language == 2 || (_overlay.Language != 1 && Loc.Resolve("auto") == "en");
+                _touch.Publish(flags, ImagePresets.ShortName(ImagePresets.CurrentId(_overlay), english));
+            }
+            catch (Exception)
+            {
+                // Une commande qui échoue ne doit pas arrêter les suivantes.
+            }
+        }
+
+        // Tuile touchée dans le casque (TouchAction de layer/src/touch_pad.h).
+        private void TouchCommand(int action)
+        {
+            switch (action)
+            {
+                case TouchCommands.ActionVideo:
+                case TouchCommands.ActionLive:
+                {
+                    if (_video == null) return;
+                    bool live = action == TouchCommands.ActionLive;
+                    if (_video.Busy)
+                    {
+                        // Chaque tuile arrête seulement ce qu'elle a démarré : la vidéo, ou le direct.
+                        if (_video.Streaming == live) StopVideo();
+                        return;
+                    }
+                    string previous = _settings.VideoTarget;
+                    _settings.VideoTarget = live ? "stream" : "file";
+                    try
+                    {
+                        // Refus : bulle de l'icône si la fenêtre est fermée (StartVideo), sinon message dans la fenêtre.
+                        string refused = StartVideo();
+                        if (refused != null && _main != null && !_main.IsDisposed && _main.Visible) _main.PostToast(refused);
+                    }
+                    finally
+                    {
+                        _settings.VideoTarget = previous;
+                    }
+                    return;
+                }
+                case TouchCommands.ActionSnapshot:
+                    TakeSnapshot();
+                    return;
+                case TouchCommands.ActionPreset:
+                    if (_settingsUnavailable != null || !ImagePresets.ApplyNext(_overlay)) return;
+                    OverlayChanged();
+                    if (_main != null && !_main.IsDisposed) _main.PostOverlay();
+                    return;
+            }
+        }
         private EventWaitHandle _showEvent;
         private System.Windows.Forms.Timer _showTimer;
 
@@ -695,6 +777,12 @@ namespace XRPerfSensors
         public int RenderWatch(byte[] pixels)
         {
             return _preview.RenderWatch(_overlay, pixels);
+        }
+
+        /// <summary>Aperçu de l'écran tactile (RGBA) ; hauteur de l'image, 0 si indisponible.</summary>
+        public int RenderTouch(byte[] pixels)
+        {
+            return _preview.RenderTouch(_overlay, pixels);
         }
 
         /// <summary>Lecture de l'image du panneau publiée par un jeu (la layer ne la publie que tant que quelqu'un la lit).</summary>
@@ -1184,6 +1272,8 @@ namespace XRPerfSensors
         protected override void ExitThreadCore()
         {
             _uiTimer.Stop(); // plus de relance de XRPerfVR à partir d'ici
+            if (_touchTimer != null) _touchTimer.Stop();
+            if (_touch != null) _touch.Dispose();
             _vr.Dispose();   // rapport en cours terminé par XRPerfVR avant la fermeture
             if (_capture != null) _capture.Dispose();  // capture arrêtée avant la fin du programme
             if (_videoHotkey != null) _videoHotkey.Dispose();

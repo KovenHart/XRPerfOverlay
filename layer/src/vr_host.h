@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 
+#include "command_share.h"
 #include "config.h"
 #include "frame_history.h"
 #include "hotkeys.h"
@@ -22,6 +23,7 @@
 #include "session_stats.h"
 #include "settings_reader.h"
 #include "stats.h"
+#include "touch_pad.h"
 #include "report_control.h"
 #include "summary_file.h"
 #include "vr_backend.h"
@@ -50,6 +52,8 @@ class VrHost {
     bool inSession() const { return m_session.active; }
     // Enregistrement vidéo en cours : la boucle doit tourner plus vite (cadence de la vidéo).
     bool videoBusy() { return m_vr.videoBusy(); }
+    // ... ou doigt près de l'écran tactile (le curseur suit la manette).
+    bool fastLoop() { return m_vr.videoBusy() || m_touch.active(); }
 
   private:
     enum class State { WaitRuntime, Connected, WaitRuntimeExit };
@@ -74,6 +78,9 @@ class VrHost {
     void sampleWatch(double now, const PanelData& data, bool fpsValid, float fps);
     void display(double now);
     void hideAll();
+    void hotkeyChanges(unsigned changes, double now);
+    bool displayTouch(double now);
+    void touchAction(TouchAction action, double now);
     // Place et montre (ou masque) un calque selon son accroche. Retourne true s'il est visible.
     bool placeOverlay(VrOverlay overlay, Anchor anchor, HandPlacement placement, float along, float lift, bool gazeOnly,
                       const Pose& viewPose, bool& looked, double now);
@@ -141,14 +148,15 @@ class VrHost {
     PanelData m_lastData;
     WatchData m_lastWatch;
     bool m_dirty = true;              // un nouveau relevé (ou de nouveaux réglages) est à dessiner
-    bool m_overlayDirty[3] = {true, true, true};  // ... pas encore envoyé à ce calque (envoi seulement s'il est visible)
+    static constexpr int kOverlayCount = static_cast<int>(VrOverlay::Count);
+    bool m_overlayDirty[kOverlayCount] = {true, true, true, true};  // ... pas encore envoyé à ce calque (envoi seulement s'il est visible)
 
     // Affichage.
     Panel m_panel;
     WatchFace m_watch;
-    bool m_hasPixels[3] = {false, false, false};
-    bool m_shown[3] = {false, false, false};
-    bool m_looked[3] = {false, false, false};
+    bool m_hasPixels[kOverlayCount] = {false, false, false, false};
+    bool m_shown[kOverlayCount] = {false, false, false, false};
+    bool m_looked[kOverlayCount] = {false, false, false, false};
     // Dernière position envoyée à SteamVR, renvoyée seulement si elle change (ou toutes les 2 s).
     struct Placement {
         int kind = 0;  // 0 : aucune, 1 : tête, 2 : main, 3 : pièce
@@ -156,7 +164,15 @@ class VrHost {
         Pose pose;
         double sentAt = -1.0;
     };
-    Placement m_placement[3];
+    Placement m_placement[kOverlayCount];
+
+    // Écran tactile : touché du bout de l'autre manette ; commandes pour XRPerfSensors.
+    TouchPad m_touch;
+    CommandShare m_commands;
+    CommandShare::State m_remote;
+    double m_remoteReadAt = -1.0;
+    TouchState m_touchShown;
+    bool m_touchReportPulse = false;  // tuile « rapport » : comme un appui sur le raccourci
 
     // Fenêtre capturée (image lue dans la mémoire partagée de XRPerfSensors).
     WindowShareReader m_windowShare;

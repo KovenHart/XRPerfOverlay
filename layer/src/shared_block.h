@@ -55,10 +55,10 @@ static_assert(sizeof(PanelShareHeader) == 32, "la disposition doit rester identi
 //    par XRPerfSensors dans XRPerfOverlay.ini, que la layer lit au lancement d'un jeu.
 constexpr wchar_t kSettingsBlockName[] = L"Local\\XRPerfOverlay.Settings";
 constexpr uint32_t kSettingsBlockMagic = 0x53505258;  // "XRPS"
-constexpr uint32_t kSettingsBlockVersion = 9;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
+constexpr uint32_t kSettingsBlockVersion = 10;  // 2 : accroche aux manettes et montre ; 3 : fenêtre capturée ; 4 : langue ; 5 : mode des rapports ;
                                                // 6 : puissance à la place de la fréquence ; 7 : filtres d'image ;
                                                // 8 : faux HDR, raccourcis modifiables, limite et portée de la netteté ;
-                                               // 9 : point noir, point blanc, clarté
+                                               // 9 : point noir, point blanc, clarté ; 10 : écran tactile
 
 struct SettingsBlock {
     uint32_t magic;             // offset 0
@@ -139,10 +139,21 @@ struct SettingsBlock {
     int32_t imageBlack;         // 304 : point noir, 0 à 25
     int32_t imageWhite;         // 308 : point blanc, 75 à 100
     int32_t imageClarity;       // 312 : clarté, 0 à 100
-    int32_t reserved9;          // 316
-};                              // 320 octets
+    // Écran tactile au poignet (version 10).
+    uint32_t touchEnabled;      // 316 : 0 ou 1
+    uint32_t touchAnchor;       // 320 : énumération Anchor (main gauche ou droite)
+    uint32_t touchPlacement;    // 324 : énumération HandPlacement
+    uint32_t touchGazeOnly;     // 328 : 0 ou 1
+    float touchSize;            // 332 : largeur, mètres
+    float touchOpacity;         // 336 : 0.2 à 1
+    float touchAlong;           // 340 : mètres
+    float touchLift;            // 344 : mètres
+    float touchTip;             // 348 : point de contact devant la poignée de l'autre manette, mètres
+    uint32_t touchActions;      // 352 : tuiles affichées (bit i = TouchAction i, touch_pad.h)
+    uint32_t reserved10;        // 356
+};                              // 360 octets
 
-static_assert(sizeof(SettingsBlock) == 320, "la disposition doit rester identique a celle de OverlaySettings.cs");
+static_assert(sizeof(SettingsBlock) == 360, "la disposition doit rester identique a celle de OverlaySettings.cs");
 
 // 4. Image d'une fenêtre du bureau (un chat, par exemple), capturée par XRPerfSensors.exe (bibliothèque
 //    XRPerfCapture.dll) et affichée dans le casque par la layer ou par XRPerfVR. La mémoire est créée par
@@ -360,5 +371,30 @@ struct ObsShare {
 };                             // 128 octets
 
 static_assert(sizeof(ObsShare) == kObsShareBytes, "disposition fixe (ObsOutput.cs, obs/xrperf_obs.cpp)");
+
+// 6. Commandes de l'écran tactile : la layer ou XRPerfVR y déposent ce que XRPerfSensors doit faire
+//    (vidéo, direct, capture d'écran, preset d'image) ; XRPerfSensors, qui crée le bloc, les exécute et
+//    y publie ce que l'écran doit montrer (fonctions prêtes, preset en cours).
+constexpr wchar_t kCommandBlockName[] = L"Local\\XRPerfOverlay.Commands";
+constexpr uint32_t kCommandBlockMagic = 0x43505258;  // "XRPC"
+constexpr uint32_t kCommandBlockVersion = 1;
+constexpr int kCommandSlots = 8;
+// flags : ce que XRPerfSensors peut faire en ce moment.
+constexpr uint32_t kCommandVideoReady = 1, kCommandLiveReady = 2, kCommandWindowReady = 4;
+struct CommandBlock {
+    uint32_t magic;             // offset 0
+    uint32_t version;           // 4
+    uint64_t sensorsTickMs;     // 8  : GetTickCount64() de XRPerfSensors, renouvelé tant qu'il tourne
+    uint32_t flags;             // 16 : kCommandVideoReady | kCommandLiveReady | kCommandWindowReady
+    uint32_t sequence;          // 20 : impair pendant que XRPerfSensors écrit flags et preset
+    char preset[32];            // 24 : preset d'image en cours (ASCII, terminé par zéro), vide : réglages personnels
+    // Commandes : celui qui en dépose une incrémente `posted` (opération atomique) pour obtenir son numéro n,
+    // puis écrit (n << 8) | action dans commands[(n - 1) % kCommandSlots]. XRPerfSensors les lit dans
+    // l'ordre ; une case pas encore écrite (numéro différent) est relue au passage suivant.
+    uint32_t posted;            // 56
+    uint32_t reserved;          // 60
+    uint32_t commands[kCommandSlots];  // 64
+};                              // 96 octets
+static_assert(sizeof(CommandBlock) == 96, "la disposition doit rester identique a celle de TouchCommands.cs");
 
 }  // namespace xrpo

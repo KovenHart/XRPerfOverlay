@@ -26,7 +26,7 @@ struct VrSystemInfo {
     int recommendedWidth = 0, recommendedHeight = 0;  // résolution par œil recommandée par SteamVR
 };
 
-enum class VrOverlay { Panel = 0, Watch = 1, Window = 2, Count = 3 };
+enum class VrOverlay { Panel = 0, Watch = 1, Window = 2, Touch = 3, Count = 4 };
 
 class VrBackend {
   public:

@@ -155,9 +155,35 @@ Avec l'option **« Seulement quand je regarde mon poignet »** (active par défa
 2. quand le jeu active ses actions pour la session, elle y ajoute son petit groupe (« XR Perf Studio ») ;
 3. à chaque mise à jour des actions par le jeu, idem.
 
-Elle ne déclare **aucun bouton** : elle ne peut rien prendre au jeu. Elle n'ajoute jamais de modèle de manette que le jeu n'a pas lui-même déclaré, pour ne pas changer celui que le runtime choisit. Si l'un de ces appels échoue avec son ajout, il est refait tel que le jeu l'a fourni et l'accroche est abandonnée pour la session (la montre revient devant les yeux) ; le journal le dit. Ce mécanisme n'est mis en place que si la montre est activée ou si le panneau est accroché à une main **au lancement du jeu** : activé en cours de partie, il faut relancer le jeu. Dans l'écran de configuration des manettes de SteamVR, le groupe « XR Perf Studio » et sa position de main peuvent apparaître.
+Elle ne déclare **aucun bouton** : elle ne peut rien prendre au jeu. Elle n'ajoute jamais de modèle de manette que le jeu n'a pas lui-même déclaré, pour ne pas changer celui que le runtime choisit. Si l'un de ces appels échoue avec son ajout, il est refait tel que le jeu l'a fourni et l'accroche est abandonnée pour la session (la montre revient devant les yeux) ; le journal le dit. Ce mécanisme n'est mis en place que si la montre ou l'écran tactile sont activés, ou si le panneau est accroché à une main, **au lancement du jeu** : activé en cours de partie, il faut relancer le jeu. Dans l'écran de configuration des manettes de SteamVR, le groupe « XR Perf Studio » et sa position de main peuvent apparaître.
 
 **La batterie** vient de l'extension OpenXR `XR_EXT_interaction_profile_battery_state_display`, toute récente : la layer la demande au runtime seulement s'il la propose (et si la montre doit afficher la batterie). SteamVR la fournit ; d'autres runtimes PC, comme Pimax OpenXR, pas encore : sans elle, la batterie n'apparaît simplement pas. Dans les jeux OpenVR, XRPerfVR lit la batterie directement auprès de SteamVR.
+
+## Écran tactile au poignet
+
+Des raccourcis dans le casque, comme sur un téléphone : une grille de tuiles au poignet, qu'on touche du bout de l'autre manette. Page **Écran tactile** de XRPerfSensors (ou interrupteur du tableau de bord). Jeux OpenXR (par la layer) et SteamVR (par XRPerfVR).
+
+**Utilisation.** Tournez la main vers vous : l'écran apparaît (par défaut sur l'intérieur du poignet gauche, côté paume). Approchez l'avant de l'autre manette : un rond montre où elle va toucher, il rétrécit en approchant. Touchez une tuile puis retirez la manette : la tuile se déclenche (un éclat le confirme). Glissez vers le haut ou le bas pour faire défiler la liste ; un glissé lancé continue sur sa lancée. Un appui qui glisse hors de la tuile, ou une manette passée derrière l'écran, ne déclenche rien. Aucun bouton de la manette n'est lu : la layer ne prend rien au jeu, seule la position des deux manettes compte.
+
+**Tuiles** (au choix dans la page, dans cet ordre) :
+
+| Tuile | Effet |
+|---|---|
+| Vidéo | démarre ou arrête l'enregistrement (`REC 3:12` pendant l'enregistrement) |
+| Direct | démarre ou arrête le direct Twitch / YouTube, avec la clé enregistrée (`LIVE 12:03`) |
+| Capture | prend une capture d'écran |
+| Rapport | démarre ou arrête un rapport, en mode manuel (comme `Ctrl+Alt+S`) |
+| Filtres | coupe ou remet les filtres d'image (comme `Ctrl+Alt+I`) |
+| Preset image | passe au preset d'image suivant (aucun, les presets fournis, puis les vôtres) ; la tuile montre celui en cours |
+| Panneau | affiche ou masque le panneau (comme `Ctrl+Alt+O`) |
+| Position | emplacement suivant du panneau devant les yeux (comme `Ctrl+Alt+P`) |
+| Fenêtre | affiche ou masque la fenêtre du bureau (comme `Ctrl+Alt+F`) |
+| Poser fen. | pose la fenêtre du bureau devant soi (comme `Ctrl+Alt+G`) |
+| Stats | remet à zéro les statistiques du panneau (comme `Ctrl+Alt+R`) |
+
+Une tuile grisée explique pourquoi : *Hors ligne* (XRPerfSensors fermé), *Sans clé* (direct sans clé de stream), *Mode auto* (rapports automatiques), *Aucune* (pas de fenêtre choisie). Vidéo, direct, capture et preset passent par XRPerfSensors, qui doit rester lancé ; les autres tuiles agissent directement dans le jeu.
+
+**Réglages.** La main (l'autre touche l'écran), l'emplacement (intérieur ou dos du poignet, au-dessus de la manette), l'affichage seulement quand on regarde la main, la position, la largeur (9 cm par défaut) et l'opacité. **Point de contact** : distance entre la poignée de la manette qui touche et l'endroit qui touche (7 cm par défaut, l'avant d'une manette courante) ; si le rond n'est pas à l'avant de votre manette, ajustez-le. Comme pour la montre, le suivi des manettes est mis en place au lancement du jeu : activé en cours de partie, il faut relancer le jeu.
 
 ## Jeux SteamVR (OpenVR) : XRPerfVR
 

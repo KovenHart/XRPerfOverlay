@@ -25,6 +25,8 @@
 #include "stats.h"
 #include "report_control.h"
 #include "summary_file.h"
+#include "command_share.h"
+#include "touch_pad.h"
 #include "swapchain_registry.h"
 #include "image_filter.h"
 #include "video_producer.h"
@@ -40,7 +42,7 @@ class Overlay {
     static constexpr int kTextureWidth = Panel::kWidth;
     static constexpr int kTextureHeight = Panel::kHeight + WatchFace::kSize;
     static constexpr int kWatchTop = Panel::kHeight;  // première ligne de la montre dans la texture
-    static constexpr int kMaxQuads = 3;               // fenêtre capturée + panneau + montre
+    static constexpr int kMaxQuads = 4;               // fenêtre capturée + panneau + montre + écran tactile
 
     Overlay(const NextFunctions& next, const Config& config, XrInstance instance, std::shared_ptr<HandInput> hands = nullptr);
     ~Overlay();
@@ -57,7 +59,7 @@ class Overlay {
     void onWaitFrame(const XrFrameState& state);
     void onBeginFrame();
 
-    // Au début de chaque xrEndFrame. Remplit `quads` avec nos calques à ajouter (0 à 3) et retourne
+    // Au début de chaque xrEndFrame. Remplit `quads` avec nos calques à ajouter (0 à 4) et retourne
     // leur nombre. `displayTime` : instant d'affichage de l'image (pour situer les manettes).
     // `allowLayer` = false : l'image est seulement comptée (image vide soumise par le jeu).
     int onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displayTime, bool allowLayer);
@@ -139,6 +141,15 @@ class Overlay {
     bool headInWorld(XrTime displayTime, Pose& head);
     void destroyWindowResources();
     void sampleWatch(double now, const PanelData& data, bool fpsValid, float fps);
+    // Changements faits par un raccourci ou une tuile de l'écran tactile.
+    void hotkeyChanges(unsigned changes, double now);
+
+    // Écran tactile (quatrième calque) : sur une main, touché du bout de l'autre manette.
+    bool touchQuad(double now, XrTime displayTime, XrCompositionLayerQuad& quad);
+    void touchAction(TouchAction action, double now);
+    bool ensureTouchSwapchain();
+    void uploadTouch();
+    void destroyTouchResources();
 
     const NextFunctions m_next;
     const XrInstance m_instance;
@@ -184,6 +195,25 @@ class Overlay {
     bool m_worldIsLocal = false;
     bool m_localWorldSet = false;
     Pose m_localWorld;
+
+    // Écran tactile.
+    TouchPad m_touch;
+    CommandShare m_commands;
+    CommandShare::State m_remote;
+    double m_remoteReadAt = -1.0;
+    TouchState m_touchShown;               // état dessiné dans la texture
+    bool m_touchDirty = true;              // la texture ne reflète pas encore l'état ou le doigt
+    double m_touchRenderedAt = -1.0;
+    bool m_touchLooked = false;
+    bool m_touchReportPulse = false;       // tuile « rapport » : comme un appui sur le raccourci, à la prochaine image
+    XrSwapchain m_touchSwapchain = XR_NULL_HANDLE;
+    bool m_touchFormatBgra = false, m_touchFormatSrgb = true;
+    bool m_touchTried = false;
+    bool m_touchFailed = false;            // abandon de l'écran pour la session
+    SwapImage m_touchImage;
+    int m_touchErrors = 0;
+    bool m_touchHasContent = false;
+    std::vector<uint8_t> m_touchConverted;
 
     Panel m_panel;
     WatchFace m_watch;

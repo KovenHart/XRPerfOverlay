@@ -45,53 +45,61 @@ class Hotkeys {
             }
             m_keyDown[i] = down;
             if (!trigger) continue;
-
-            switch (i) {
-                case 0:
-                    config.visible = !config.visible;
-                    changes |= Visibility;
-                    break;
-                case 1:
-                    config.position = static_cast<Corner>((static_cast<int>(config.position) + 1) % static_cast<int>(Corner::Count));
-                    changes |= Placement;
-                    break;
-                case 2:
-                    changes |= ResetStats;
-                    continue;  // rien à mémoriser
-                case 3:
-                case 4: {
-                    // Pas de 5 % : la taille change tout de suite, le panneau garde son centre.
-                    const float width = config.width * (i == 3 ? 1.05f : 1.f / 1.05f);
-                    config.width = width < kMinWidth ? kMinWidth : (width > kMaxWidth ? kMaxWidth : width);
-                    changes |= Size;
-                    break;
-                }
-                case 7:
-                    config.window.enabled = !config.window.enabled;
-                    changes |= WindowVisibility;
-                    break;
-                case 9:
-                    // Filtres d'image coupés le temps de comparer : rien à écrire dans le .ini.
-                    config.imageBypass = !config.imageBypass;
-                    changes |= ImageBypass;
-                    continue;
-                case 8:
-                    // Posée dans l'espace, affichée : la pose elle-même est calculée par l'appelant.
-                    config.window.anchor = WindowAnchor::World;
-                    config.window.enabled = true;
-                    changes |= WindowPlace;
-                    break;
-                default: {
-                    const float opacity = config.globalOpacity + (i == 5 ? 0.05f : -0.05f);
-                    config.globalOpacity =
-                        opacity < kMinGlobalOpacity ? kMinGlobalOpacity : (opacity > kMaxGlobalOpacity ? kMaxGlobalOpacity : opacity);
-                    changes |= Opacity;
-                    break;
-                }
-            }
-            m_stateDirty = true;
-            m_stateDirtySince = now;
+            changes |= apply(i, config, now);
         }
+        return changes;
+    }
+
+    // Effet du raccourci n° `i` (ordre de poll), comme si sa touche venait d'être enfoncée : sert aussi à l'écran
+    // tactile. Retourne les changements faits.
+    unsigned apply(int i, Config& config, double now) {
+        unsigned changes = None;
+
+        switch (i) {
+            case 0:
+                config.visible = !config.visible;
+                changes |= Visibility;
+                break;
+            case 1:
+                config.position = static_cast<Corner>((static_cast<int>(config.position) + 1) % static_cast<int>(Corner::Count));
+                changes |= Placement;
+                break;
+            case 2:
+                changes |= ResetStats;
+                return changes;  // rien à mémoriser
+            case 3:
+            case 4: {
+                // Pas de 5 % : la taille change tout de suite, le panneau garde son centre.
+                const float width = config.width * (i == 3 ? 1.05f : 1.f / 1.05f);
+                config.width = width < kMinWidth ? kMinWidth : (width > kMaxWidth ? kMaxWidth : width);
+                changes |= Size;
+                break;
+            }
+            case 7:
+                config.window.enabled = !config.window.enabled;
+                changes |= WindowVisibility;
+                break;
+            case 9:
+                // Filtres d'image coupés le temps de comparer : rien à écrire dans le .ini.
+                config.imageBypass = !config.imageBypass;
+                changes |= ImageBypass;
+                return changes;
+            case 8:
+                // Posée dans l'espace, affichée : la pose elle-même est calculée par l'appelant.
+                config.window.anchor = WindowAnchor::World;
+                config.window.enabled = true;
+                changes |= WindowPlace;
+                break;
+            default: {
+                const float opacity = config.globalOpacity + (i == 5 ? 0.05f : -0.05f);
+                config.globalOpacity =
+                    opacity < kMinGlobalOpacity ? kMinGlobalOpacity : (opacity > kMaxGlobalOpacity ? kMaxGlobalOpacity : opacity);
+                changes |= Opacity;
+                break;
+            }
+        }
+        m_stateDirty = true;
+        m_stateDirtySince = now;
         return changes;
     }
 

@@ -35,4 +35,8 @@ int xrpoRenderPreview(const xrpo::SettingsBlock* settings, const xrpo::SensorBlo
 //   pixels       : tampon de sortie, WatchFace::kSize x WatchFace::kSize pixels RGBA (alpha prémultiplié)
 // Retourne le côté de l'image en pixels, ou 0 si un argument est invalide (rien n'est écrit).
 int xrpoRenderWatchPreview(const xrpo::SettingsBlock* settings, int clockSeconds, uint8_t* pixels, uint32_t capacity);
+
+// Écran tactile au poignet, avec les réglages `settings` et des valeurs d'exemple : TouchPad::kWidth x
+// TouchPad::kHeight pixels RGBA (alpha prémultiplié). Retourne la hauteur dessinée, 0 en cas d'erreur.
+int xrpoRenderTouchPreview(const xrpo::SettingsBlock* settings, int clockSeconds, uint8_t* pixels, uint32_t capacity);
 }

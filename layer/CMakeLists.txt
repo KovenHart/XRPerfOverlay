@@ -51,6 +51,7 @@ add_library(XR_APILAYER_NOVENDOR_perf_overlay SHARED
     src/window_share.cpp
     src/video_producer.cpp
     src/image_filter.cpp
+    src/command_share.cpp
     src/version.rc
     exports.def
 )
@@ -83,6 +84,7 @@ add_executable(XRPerfVR WIN32
     src/panel_share.cpp
     src/hardware_info.cpp
     src/video_producer.cpp
+    src/command_share.cpp
 )
 target_include_directories(XRPerfVR PRIVATE external "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_definitions(XRPerfVR PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN UNICODE _UNICODE _WIN32_WINNT=0x0A00 XRPO_VERSION="${XRPO_VERSION}")

@@ -27,6 +27,7 @@ window.App = (function () {
     panelImage: null,
     panelLive: false,
     watchImage: null,
+    touchImage: null,
     windowImage: null,
     captureStatus: "",
     video: null,          // état de l'enregistrement vidéo (message "video")
@@ -93,6 +94,7 @@ window.App = (function () {
     down: '<path d="m6 9 6 6 6-6"/>',
     panel: '<rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M7 9.5h4M7 13h7M15 9.5h2"/>',
     appearance: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-.8 1.6-1.6 0-1.3-1-1.5-1-2.6 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7.2" r="1.2"/><circle cx="15" cy="7.6" r="1.2"/>',
+    touch: '<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><rect x="8.5" y="6" width="3" height="3" rx=".6"/><rect x="12.5" y="6" width="3" height="3" rx=".6"/><rect x="8.5" y="10.5" width="3" height="3" rx=".6"/><rect x="12.5" y="10.5" width="3" height="3" rx=".6"/><path d="M11 18.5h2"/>',
     watch: '<circle cx="12" cy="12" r="6"/><path d="M12 9.5V12l1.6 1.2M9 6.5 9.6 3h4.8l.6 3.5M9 17.5l.6 3.5h4.8l.6-3.5"/>',
     window: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 8.5h18M6.5 6.3h.01M9 6.3h.01"/><path d="M8 13h8M8 16h5"/>',
     mirror: '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 21h6M12 17v4"/><rect x="6" y="7.5" width="7" height="4.5" rx="1"/>',
@@ -205,6 +207,10 @@ window.App = (function () {
       case "panelImage":
         state.panelImage = msg.png ? "data:image/png;base64," + msg.png : null;
         state.panelLive = !!msg.live;
+        updateLive();
+        break;
+      case "touchImage":
+        state.touchImage = msg.png ? "data:image/png;base64," + msg.png : null;
         updateLive();
         break;
       case "watchImage":
@@ -411,6 +417,7 @@ window.App = (function () {
     { id: "panel", icon: "panel" },
     { id: "appearance", icon: "appearance" },
     { id: "watch", icon: "watch" },
+    { id: "touch", icon: "touch" },
     { id: "window", icon: "window" },
     { id: "image", icon: "image" },
     { group: "nav.group.pc" },
@@ -521,7 +528,7 @@ window.App = (function () {
     Charts.hideTip();
     page.className = "page";
     const builder = {
-      dashboard: renderDashboard, panel: renderPanelPage, appearance: renderAppearancePage, watch: renderWatchPage,
+      dashboard: renderDashboard, panel: renderPanelPage, appearance: renderAppearancePage, watch: renderWatchPage, touch: renderTouchPage,
       window: renderWindowPage, image: renderImagePage, desktop: renderDesktopPage, video: renderVideoPage, measures: renderMeasuresPage, reports: renderReportsPage, config: renderConfigPage, hotkeys: renderHotkeysPage,
       interface: renderInterfacePage,
     }[state.page];
@@ -704,6 +711,7 @@ window.App = (function () {
         layerSwitch(t("dash.quick.layer"), false),
         switchCtl("overlay", "Visible", t("dash.quick.panel"), hk("toggle").key),
         switchCtl("overlay", "WatchEnabled", t("dash.quick.watch")),
+        switchCtl("overlay", "TouchEnabled", t("dash.quick.touch")),
         switchCtl("overlay", "WindowEnabled", t("dash.quick.window"), hk("window_toggle").key),
         switchCtl("overlay", "OpenVR", t("dash.quick.openvr")),
         switchCtl("desktop", "DesktopPanel", t("dash.quick.mirror"))));
@@ -767,6 +775,8 @@ window.App = (function () {
     }
     const watch = document.getElementById("watch-img");
     if (watch && state.watchImage) watch.src = state.watchImage;
+    const touch = document.getElementById("touch-img");
+    if (touch && state.touchImage) touch.src = state.touchImage;
     const win = document.getElementById("window-img");
     if (win) {
       if (state.windowImage) { win.src = state.windowImage; win.hidden = false; document.getElementById("window-empty").hidden = true; }
@@ -956,6 +966,49 @@ window.App = (function () {
     ];
     const stage = [
       h("div", { class: "stage" }, h("img", { class: "watch", id: "watch-img", alt: t("nav.watch") })),
+      h("div", { class: "stage-caption" }, h("span", { text: t("set.preview.sample") })),
+    ];
+    settingsLayout(page, form, stage);
+  }
+
+  // --- Écran tactile au poignet ----------------------------------------------------------------------
+
+  // Tuiles, dans l'ordre de TouchAction (layer/src/touch_pad.h) : bit i du masque TouchActions.
+  const TOUCH_TILES = ["video", "live", "snapshot", "report", "filters", "preset", "panel", "panelPlace", "window", "windowPlace", "resetStats"];
+
+  function renderTouchPage(page) {
+    refreshers = [];
+    const on = () => !!get("overlay", "TouchEnabled");
+    const tiles = h("div", { class: "seg wrap", role: "group" });
+    TOUCH_TILES.forEach((name, i) => {
+      const bit = 1 << i;
+      const b = h("button", { type: "button", "aria-pressed": String(((get("overlay", "TouchActions") >>> 0) & bit) !== 0), text: t("touch.tile." + name), onclick: () => {
+        const mask = (get("overlay", "TouchActions") >>> 0) ^ bit;
+        b.setAttribute("aria-pressed", String((mask & bit) !== 0));
+        setValue("overlay", "TouchActions", mask);
+      } });
+      b.disabled = locked("overlay");
+      tiles.appendChild(b);
+    });
+    const handOptions = () => [1, 2].map(v => ({ value: v, label: t(["anchor.view", "anchor.left", "anchor.right"][v]) }));
+    const form = [
+      group(t("nav.touch"), null, [switchCtl("overlay", "TouchEnabled", t("touch.show"), t("touch.show.help"))]),
+      group(t("touch.use"), t("touch.use.help"), [h("div", { class: "touch-tiles" }, tiles)], on),
+      group(t("watch.where"), null, [
+        segRow("overlay", "TouchAnchor", t("touch.anchor"), t("touch.anchor.help"), handOptions()),
+        selectRow("overlay", "TouchPlacement", t("panel.placement"), null, placementOptions()),
+        switchCtl("overlay", "TouchGazeOnly", t("touch.gaze"), null),
+        sliderRow("overlay", "TouchAlong", t("panel.along"), null, -12, 12, signedCm, { factor: 100 }),
+        sliderRow("overlay", "TouchLift", t("watch.lift"), null, -5, 10, signedCm, { factor: 100 }),
+      ], on),
+      group(t("touch.look"), null, [
+        sliderRow("overlay", "TouchSize", t("touch.size"), null, 6, 20, cm, { factor: 100 }),
+        sliderRow("overlay", "TouchOpacity", t("watch.opacity"), null, 20, 100, pct, { factor: 100 }),
+        sliderRow("overlay", "TouchTip", t("touch.tip"), t("touch.tip.help"), 0, 15, cm, { factor: 100 }),
+      ], on),
+    ];
+    const stage = [
+      h("div", { class: "stage" }, h("img", { class: "touch", id: "touch-img", alt: t("nav.touch") })),
       h("div", { class: "stage-caption" }, h("span", { text: t("set.preview.sample") })),
     ];
     settingsLayout(page, form, stage);

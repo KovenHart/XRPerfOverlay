@@ -244,6 +244,24 @@ Config LoadConfigFromFolder(const std::wstring& folder) {
     w.along = readFloat(c, L"watch", L"hand_along", w.along, kMinHandAlong, kMaxHandAlong);
     w.lift = readFloat(c, L"watch", L"hand_lift", w.lift, kMinHandLift, kMaxHandLift);
 
+    // Écran tactile.
+    const auto touchText = [&](const wchar_t* key) {
+        const std::wstring text = lower(readString(c, L"touch", key));
+        return AsciiText(text.c_str(), text.size());
+    };
+    TouchConfig& t = c.touch;
+    t.enabled = readInt(c, L"touch", L"enabled", 0, 0, 1) != 0;
+    t.anchor = static_cast<Anchor>(NameIndex(kAnchorNames, touchText(L"anchor").c_str(), static_cast<int>(t.anchor)));
+    if (t.anchor == Anchor::View) t.anchor = Anchor::LeftHand;  // toujours sur une main
+    t.placement = static_cast<HandPlacement>(NameIndex(kPlacementNames, touchText(L"hand_position").c_str(), static_cast<int>(t.placement)));
+    t.gazeOnly = readInt(c, L"touch", L"gaze_only", 1, 0, 1) != 0;
+    t.size = readFloat(c, L"touch", L"size", t.size, kMinTouchSize, kMaxTouchSize);
+    t.opacity = readFloat(c, L"touch", L"opacity", t.opacity, kMinWatchOpacity, kMaxWatchOpacity);
+    t.along = readFloat(c, L"touch", L"hand_along", t.along, kMinHandAlong, kMaxHandAlong);
+    t.lift = readFloat(c, L"touch", L"hand_lift", t.lift, kMinHandLift, kMaxHandLift);
+    t.tip = readFloat(c, L"touch", L"tip", t.tip, kMinTouchTip, kMaxTouchTip);
+    t.actions = static_cast<uint32_t>(readInt(c, L"touch", L"actions", static_cast<int>(kTouchAllActions), 0, static_cast<int>(kTouchAllActions)));
+
     // Fenêtre capturée.
     const auto windowText = [&](const wchar_t* key) {
         const std::wstring text = lower(readString(c, L"window", key));

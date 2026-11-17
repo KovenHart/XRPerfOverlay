@@ -368,8 +368,8 @@ class OpenVrBackend final : public VrBackend {
     }
 
     bool createOverlays() override {
-        const char* keys[kOverlays] = {"xrperfoverlay.panel", "xrperfoverlay.watch", "xrperfoverlay.window"};
-        const char* names[kOverlays] = {"XR Perf Studio", "XR Perf Studio - montre", "XR Perf Studio - fenetre"};
+        const char* keys[kOverlays] = {"xrperfoverlay.panel", "xrperfoverlay.watch", "xrperfoverlay.window", "xrperfoverlay.touch"};
+        const char* names[kOverlays] = {"XR Perf Studio", "XR Perf Studio - montre", "XR Perf Studio - fenetre", "XR Perf Studio - ecran tactile"};
         bool ok = true;
         for (int i = 0; i < kOverlays; ++i) {
             vr::VROverlayHandle_t handle = vr::k_ulOverlayHandleInvalid;
@@ -382,6 +382,8 @@ class OpenVrBackend final : public VrBackend {
             m_handles[i] = handle;
             // Les images du panneau et de la montre sont en alpha prémultiplié, comme dans la layer.
             m_overlay->SetOverlayFlag(handle, vr::VROverlayFlags_IsPremultiplied, true);
+            // Écran tactile au-dessus des autres calques (une montre au même poignet, par exemple).
+            if (i == static_cast<int>(VrOverlay::Touch)) m_overlay->SetOverlaySortOrder(handle, 10);
             m_overlay->HideOverlay(handle);
         }
         if (!ok) destroyOverlays();
@@ -781,7 +783,8 @@ class OpenVrBackend final : public VrBackend {
     vr::IVRRenderModels* m_renderModels = nullptr;
     vr::IVRInput* m_input = nullptr;
 
-    vr::VROverlayHandle_t m_handles[kOverlays] = {vr::k_ulOverlayHandleInvalid, vr::k_ulOverlayHandleInvalid, vr::k_ulOverlayHandleInvalid};
+    vr::VROverlayHandle_t m_handles[kOverlays] = {vr::k_ulOverlayHandleInvalid, vr::k_ulOverlayHandleInvalid, vr::k_ulOverlayHandleInvalid,
+                                                  vr::k_ulOverlayHandleInvalid};
     Upload m_uploads[kOverlays];
     uint32_t m_imageGeneration = 0;  // augmente à chaque perte des textures des calques
     ID3D11Device* m_device = nullptr;

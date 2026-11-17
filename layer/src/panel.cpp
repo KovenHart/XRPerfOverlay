@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "font_data.h"
+#include "touch_pad.h"
 
 namespace xrpo {
 
@@ -100,6 +101,10 @@ class Canvas {
                 const float cx = static_cast<float>(i) + 0.5f, cy = static_cast<float>(j) + 0.5f;
                 const float dx = std::fmax(std::fmax(radius - cx, cx - (fw - radius)), 0.f);
                 const float dy = std::fmax(std::fmax(radius - cy, cy - (fh - radius)), 0.f);
+                if (dx == 0.f && dy == 0.f) {  // hors des coins : plein, sans calcul
+                    blend(x + i, y + j, c, coverage);
+                    continue;
+                }
                 float a = radius + 0.5f - std::sqrt(dx * dx + dy * dy);
                 if (a <= 0.f) continue;
                 if (a > 1.f) a = 1.f;
@@ -864,6 +869,252 @@ void Panel::render(const PanelData& d, float bgOpacity, float globalOpacity) {
     const int body = bodyHeight(d.layout);
     if (d.statusElements != 0) drawStatus(cv, d, body + 4);
     if (d.showInfo) drawInfo(cv, d, body + (d.statusElements != 0 ? kStatusHeight : 0) + 4);
+}
+
+// --- Écran tactile ---------------------------------------------------------------------------------
+
+namespace {
+
+struct TouchTileText {
+    const char* title;
+    char status[40];
+    bool enabled;
+    int tone;  // 0 repos, 1 actif (accent), 2 enregistrement / direct (rouge)
+};
+
+void shortTime(char* out, size_t n, double seconds) { sessionText(out, n, seconds); }
+
+TouchTileText touchTileText(TouchAction a, const TouchState& s) {
+    const bool en = s.english;
+    TouchTileText t = {"", "", true, 0};
+    const auto status = [&](const char* fr, const char* english) { std::snprintf(t.status, sizeof(t.status), "%s", en ? english : fr); };
+    const bool recording = s.videoSeconds >= 0.0 && !s.live, live = s.videoSeconds >= 0.0 && s.live;
+    switch (a) {
+        case TouchAction::Video:
+            t.title = en ? "Video" : "Video";
+            if (!s.sensors) { status("Hors ligne", "Offline"); t.enabled = false; }
+            else if (!s.videoReady) { status("Desactivee", "Turned off"); t.enabled = false; }
+            else if (live) { status("Direct actif", "Live on"); t.enabled = false; }
+            else if (recording) { char d[16]; shortTime(d, sizeof(d), s.videoSeconds); std::snprintf(t.status, sizeof(t.status), "REC %s", d); t.tone = 2; }
+            else status("Enregistrer", "Record");
+            break;
+        case TouchAction::Live:
+            t.title = en ? "Live" : "Direct";
+            if (!s.sensors) { status("Hors ligne", "Offline"); t.enabled = false; }
+            else if (!s.videoReady) { status("Desactive", "Turned off"); t.enabled = false; }
+            else if (recording) { status("Video active", "Video on"); t.enabled = false; }
+            else if (live) { char d[16]; shortTime(d, sizeof(d), s.videoSeconds); std::snprintf(t.status, sizeof(t.status), "LIVE %s", d); t.tone = 2; }
+            else if (!s.liveReady) { status("Sans cle", "No key"); t.enabled = false; }
+            else status("Demarrer", "Go live");
+            break;
+        case TouchAction::Snapshot:
+            t.title = en ? "Screenshot" : "Capture";
+            if (!s.sensors) { status("Hors ligne", "Offline"); t.enabled = false; }
+            else if (!s.videoReady) { status("Desactivee", "Turned off"); t.enabled = false; }
+            else status("Photo", "Photo");
+            break;
+        case TouchAction::Report:
+            t.title = en ? "Report" : "Rapport";
+            if (!s.reportManual) { status("Mode auto", "Auto mode"); t.enabled = false; }
+            else if (s.reportRunning) { char d[16]; shortTime(d, sizeof(d), s.reportSeconds); std::snprintf(t.status, sizeof(t.status), "%s %.12s", en ? "On" : "En cours", d); t.tone = 1; }
+            else status("Demarrer", "Start");
+            break;
+        case TouchAction::Filters:
+            t.title = en ? "Filters" : "Filtres";
+            if (!s.filtersAllowed) { status("Aucun", "None"); t.enabled = false; }
+            else if (s.filtersOn) { status("Actifs", "On"); t.tone = 1; }
+            else status("Coupes", "Off");
+            break;
+        case TouchAction::Preset:
+            t.title = en ? "Image preset" : "Preset image";
+            if (!s.sensors) { status("Hors ligne", "Offline"); t.enabled = false; }
+            else if (s.preset[0]) {
+                std::snprintf(t.status, sizeof(t.status), "%s", s.preset);
+                if (std::strlen(t.status) > 12) std::strcpy(t.status + 11, ".");
+            } else status("Personnel", "Custom");
+            break;
+        case TouchAction::Panel:
+            t.title = en ? "Panel" : "Panneau";
+            if (s.panelVisible) { status("Affiche", "Shown"); t.tone = 1; }
+            else status("Masque", "Hidden");
+            break;
+        case TouchAction::PanelPlace:
+            t.title = en ? "Position" : "Position";
+            status("Suivante", "Next");
+            t.enabled = s.panelVisible && s.panelOnView;
+            break;
+        case TouchAction::Window:
+            t.title = en ? "Window" : "Fenetre";
+            if (!s.windowReady) { status("Aucune", "None"); t.enabled = false; }
+            else if (s.windowVisible) { status("Affichee", "Shown"); t.tone = 1; }
+            else status("Masquee", "Hidden");
+            break;
+        case TouchAction::WindowPlace:
+            t.title = en ? "Place window" : "Poser fen.";
+            status("Devant soi", "In front");
+            t.enabled = s.windowReady;
+            break;
+        case TouchAction::ResetStats:
+            t.title = en ? "Statistics" : "Stats";
+            status("Remise a 0", "Reset");
+            break;
+        default: break;
+    }
+    return t;
+}
+
+// Icône de 32 x 32 px dont le coin haut-gauche est (x, y) ; `bg` : couleur de la tuile (pour les creux).
+void touchIcon(Canvas& cv, TouchAction a, float x, float y, Color c, Color bg) {
+    switch (a) {
+        case TouchAction::Video:
+            cv.fillRoundRect(static_cast<int>(x), static_cast<int>(y + 8), 21, 17, 4.f, c, 255);
+            cv.segment(x + 23, y + 13, x + 30, y + 9, 3.f, c);
+            cv.segment(x + 30, y + 9, x + 30, y + 24, 3.f, c);
+            cv.segment(x + 30, y + 24, x + 23, y + 20, 3.f, c);
+            break;
+        case TouchAction::Live:
+            cv.disc(x + 16, y + 16, 4.5f, c);
+            cv.ring(x + 16, y + 16, 8.f, 10.5f, c);
+            cv.ring(x + 16, y + 16, 13.f, 15.5f, c);
+            break;
+        case TouchAction::Snapshot:
+            cv.fillRoundRect(static_cast<int>(x + 1), static_cast<int>(y + 9), 30, 20, 4.f, c, 255);
+            cv.fillRoundRect(static_cast<int>(x + 10), static_cast<int>(y + 5), 12, 6, 2.f, c, 255);
+            cv.disc(x + 16, y + 19, 6.5f, bg);
+            cv.disc(x + 16, y + 19, 3.5f, c);
+            break;
+        case TouchAction::Report:
+            cv.fillRoundRect(static_cast<int>(x + 5), static_cast<int>(y + 2), 22, 28, 3.f, c, 255);
+            cv.fillRoundRect(static_cast<int>(x + 8), static_cast<int>(y + 5), 16, 22, 2.f, bg, 255);
+            cv.segment(x + 11, y + 11, x + 21, y + 11, 2.f, c);
+            cv.segment(x + 11, y + 16, x + 21, y + 16, 2.f, c);
+            cv.segment(x + 11, y + 21, x + 18, y + 21, 2.f, c);
+            break;
+        case TouchAction::Filters: {
+            const float cx = x + 16, cy = y + 16;
+            cv.ring(cx, cy, 11.5f, 14.f, c);
+            cv.shape(cx - 13.f, cy - 13.f, cx + 1.f, cy + 13.f, c, 255, [=](float px, float py) {
+                const float d = std::sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy)) - 11.5f;
+                return std::fmax(d, px - cx);
+            });
+            break;
+        }
+        case TouchAction::Preset:
+            cv.segment(x + 14, y + 3, x + 14, y + 27, 3.f, c);
+            cv.segment(x + 2, y + 15, x + 26, y + 15, 3.f, c);
+            cv.segment(x + 6, y + 7, x + 22, y + 23, 2.f, c);
+            cv.segment(x + 22, y + 7, x + 6, y + 23, 2.f, c);
+            cv.disc(x + 28, y + 4, 2.5f, c);
+            break;
+        case TouchAction::Panel:
+            cv.fillRoundRect(static_cast<int>(x + 1), static_cast<int>(y + 5), 30, 23, 4.f, c, 255);
+            cv.fillRoundRect(static_cast<int>(x + 4), static_cast<int>(y + 8), 24, 17, 2.f, bg, 255);
+            cv.fillRect(static_cast<int>(x + 8), static_cast<int>(y + 17), 4, 5, c);
+            cv.fillRect(static_cast<int>(x + 14), static_cast<int>(y + 13), 4, 9, c);
+            cv.fillRect(static_cast<int>(x + 20), static_cast<int>(y + 10), 4, 12, c);
+            break;
+        case TouchAction::PanelPlace:
+            cv.fillRoundRect(static_cast<int>(x + 1), static_cast<int>(y + 5), 30, 23, 4.f, c, 255);
+            cv.fillRoundRect(static_cast<int>(x + 4), static_cast<int>(y + 8), 24, 17, 2.f, bg, 255);
+            cv.fillRoundRect(static_cast<int>(x + 6), static_cast<int>(y + 17), 10, 6, 1.5f, c, 255);
+            cv.segment(x + 18, y + 14, x + 25, y + 11, 2.f, c);
+            cv.segment(x + 25, y + 11, x + 21, y + 10, 2.f, c);
+            break;
+        case TouchAction::Window:
+            cv.fillRoundRect(static_cast<int>(x + 1), static_cast<int>(y + 4), 30, 25, 4.f, c, 255);
+            cv.fillRoundRect(static_cast<int>(x + 4), static_cast<int>(y + 11), 24, 15, 2.f, bg, 255);
+            break;
+        case TouchAction::WindowPlace:
+            cv.fillRoundRect(static_cast<int>(x + 3), static_cast<int>(y + 2), 26, 19, 3.f, c, 255);
+            cv.fillRoundRect(static_cast<int>(x + 6), static_cast<int>(y + 8), 20, 10, 2.f, bg, 255);
+            cv.segment(x + 16, y + 21, x + 16, y + 29, 2.5f, c);
+            cv.segment(x + 9, y + 29, x + 23, y + 29, 2.5f, c);
+            break;
+        case TouchAction::ResetStats:
+            cv.ring(x + 16, y + 17, 9.5f, 12.f, c);
+            cv.fillRect(static_cast<int>(x + 18), static_cast<int>(y + 2), 10, 9, bg);
+            cv.segment(x + 18, y + 5, x + 25, y + 5, 2.5f, c);
+            cv.segment(x + 25, y + 5, x + 25, y + 12, 2.5f, c);
+            break;
+        default: break;
+    }
+}
+
+}  // namespace
+
+void TouchPad::render(const TouchState& s, float opacity) {
+    if (opacity < 0.f) opacity = 0.f;
+    if (opacity > 1.f) opacity = 1.f;
+    std::fill(m_px.begin(), m_px.end(), static_cast<uint8_t>(0));
+    const int scale = static_cast<int>(opacity * 256.f + 0.5f);
+    const Theme& th = s.theme;
+    Canvas cv(m_px.data(), kWidth, kHeight, scale);
+    cv.fillRoundRect(0, 0, kWidth, kHeight, 22.f, th.background, 240);
+
+    // Liste des tuiles, dans la partie qui défile (découpée par un canevas limité à cette bande).
+    // Bande arrêtée à une marge du bas : les tuiles ne débordent pas des coins arrondis.
+    Canvas view(m_px.data() + static_cast<size_t>(kHeaderHeight) * kWidth * 4, kWidth, kViewHeight - kMargin, scale);
+    const int top = -static_cast<int>(std::floor(m_scroll + 0.5f));
+    for (size_t i = 0; i < m_tiles.size(); ++i) {
+        int x, y;
+        tileRect(static_cast<int>(i), x, y);
+        y += top;
+        if (y + kTileHeight < 0 || y >= kViewHeight) continue;
+        const TouchAction a = m_tiles[i];
+        const TouchTileText t = touchTileText(a, s);
+        Color fill = t.tone == 2 ? mix(th.line, th.bad, 150) : (t.tone == 1 ? mix(th.line, th.accent, 120) : th.line);
+        if (static_cast<int>(i) == m_pressed) fill = mix(fill, th.text, 60);
+        if (static_cast<int>(i) == m_flash) fill = mix(fill, th.accent, 170);
+        const int coverage = t.enabled ? 235 : 110;
+        view.fillRoundRect(x, y, kTileWidth, kTileHeight, 14.f, fill, coverage);
+        const Color bg = mix(th.background, fill, coverage);
+        const Color ink = t.enabled ? (t.tone == 2 ? th.text : th.text) : th.muted;
+        touchIcon(view, a, static_cast<float>(x + 12), static_cast<float>(y + 11), ink, bg);
+        view.text(kFontLabel, x + 12, y + 50, t.title, ink);
+        view.text(kFontLabel, x + 12, y + 72, t.status, t.enabled ? (t.tone != 0 ? mix(th.text, fill, 50) : th.muted) : th.muted);
+    }
+
+    // Barre de défilement.
+    const float scrollable = maxScroll();
+    if (scrollable > 0.f) {
+        const float track = static_cast<float>(kViewHeight - 12);
+        const float thumb = std::fmax(30.f, track * static_cast<float>(kViewHeight) / static_cast<float>(contentHeight()));
+        const float y0 = static_cast<float>(kHeaderHeight + 6) + (track - thumb) * (m_scroll / scrollable);
+        cv.segment(static_cast<float>(kWidth - 5), y0 + 2.f, static_cast<float>(kWidth - 5), y0 + thumb - 2.f, 4.f, th.muted, 170);
+    }
+
+    // En-tête : heure, témoins.
+    cv.fillRect(14, kHeaderHeight - 1, kWidth - 28, 1, th.line);
+    if (s.hour >= 0) {
+        char clock[8];
+        std::snprintf(clock, sizeof(clock), "%02d:%02d", s.hour % 24, s.minute % 60);
+        cv.text(kFontValue, 18, 8, clock, th.text);
+    }
+    if (s.videoSeconds >= 0.0) {
+        const char* label = s.live ? "LIVE" : "REC";
+        const int w = Canvas::textWidth(kFontLabel, label);
+        cv.disc(static_cast<float>(kWidth - 26 - w), 22.f, 6.f, th.bad);
+        cv.text(kFontLabel, kWidth - 16 - w, 12, label, th.bad);
+    } else if (s.reportRunning) {
+        const char* label = s.english ? "REPORT" : "RAPPORT";
+        cv.text(kFontLabel, kWidth - 16 - Canvas::textWidth(kFontLabel, label), 12, label, th.accent);
+    } else {
+        cv.text(kFontLabel, kWidth - 16 - Canvas::textWidth(kFontLabel, "XR Perf"), 12, "XR Perf", th.muted);
+    }
+
+    // Curseur : où la manette va toucher ; il rétrécit en approchant, plein au contact.
+    if ((m_hover || m_touching) && m_cursorX >= 0.f && m_cursorX < static_cast<float>(kWidth) && m_cursorY >= 0.f &&
+        m_cursorY < static_cast<float>(kHeight)) {
+        if (m_touching) {
+            cv.disc(m_cursorX, m_cursorY, 8.f, th.accent, 230);
+        } else {
+            float k = m_cursorDepth / kHoverDepth;
+            k = k < 0.f ? 0.f : (k > 1.f ? 1.f : k);
+            const float r = 6.f + 16.f * k;
+            cv.ring(m_cursorX, m_cursorY, r - 2.5f, r, th.accent, 220);
+            cv.disc(m_cursorX, m_cursorY, 2.5f, th.accent, 220);
+        }
+    }
 }
 
 }  // namespace xrpo

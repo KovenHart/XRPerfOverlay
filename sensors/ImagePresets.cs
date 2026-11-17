@@ -169,6 +169,91 @@ namespace XRPerfSensors
             w.WriteEndArray();
         }
 
+        // --- Écran tactile : preset en cours et preset suivant --------------------------------------------
+
+        public const string NoneId = "none";  // réglages neutres (aucun effet)
+
+        // Noms courts (12 caractères au plus, sans accents) des presets fournis, pour la tuile du casque.
+        private static readonly Dictionary<string, string[]> ShortNames = new Dictionary<string, string[]>
+        {
+            { NoneId, new[] { "Aucun", "None" } },
+            { "lowres", new[] { "Basse resol.", "Low res" } },
+            { "crisp", new[] { "Pique", "Crisp" } },
+            { "vivid", new[] { "Couleurs viv", "Vivid" } },
+            { "hdr", new[] { "Faux HDR", "Fake HDR" } },
+            { "cinema", new[] { "Cinema", "Cinema" } },
+            { "dark", new[] { "Trop sombre", "Too dark" } },
+            { "deep", new[] { "Noirs prof.", "Deep blacks" } },
+            { "oled", new[] { "OLED naturel", "OLED natural" } },
+            { "oledvivid", new[] { "OLED vif", "OLED vivid" } },
+            { "oledcontrast", new[] { "OLED contr.", "OLED contr." } },
+            { "oledcolor", new[] { "OLED coul.", "OLED color" } },
+            { "oleddeep", new[] { "OLED prof.", "OLED deep" } },
+        };
+
+        private static string _currentKey;
+        private static string _currentId;
+
+        private static string Serialize(OverlaySettings o)
+        {
+            var buffer = new MemoryStream();
+            using (var w = new Utf8JsonWriter(buffer)) WriteValues(w, o);
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
+
+        // Presets dans l'ordre de l'écran tactile : aucun effet, puis les fournis, puis ceux de l'utilisateur.
+        private static IEnumerable<Preset> Cycle()
+        {
+            yield return new Preset { Id = NoneId, Values = "{}" };
+            foreach (Preset p in BuiltIns.Concat(User)) yield return p;
+        }
+
+        /// <summary>Preset dont les réglages sont exactement ceux de `o`, ou null (réglages personnels).</summary>
+        public static string CurrentId(OverlaySettings o)
+        {
+            string current = Serialize(o);
+            if (current == _currentKey) return _currentId;
+            string found = null;
+            foreach (Preset p in Cycle())
+            {
+                var x = new OverlaySettings();
+                try { Load(x, p.Values); }
+                catch (JsonException) { continue; }
+                if (Serialize(x) == current)
+                {
+                    found = p.Id;
+                    break;
+                }
+            }
+            _currentKey = current;
+            _currentId = found;
+            return found;
+        }
+
+        /// <summary>Nom court du preset pour le casque ("" : réglages personnels).</summary>
+        public static string ShortName(string id, bool english)
+        {
+            if (id == null) return "";
+            if (ShortNames.TryGetValue(id, out string[] names)) return names[english ? 1 : 0];
+            Preset p = Find(id);
+            return p != null && p.Name != null ? TouchCommands.Ascii(p.Name) : "";
+        }
+
+        /// <summary>Applique le preset qui suit celui en cours (le premier après des réglages personnels).</summary>
+        public static bool ApplyNext(OverlaySettings o)
+        {
+            List<Preset> list = Cycle().ToList();
+            string current = CurrentId(o);
+            int index = current == null ? -1 : list.FindIndex(p => p.Id == current);
+            Preset next = list[(index + 1) % list.Count];
+            if (next.Id == NoneId)
+            {
+                Neutral(o);
+                return true;
+            }
+            return Apply(o, next.Id);
+        }
+
         /// <summary>Applique un preset ; mode « Désactivés » : passe à « Dans le casque » pour qu'il se voie.</summary>
         public static bool Apply(OverlaySettings o, string id)
         {
@@ -209,6 +294,7 @@ namespace XRPerfSensors
 
         private static bool Persist()
         {
+            _currentKey = null;  // liste changée : le preset en cours est à rechercher
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));

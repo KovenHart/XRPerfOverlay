@@ -11,6 +11,7 @@
 #include "summary_file.h"
 #include "log.h"
 #include "settings_apply.h"
+#include "touch_host.h"
 #include "version.h"
 #include "view_pose.h"
 
@@ -789,7 +790,10 @@ void Overlay::stopRecording(double now) {
 
 // Mode des rapports (changeable en jeu depuis XRPerfSensors) et raccourci du mode manuel.
 void Overlay::updateRecording(double now) {
-    const ReportControl::Step step = m_reportControl.update(m_config.reportMode, m_recording, Hotkeys::comboDown(m_config.keyRecord));
+    // La tuile « rapport » de l'écran tactile compte comme un appui sur le raccourci.
+    const bool keyDown = Hotkeys::comboDown(m_config.keyRecord) || m_touchReportPulse;
+    m_touchReportPulse = false;
+    const ReportControl::Step step = m_reportControl.update(m_config.reportMode, m_recording, keyDown);
     if (step.stop) stopRecording(now);
     if (step.start) startRecording(now, step.manual);
 }
@@ -822,6 +826,7 @@ void Overlay::onSessionDestroying() {
 void Overlay::destroyResources() {
     if (m_gfx) m_gfx->waitIdle();
     destroyWindowResources();
+    destroyTouchResources();
     if (m_swapchain != XR_NULL_HANDLE) m_next.DestroySwapchain(m_swapchain);
     if (m_viewSpace != XR_NULL_HANDLE) m_next.DestroySpace(m_viewSpace);
     m_swapchain = XR_NULL_HANDLE;
@@ -829,6 +834,15 @@ void Overlay::destroyResources() {
     m_panelImage = SwapImage();
     m_hasContent = false;
     m_panelDirty = true;
+}
+
+void Overlay::destroyTouchResources() {
+    if (m_touchSwapchain != XR_NULL_HANDLE) m_next.DestroySwapchain(m_touchSwapchain);
+    m_touchSwapchain = XR_NULL_HANDLE;
+    m_touchTried = false;
+    m_touchImage = SwapImage();
+    m_touchHasContent = false;
+    m_touchDirty = true;
 }
 
 void Overlay::destroyWindowResources() {
@@ -877,8 +891,9 @@ void Overlay::collectGpuTimings() {
     }
 }
 
-void Overlay::pollHotkeys(double now) {
-    const unsigned changes = m_hotkeys.poll(m_config, now);
+void Overlay::pollHotkeys(double now) { hotkeyChanges(m_hotkeys.poll(m_config, now), now); }
+
+void Overlay::hotkeyChanges(unsigned changes, double now) {
     if (changes & Hotkeys::ResetStats) m_stats.reset();
     if (changes & Hotkeys::WindowPlace) m_windowPlaceRequested = true;
     if ((changes & Hotkeys::WindowVisibility) && !m_config.window.enabled) m_windowPlaceRequested = false;
@@ -1030,6 +1045,7 @@ void Overlay::pollSettings() {
     m_lastBlock = block;
     m_hasLastBlock = true;
     m_panelDirty = true;
+    m_touchDirty = true;
 }
 
 // Relevé des valeurs, quelques fois par seconde, que le panneau soit visible ou non.
@@ -1353,7 +1369,8 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
     // Affichage.
     const bool wantPanel = m_config.visible, wantWatch = m_config.watch.enabled;
     const bool wantWindow = m_config.window.enabled && !m_windowFailed;
-    if (m_failed || !m_gfx || (!wantPanel && !wantWatch && !wantWindow) || !allowLayer) return 0;
+    const bool wantTouch = m_config.touch.enabled && !m_touchFailed && m_hands;
+    if (m_failed || !m_gfx || (!wantPanel && !wantWatch && !wantWindow && !wantTouch) || !allowLayer) return 0;
 
     if (!ensureResources()) {
         m_failed = true;
@@ -1371,7 +1388,13 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
     int count = 0;
     // Fenêtre capturée : en premier, sous le panneau et la montre.
     if (wantWindow && windowQuad(displayTime, quads[count])) ++count;
-    if (!m_hasContent) return count;
+    // Écran tactile : par-dessus tout le reste, à la fin (calque à part, sa propre texture).
+    XrCompositionLayerQuad touch = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+    const bool touchShown = wantTouch && touchQuad(now, displayTime, touch);
+    if (!m_hasContent) {
+        if (touchShown) quads[count++] = touch;
+        return count;
+    }
 
     const auto baseQuad = [&]() -> XrCompositionLayerQuad& {
         XrCompositionLayerQuad& quad = quads[count++];
@@ -1431,6 +1454,7 @@ int Overlay::onEndFrame(XrCompositionLayerQuad (&quads)[kMaxQuads], XrTime displ
             quad.size = {w.size, w.size};
         }
     }
+    if (touchShown) quads[count++] = touch;
     return count;
 }
 
@@ -1691,6 +1715,170 @@ void Overlay::sampleWatch(double now, const PanelData& data, bool fpsValid, floa
             w.charging[hand] = false;
         }
     }
+}
+
+// --- Écran tactile -----------------------------------------------------------------------------------
+
+// Position du doigt, tuile touchée, image à jour ; false si l'écran n'est pas à afficher (main non suivie
+// ou pas regardée). Toujours appelé sous m_mutex, depuis xrEndFrame.
+bool Overlay::touchQuad(double now, XrTime displayTime, XrCompositionLayerQuad& quad) {
+    const TouchConfig& t = m_config.touch;
+    m_touch.setActions(t.actions);
+    const int hand = t.hand();
+    const Pose local = HandPlacementPose(hand == 0 ? Hand::Left : Hand::Right, t.placement, t.along, t.lift);
+    XrSpace space = m_viewSpace;
+    XrPosef pose = {};
+    // Doigt sur l'écran : il reste affiché même si la main n'est plus tout à fait regardée.
+    const HandResult shown = handQuadAt(hand, local, t.gazeOnly && !m_touch.touching(), displayTime, m_touchLooked, space, pose);
+
+    // Bout de l'autre manette, dans le repère de l'écran.
+    TouchFinger finger;
+    const float height = t.size * static_cast<float>(TouchPad::kHeight) / static_cast<float>(TouchPad::kWidth);
+    if (shown == HandResult::Show) {
+        const XrSpace other = m_hands->handSpace(m_session, 1 - hand);
+        XrSpaceLocation location = {XR_TYPE_SPACE_LOCATION};
+        if (other != XR_NULL_HANDLE && XR_SUCCEEDED(m_next.LocateSpace(other, space, displayTime, &location)) &&
+            (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) && (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
+            const Pose fingerInHand = {{location.pose.position.x, location.pose.position.y, location.pose.position.z},
+                                       {location.pose.orientation.x, location.pose.orientation.y, location.pose.orientation.z, location.pose.orientation.w}};
+            finger = FingerOnPad(Compose(Inverse(local), fingerInHand), t.size, height, TouchPad::kWidth, TouchPad::kHeight, t.tip);
+        }
+    }
+    const bool wasActive = m_touch.active();
+    const int fired = m_touch.update(finger, now);
+    if (fired >= 0) touchAction(static_cast<TouchAction>(fired), now);
+    if (shown != HandResult::Show) return false;
+
+    // État des tuiles : XRPerfSensors relu quatre fois par seconde (et juste après une commande).
+    if (m_remoteReadAt < 0.0 || now - m_remoteReadAt >= 0.25) {
+        m_remote = m_commands.read();
+        m_remoteReadAt = now;
+    }
+    TouchInputs in;
+    in.videoSeconds = m_videoSeconds;
+    in.live = m_videoLive;
+    in.reportRunning = m_recording && m_recordManual;
+    in.reportSeconds = now - m_recordStart;
+    const TouchState state = MakeTouchState(m_config, m_remote, in, LocalClockSeconds());
+    if (!SameTouchState(state, m_touchShown)) m_touchDirty = true;
+    if (m_touch.active() || wasActive) m_touchDirty = true;
+    // Doigt près de l'écran : image redessinée à chaque image, 60 fois par seconde au plus.
+    if ((m_touchDirty || m_touchImage.acquired) && (m_touchRenderedAt < 0.0 || now - m_touchRenderedAt >= 1.0 / 60.0) && ensureTouchSwapchain()) {
+        if (!m_touchImage.acquired) {
+            m_touch.render(state, t.opacity);
+            m_touchShown = state;
+            m_touchRenderedAt = now;
+        }
+        uploadTouch();
+    }
+    if (m_touchErrors >= kMaxUploadErrors) {
+        m_touchFailed = true;
+        Log("Ecran tactile desactive pour cette session (echecs repetes de mise a jour de la texture).");
+        return false;
+    }
+    if (!m_touchHasContent) return false;
+
+    quad = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+    quad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+    quad.space = space;
+    quad.pose = pose;
+    quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+    quad.subImage.swapchain = m_touchSwapchain;
+    quad.subImage.imageArrayIndex = 0;
+    quad.subImage.imageRect.offset = {0, 0};
+    quad.subImage.imageRect.extent = {TouchPad::kWidth, TouchPad::kHeight};
+    quad.size = {t.size, height};
+    return true;
+}
+
+// Tuile touchée : commande pour XRPerfSensors, ou même effet que le raccourci clavier correspondant.
+void Overlay::touchAction(TouchAction action, double now) {
+    if (TouchActionRemote(action)) {
+        if (m_commands.post(action)) m_remoteReadAt = -1.0;
+        return;
+    }
+    if (action == TouchAction::Report) {
+        m_touchReportPulse = true;
+        return;
+    }
+    const int index = TouchHotkeyIndex(action);
+    if (index >= 0) hotkeyChanges(m_hotkeys.apply(index, m_config, now), now);
+    m_touchDirty = true;
+}
+
+bool Overlay::ensureTouchSwapchain() {
+    if (m_touchSwapchain != XR_NULL_HANDLE) return true;
+    if (m_touchTried) return false;
+    m_touchTried = true;
+    const int64_t format = chooseFormat(false, m_touchFormatBgra, m_touchFormatSrgb);
+    if (format == 0) {
+        m_touchFailed = true;
+        return false;
+    }
+    XrSwapchainCreateInfo info = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
+    info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+    info.format = format;
+    info.sampleCount = 1;
+    info.width = TouchPad::kWidth;
+    info.height = TouchPad::kHeight;
+    info.faceCount = 1;
+    info.arraySize = 1;
+    info.mipCount = 1;
+    const XrResult result = m_next.CreateSwapchain(m_session, &info, &m_touchSwapchain);
+    if (XR_FAILED(result)) {
+        Log("xrCreateSwapchain (ecran tactile) a echoue (%d).", static_cast<int>(result));
+        m_touchSwapchain = XR_NULL_HANDLE;
+        m_touchFailed = true;
+        return false;
+    }
+    if (!m_gfx->enumerateImages(m_next, m_touchSwapchain, 2)) {
+        Log("Impossible de recuperer les images de la swapchain de l'ecran tactile.");
+        m_next.DestroySwapchain(m_touchSwapchain);
+        m_touchSwapchain = XR_NULL_HANDLE;
+        m_touchFailed = true;
+        return false;
+    }
+    Log("Ecran tactile : swapchain creee (%dx%d, format DXGI %lld).", TouchPad::kWidth, TouchPad::kHeight, static_cast<long long>(format));
+    return true;
+}
+
+void Overlay::uploadTouch() {
+    const ImageState state = prepareImage(m_touchSwapchain, m_touchImage);
+    if (state == ImageState::Error) {
+        if (m_touchImage.waitTimeouts >= kMaxWaitTimeouts)
+            m_touchErrors = kMaxUploadErrors;
+        else
+            ++m_touchErrors;
+        return;
+    }
+    if (state == ImageState::NotYet || m_gfx->busy(2)) return;
+    const uint8_t* pixels = m_touch.pixels();
+    if (m_touchFormatBgra || !m_touchFormatSrgb) {
+        m_touchConverted.resize(static_cast<size_t>(TouchPad::kWidth) * TouchPad::kHeight * 4);
+        const uint8_t* linear = m_touchFormatSrgb ? nullptr : srgbToLinearTable();
+        const uint8_t* src = pixels;
+        uint8_t* dst = m_touchConverted.data();
+        for (size_t i = 0; i < static_cast<size_t>(TouchPad::kWidth) * TouchPad::kHeight; ++i, src += 4, dst += 4) {
+            const uint8_t r = linear ? linear[src[0]] : src[0];
+            const uint8_t g = linear ? linear[src[1]] : src[1];
+            const uint8_t b = linear ? linear[src[2]] : src[2];
+            dst[0] = m_touchFormatBgra ? b : r;
+            dst[1] = g;
+            dst[2] = m_touchFormatBgra ? r : b;
+            dst[3] = src[3];
+        }
+        pixels = m_touchConverted.data();
+    }
+    const UploadResult upload = m_gfx->upload(2, m_touchImage.index, pixels, TouchPad::kWidth, TouchPad::kHeight);
+    if (upload == UploadResult::Busy) return;
+    const XrResult released = releaseImage(m_touchSwapchain, m_touchImage);
+    if (upload == UploadResult::Error || XR_FAILED(released)) {
+        ++m_touchErrors;
+        return;
+    }
+    m_touchErrors = 0;
+    m_touchHasContent = true;
+    m_touchDirty = false;
 }
 
 void Overlay::onLayerRejected(XrResult result) {

@@ -24,6 +24,7 @@
 #include "../layer/src/session_stats.h"
 #include "../layer/src/settings_apply.h"
 #include "../layer/src/stats.h"
+#include "../layer/src/touch_pad.h"
 #include "../layer/src/shared_block.h"
 #include "../layer/src/video_math.h"
 
@@ -31,6 +32,20 @@ using namespace xrpo;
 
 // Compose le panneau (alpha prémultiplié) sur un fond uni et l'écrit en PPM.
 // `height` : nombre de lignes écrites (hauteur utile du panneau).
+static void writePpmPixels(const uint8_t* px, int width, int height, const std::string& path, int bgR, int bgG, int bgB) {
+    FILE* f = std::fopen(path.c_str(), "wb");
+    if (!f) return;
+    std::fprintf(f, "P6\n%d %d\n255\n", width, height);
+    for (int i = 0; i < width * height; ++i) {
+        const int inv = 255 - px[i * 4 + 3];
+        const unsigned char rgb[3] = {static_cast<unsigned char>(px[i * 4 + 0] + bgR * inv / 255),
+                                      static_cast<unsigned char>(px[i * 4 + 1] + bgG * inv / 255),
+                                      static_cast<unsigned char>(px[i * 4 + 2] + bgB * inv / 255)};
+        std::fwrite(rgb, 1, 3, f);
+    }
+    std::fclose(f);
+}
+
 static void writePpm(const Panel& p, const std::string& path, int bgR, int bgG, int bgB, int height = Panel::kBodyHeight) {
     FILE* f = std::fopen(path.c_str(), "wb");
     if (!f) return;
@@ -866,7 +881,12 @@ static void testReportControl(const std::string& dir) {
     assert(offsetof(ObsShare, consumerTickMs) == 8 && offsetof(ObsShare, producerTickMs) == 16 && offsetof(ObsShare, handle) == 24 &&
            offsetof(ObsShare, adapterLuid) == 40 && sizeof(ObsShare) == 128);
     assert(offsetof(SettingsBlock, imageHdr) == 248 && offsetof(SettingsBlock, hotkeys) == 252 && offsetof(SettingsBlock, imageSharpenLimit) == 296 &&
-           offsetof(SettingsBlock, imageBlack) == 304 && offsetof(SettingsBlock, imageClarity) == 312 && sizeof(SettingsBlock) == 320);
+           offsetof(SettingsBlock, imageBlack) == 304 && offsetof(SettingsBlock, imageClarity) == 312);
+    // Écran tactile (version 10) et bloc de commandes : mêmes positions que OverlaySettings.cs et TouchCommands.cs.
+    assert(offsetof(SettingsBlock, touchEnabled) == 316 && offsetof(SettingsBlock, touchSize) == 332 && offsetof(SettingsBlock, touchTip) == 348 &&
+           offsetof(SettingsBlock, touchActions) == 352 && sizeof(SettingsBlock) == 360);
+    assert(offsetof(CommandBlock, sensorsTickMs) == 8 && offsetof(CommandBlock, flags) == 16 && offsetof(CommandBlock, preset) == 24 &&
+           offsetof(CommandBlock, posted) == 56 && offsetof(CommandBlock, commands) == 64);
     // Raccourcis : touche seule refusée sauf F1 à F24 ; un invalide reçu de XRPerfSensors garde le précédent.
     assert(NormalizeHotkey((3 << 16) | 'O') == ((3 << 16) | 'O') && NormalizeHotkey(0) == 0);
     assert(NormalizeHotkey('O') == -1 && NormalizeHotkey(0x78) == 0x78);  // O seul refusé, F9 seul accepté
@@ -1456,7 +1476,122 @@ static void testVideo() {
     std::printf("tests de l'enregistrement video : OK\n");
 }
 
+// Écran tactile : contact, tuile déclenchée, glissé, défilement, réglages.
+static void testTouchPad(const std::string& dir) {
+    TouchPad pad;
+    double t = 0.0;
+    const auto at = [&](float x, float y, float depth) {
+        TouchFinger f;
+        f.valid = true; f.x = x; f.y = y; f.depth = depth;
+        t += 1.0 / 90.0;
+        return pad.update(f, t);
+    };
+    const auto away = [&]() { t += 1.0 / 90.0; return pad.update(TouchFinger(), t); };
+    assert(pad.tiles().size() == static_cast<size_t>(kTouchActionCount) && pad.maxScroll() > 0.f);
+    // Tuile 0 (vidéo) : centre à (10 + 72, 44 + 10 + 50).
+    const float x0 = 82.f, y0 = 104.f;
+    assert(pad.tileAt(x0, y0) == 0 && pad.tileAt(x0 + 155.f, y0) == 1 && pad.tileAt(5.f, y0) == -1 && pad.tileAt(x0, 20.f) == -1);
+    // Approche, contact, retrait : déclenche une fois, au retrait.
+    assert(at(x0, y0, 0.05f) == -1 && !pad.touching());
+    assert(at(x0, y0, 0.02f) == -1);
+    assert(at(x0, y0, 0.001f) == -1 && pad.touching());
+    assert(at(x0, y0, -0.01f) == -1);
+    assert(at(x0, y0, 0.02f) == static_cast<int>(TouchAction::Video) && !pad.touching());
+    // Juste après : pas de second déclenchement par un rebond.
+    assert(at(x0, y0, 0.001f) == -1 && !pad.touching());
+    assert(at(x0, y0, 0.03f) == -1);
+    for (int i = 0; i < 30; ++i) away();
+    // Arrivée par l'arrière de l'écran : rien.
+    assert(at(x0, y0, -0.03f) == -1 && at(x0, y0, 0.001f) == -1 && !pad.touching());
+    for (int i = 0; i < 5; ++i) away();
+    // Écran traversé franchement : l'appui est abandonné.
+    at(x0, y0, 0.02f); at(x0, y0, 0.001f); assert(pad.touching());
+    at(x0, y0, -0.2f); assert(!pad.touching());
+    assert(at(x0, y0, 0.03f) == -1);
+    for (int i = 0; i < 5; ++i) away();
+    // Glissé vers le haut : la liste défile, aucune tuile déclenchée ; la lancée continue puis s'arrête.
+    at(x0, 300.f, 0.02f); at(x0, 300.f, 0.001f);
+    for (int i = 1; i <= 20; ++i) assert(at(x0, 300.f - 8.f * i, 0.0f) == -1);
+    const float dragged = pad.scroll();
+    assert(dragged > 100.f && dragged <= pad.maxScroll());
+    assert(at(x0, 140.f, 0.03f) == -1);
+    for (int i = 0; i < 200; ++i) away();
+    assert(pad.scroll() >= dragged && pad.scroll() <= pad.maxScroll() && !pad.active());
+    // Après défilement, la tuile sous le doigt n'est plus la même.
+    const int under = pad.tileAt(x0, y0);
+    assert(under > 0);
+    at(x0, y0, 0.02f); at(x0, y0, 0.001f);
+    assert(at(x0, y0, 0.03f) == static_cast<int>(pad.tiles()[static_cast<size_t>(under)]));
+    // Doigt qui glisse hors de la tuile avant de se retirer : rien (la liste est en bas, pas de défilement possible vers le bas).
+    for (int i = 0; i < 30; ++i) away();
+    at(x0, y0, 0.02f); at(x0, y0, 0.001f); at(x0 + 160.f, y0, 0.0f);
+    assert(at(x0 + 160.f, y0, 0.03f) == -1);
+    // Moins de tuiles : plus de défilement.
+    pad.setActions((1u << 0) | (1u << 2) | (1u << 6));
+    assert(pad.tiles().size() == 3 && pad.maxScroll() == 0.f && pad.scroll() == 0.f);
+    assert(pad.tiles()[1] == TouchAction::Snapshot && pad.tiles()[2] == TouchAction::Panel);
+
+    // Point de contact : poignée 7 cm derrière le centre de l'écran, pointée vers lui (-Z de la poignée vers -Z de l'écran,
+    // c.-à-d. la manette regarde l'écran de face) : contact au centre.
+    {
+        Pose grip;
+        grip.position = {0.f, 0.f, 0.07f};
+        grip.orientation = {0.f, 0.f, 0.f, 1.f};
+        const TouchFinger f = FingerOnPad(grip, 0.09f, 0.1125f, TouchPad::kWidth, TouchPad::kHeight, 0.07f);
+        assert(f.valid && std::fabs(f.x - 160.f) < 0.01f && std::fabs(f.y - 200.f) < 0.01f && std::fabs(f.depth) < 1e-5f);
+        grip.position = {0.045f, 0.05625f, 0.09f};
+        const TouchFinger g = FingerOnPad(grip, 0.09f, 0.1125f, TouchPad::kWidth, TouchPad::kHeight, 0.07f);
+        assert(std::fabs(g.x - 320.f) < 0.01f && std::fabs(g.y) < 0.01f && std::fabs(g.depth - 0.02f) < 1e-5f);
+    }
+
+    // Réglages : bloc et .ini.
+    {
+        Config cfg;
+        assert(!cfg.touch.enabled && cfg.touch.actions == kTouchAllActions && !WantsHandTracking(cfg));
+        SettingsBlock b = {};
+        b.width = cfg.width; b.globalOpacity = cfg.globalOpacity; b.distance = cfg.distance;
+        b.touchEnabled = 1; b.touchAnchor = 2; b.touchPlacement = 2; b.touchGazeOnly = 0; b.touchSize = 0.5f;
+        b.touchOpacity = 0.8f; b.touchTip = 0.05f; b.touchActions = 0xFFFFFFFFu;
+        ApplySettings(cfg, b);
+        assert(cfg.touch.enabled && cfg.touch.anchor == Anchor::RightHand && cfg.touch.hand() == 1 && cfg.touch.placement == HandPlacement::Above);
+        assert(!cfg.touch.gazeOnly && cfg.touch.size == kMaxTouchSize && cfg.touch.opacity == 0.8f && cfg.touch.tip == 0.05f && cfg.touch.actions == kTouchAllActions);
+        assert(WantsHandTracking(cfg));
+        b.touchAnchor = 0;  // devant les yeux : refusé, la main reste
+        ApplySettings(cfg, b);
+        assert(cfg.touch.anchor == Anchor::RightHand);
+    }
+
+    // Images : toutes les tuiles, puis après défilement avec curseur, en anglais.
+    TouchPad view;
+    TouchState s;
+    s.hour = 21; s.minute = 7; s.sensors = true; s.videoReady = true; s.liveReady = true;
+    s.videoSeconds = 192.0; s.reportManual = true; s.filtersAllowed = true; s.filtersOn = true;
+    std::snprintf(s.preset, sizeof(s.preset), "OLED naturel");
+    s.panelVisible = true; s.panelOnView = true; s.windowReady = false;
+    view.render(s, 1.f);
+    writePpmPixels(view.pixels(), TouchPad::kWidth, TouchPad::kHeight, dir + "/touch_fr.ppm", 40, 46, 56);
+    // Le fond est opaque, les coins transparents.
+    assert(view.pixels()[((static_cast<size_t>(200) * TouchPad::kWidth) + 160) * 4 + 3] > 200 && view.pixels()[3] == 0);
+    double vt = 0.0;
+    TouchFinger f;
+    f.valid = true; f.x = 160.f; f.y = 330.f; f.depth = 0.02f;
+    view.update(f, vt += 0.011); f.depth = 0.001f; view.update(f, vt += 0.011);
+    for (int i = 1; i <= 30; ++i) { f.y = 330.f - 6.f * i; view.update(f, vt += 0.011); }
+    f.depth = 0.03f; view.update(f, vt += 0.011);
+    f.x = 230.f; f.y = 260.f; view.update(f, vt += 0.011);
+    s.english = true; s.videoSeconds = 3725.0; s.live = true; s.reportRunning = true; s.reportSeconds = 65.0; s.preset[0] = 0;
+    s.windowReady = true; s.windowVisible = true; s.filtersOn = false;
+    view.render(s, 1.f);
+    writePpmPixels(view.pixels(), TouchPad::kWidth, TouchPad::kHeight, dir + "/touch_en_scrolled.ppm", 40, 46, 56);
+    s.sensors = false;
+    s.theme = PresetTheme(ThemeId::Light);
+    view.render(s, 0.9f);
+    writePpmPixels(view.pixels(), TouchPad::kWidth, TouchPad::kHeight, dir + "/touch_light_offline.ppm", 40, 46, 56);
+    std::printf("tests de l'ecran tactile : OK\n");
+}
+
 int main(int argc, char** argv) {
+    testTouchPad(argc > 1 ? argv[1] : ".");
     testImageFilters();
     testVideo();
     testStats();

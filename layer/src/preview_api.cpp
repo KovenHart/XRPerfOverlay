@@ -136,3 +136,34 @@ int xrpoRenderWatchPreview(const xrpo::SettingsBlock* settings, int clockSeconds
         return 0;
     }
 }
+
+int xrpoRenderTouchPreview(const xrpo::SettingsBlock* settings, int clockSeconds, uint8_t* pixels, uint32_t capacity) {
+    using namespace xrpo;
+    const size_t bytes = static_cast<size_t>(TouchPad::kWidth) * TouchPad::kHeight * 4;
+    if (!settings || !pixels || capacity < bytes || clockSeconds < 0 || clockSeconds >= 24 * 3600) return 0;
+    if (settings->magic != kSettingsBlockMagic || settings->version != kSettingsBlockVersion) return 0;
+    try {
+        Config config;
+        ApplySettings(config, *settings);
+        TouchState s;
+        s.theme = ThemeOf(config);
+        s.english = config.english;
+        s.hour = clockSeconds / 3600;
+        s.minute = (clockSeconds / 60) % 60;
+        s.sensors = s.videoReady = s.liveReady = true;
+        s.reportManual = config.reportMode == ReportMode::Manual;
+        s.filtersAllowed = config.image.mode != 0;
+        s.filtersOn = s.filtersAllowed;
+        s.panelVisible = config.visible;
+        s.panelOnView = config.anchor == Anchor::View;
+        s.windowReady = true;
+        s.windowVisible = config.window.enabled;
+        TouchPad pad;
+        pad.setActions(config.touch.actions);
+        pad.render(s, config.touch.opacity);
+        std::memcpy(pixels, pad.pixels(), bytes);
+        return TouchPad::kHeight;
+    } catch (...) {
+        return 0;
+    }
+}

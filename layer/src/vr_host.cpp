@@ -1,5 +1,7 @@
 #include "vr_host.h"
 
+#include "touch_host.h"
+
 #include <windows.h>
 
 #include <algorithm>
@@ -168,12 +170,7 @@ void VrHost::run(double now) {
 
     // Raccourcis clavier : seulement quand XRPerfVR affiche (sinon la layer s'en charge).
     if (m_session.display) {
-        const unsigned changes = m_hotkeys.poll(m_config, now);
-        if (changes & Hotkeys::ResetStats) m_stats.reset();
-        if (changes & (Hotkeys::Visibility | Hotkeys::Opacity | Hotkeys::Size)) m_dirty = true;
-        if (changes & Hotkeys::WindowPlace) m_windowPlaceRequested = true;
-        if ((changes & Hotkeys::WindowVisibility) && !m_config.window.enabled) m_windowPlaceRequested = false;
-        if (m_hotkeys.saveDue(now)) SaveState(m_config);
+        hotkeyChanges(m_hotkeys.poll(m_config, now), now);
     }
     // Enregistrement vidéo : image miroir de SteamVR, seulement pour un jeu que la layer n'affiche pas.
     if (m_session.display && m_config.videoCapture)
@@ -183,10 +180,13 @@ void VrHost::run(double now) {
     if (m_lastSample < 0.0 || (now - m_lastSample) * 1000.0 >= m_config.refreshMs) sample(now);
     // Rapport : seulement si XRPerfVR l'écrit (sinon la layer relève elle-même le raccourci).
     if (m_session.report) {
-        const ReportControl::Step step = m_reportControl.update(m_config.reportMode, m_recording, Hotkeys::comboDown(m_config.keyRecord));
+        // La tuile « rapport » de l'écran tactile compte comme un appui sur le raccourci.
+        const bool keyDown = Hotkeys::comboDown(m_config.keyRecord) || m_touchReportPulse;
+        const ReportControl::Step step = m_reportControl.update(m_config.reportMode, m_recording, keyDown);
         if (step.stop) stopRecording(now);
         if (step.start) startRecording(now, step.manual);
     }
+    m_touchReportPulse = false;
     if (m_session.report && m_summary.isOpen() && now - m_lastSummaryWrite >= kReportPeriod &&
         m_sessionStats.activeSeconds() >= (m_recordManual ? kManualReportMinSeconds : kReportMinSeconds))
         writeSummary(now, false);
@@ -275,10 +275,13 @@ void VrHost::beginSession(uint32_t pid, double now) {
     m_lastSample = -1.0;
     m_lastData = PanelData();
     m_lastWatch = WatchData();
-    m_looked[0] = m_looked[1] = m_looked[2] = false;
+    for (bool& looked : m_looked) looked = false;
     m_sceneLostSince = -1.0;
     m_dirty = true;
-    m_overlayDirty[0] = m_overlayDirty[1] = m_overlayDirty[2] = true;
+    for (bool& dirty : m_overlayDirty) dirty = true;
+    m_touch = TouchPad();
+    m_touchReportPulse = false;
+    m_remoteReadAt = -1.0;
     m_windowPending = false;
     m_windowPlaceRequested = false;
     m_windowWantedAt = -1.0;
@@ -561,6 +564,7 @@ void VrHost::hideAll() {
     if (!m_overlaysReady) return;
     setShown(VrOverlay::Panel, false);
     setShown(VrOverlay::Watch, false);
+    setShown(VrOverlay::Touch, false);
     setShown(VrOverlay::Window, false);
 }
 
@@ -659,6 +663,9 @@ void VrHost::upload(VrOverlay overlay) {
         const int height = Panel::contentHeight(m_lastData);
         m_vr.setPixels(overlay, m_panel.pixels(), Panel::kWidth, height);
         m_vr.setWidth(overlay, m_config.width);
+    } else if (overlay == VrOverlay::Touch) {
+        m_vr.setPixels(overlay, m_touch.pixels(), TouchPad::kWidth, TouchPad::kHeight);
+        m_vr.setWidth(overlay, m_config.touch.size);
     } else if (overlay == VrOverlay::Watch) {
         m_watch.render(m_lastWatch, m_config.watch.opacity);
         m_vr.setPixels(overlay, m_watch.pixels(), WatchFace::kSize, WatchFace::kSize);
@@ -685,7 +692,7 @@ void VrHost::display(double now) {
     const bool wantPanel = m_config.visible, wantWatch = m_config.watch.enabled;
     if (m_dirty) {
         // Nouveau relevé (quelques fois par seconde) ou nouveaux réglages : à redessiner.
-        m_overlayDirty[0] = m_overlayDirty[1] = true;
+        m_overlayDirty[0] = m_overlayDirty[1] = m_overlayDirty[static_cast<int>(VrOverlay::Touch)] = true;
         m_dirty = false;
     }
 
@@ -716,6 +723,81 @@ void VrHost::display(double now) {
         }
     }
     setShown(VrOverlay::Window, windowShown);
+
+    // Écran tactile.
+    bool touchShown = false;
+    if (m_config.touch.enabled)
+        touchShown = displayTouch(now);
+    else if (m_touch.active())
+        m_touch.update(TouchFinger(), now);
+    setShown(VrOverlay::Touch, touchShown);
+}
+
+void VrHost::hotkeyChanges(unsigned changes, double now) {
+    if (changes & Hotkeys::ResetStats) m_stats.reset();
+    if (changes & (Hotkeys::Visibility | Hotkeys::Opacity | Hotkeys::Size)) m_dirty = true;
+    if (changes & Hotkeys::WindowPlace) m_windowPlaceRequested = true;
+    if ((changes & Hotkeys::WindowVisibility) && !m_config.window.enabled) m_windowPlaceRequested = false;
+    if (m_hotkeys.saveDue(now)) SaveState(m_config);
+}
+
+// Écran tactile : sur une main, touché du bout de l'autre manette. false s'il n'est pas à afficher.
+bool VrHost::displayTouch(double now) {
+    const TouchConfig& t = m_config.touch;
+    m_touch.setActions(t.actions);
+    const int hand = t.hand();
+    const Pose local = HandPlacementPose(hand == 0 ? Hand::Left : Hand::Right, t.placement, t.along, t.lift);
+    const float height = t.size * static_cast<float>(TouchPad::kHeight) / static_cast<float>(TouchPad::kWidth);
+    bool& looked = m_looked[static_cast<int>(VrOverlay::Touch)];
+    TouchFinger finger;
+    Pose grip;
+    if (m_vr.gripInHead(hand, grip)) {
+        const Pose padInHead = Compose(grip, local);
+        // Doigt sur l'écran : il reste affiché même si la main n'est plus tout à fait regardée.
+        looked = !t.gazeOnly || m_touch.touching() || IsLookedAt(padInHead, looked);
+        Pose other;
+        if (looked && m_vr.gripInHead(1 - hand, other))
+            finger = FingerOnPad(Compose(Inverse(padInHead), other), t.size, height, TouchPad::kWidth, TouchPad::kHeight, t.tip);
+    } else {
+        looked = false;
+    }
+    const bool wasActive = m_touch.active();
+    const int fired = m_touch.update(finger, now);
+    if (fired >= 0) touchAction(static_cast<TouchAction>(fired), now);
+    if (!looked || !sendPlacement(VrOverlay::Touch, 2, hand, local, now)) return false;
+
+    if (m_remoteReadAt < 0.0 || now - m_remoteReadAt >= 0.25) {
+        m_remote = m_commands.read();
+        m_remoteReadAt = now;
+    }
+    TouchInputs in;
+    in.videoSeconds = m_vr.videoSeconds();
+    in.live = in.videoSeconds >= 0.0 && m_vr.videoLive();
+    in.reportAvailable = m_session.report;
+    in.reportRunning = m_recording && m_recordManual;
+    in.reportSeconds = now - m_recordStart;
+    const TouchState state = MakeTouchState(m_config, m_remote, in, LocalClockSeconds());
+    const int i = static_cast<int>(VrOverlay::Touch);
+    if (!m_hasPixels[i] || m_overlayDirty[i] || m_touch.active() || wasActive || !SameTouchState(state, m_touchShown)) {
+        m_touch.render(state, t.opacity);
+        m_touchShown = state;
+        upload(VrOverlay::Touch);
+    }
+    return m_hasPixels[i];
+}
+
+// Tuile touchée : commande pour XRPerfSensors, ou même effet que le raccourci clavier correspondant.
+void VrHost::touchAction(TouchAction action, double now) {
+    if (TouchActionRemote(action)) {
+        if (m_commands.post(action)) m_remoteReadAt = -1.0;
+        return;
+    }
+    if (action == TouchAction::Report) {
+        m_touchReportPulse = true;
+        return;
+    }
+    const int index = TouchHotkeyIndex(action);
+    if (index >= 0) hotkeyChanges(m_hotkeys.apply(index, m_config, now), now);
 }
 
 void VrHost::openSummary() {

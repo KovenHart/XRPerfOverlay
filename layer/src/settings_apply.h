@@ -142,6 +142,20 @@ inline void ApplySettings(Config& c, const SettingsBlock& s) {
     w.lift = clamped(s.windowLift, kMinHandLift, kMaxHandLift, w.lift);
     w.distance = clamped(s.windowDistance, kMinWindowDistance, kMaxWindowDistance, w.distance);
 
+    // Écran tactile.
+    TouchConfig& t = c.touch;
+    t.enabled = s.touchEnabled != 0;
+    if (s.touchAnchor == static_cast<uint32_t>(Anchor::LeftHand) || s.touchAnchor == static_cast<uint32_t>(Anchor::RightHand))
+        t.anchor = static_cast<Anchor>(s.touchAnchor);
+    if (s.touchPlacement < static_cast<uint32_t>(HandPlacement::Count)) t.placement = static_cast<HandPlacement>(s.touchPlacement);
+    t.gazeOnly = s.touchGazeOnly != 0;
+    t.size = clamped(s.touchSize, kMinTouchSize, kMaxTouchSize, t.size);
+    t.opacity = clamped(s.touchOpacity, kMinWatchOpacity, kMaxWatchOpacity, t.opacity);
+    t.along = clamped(s.touchAlong, kMinHandAlong, kMaxHandAlong, t.along);
+    t.lift = clamped(s.touchLift, kMinHandLift, kMaxHandLift, t.lift);
+    t.tip = clamped(s.touchTip, kMinTouchTip, kMaxTouchTip, t.tip);
+    t.actions = s.touchActions & kTouchAllActions;
+
     // Langue : XRPerfSensors envoie la langue effective (1 = français, 2 = anglais) ; 0 laisse celle du .ini.
     if (s.language == 1) c.english = false;
     else if (s.language == 2) c.english = true;

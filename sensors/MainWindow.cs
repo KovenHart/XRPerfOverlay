@@ -39,6 +39,7 @@ namespace XRPerfSensors
         // Aperçu du panneau : image du jeu en cours (mémoire partagée) ou dessin de la layer.
         private readonly byte[] _panelPixels = new byte[PanelShare.PixelBytes];
         private readonly byte[] _watchPixels = new byte[OverlayPreview.WatchSize * OverlayPreview.WatchSize * 4];
+        private readonly byte[] _touchPixels = new byte[OverlayPreview.TouchWidth * OverlayPreview.TouchHeight * 4];
         private int _panelSequence = -1;
         private int _gameState = PanelShare.StateNone;
         private string _lastStatus = "";
@@ -420,7 +421,7 @@ namespace XRPerfSensors
             if (_pageReady) Post(Json(w => { w.WriteString("type", "toast"); w.WriteString("text", text); }));
         }
 
-        private void PostOverlay()
+        public void PostOverlay()
         {
             Post(Json(w => { w.WriteString("type", "overlay"); w.WritePropertyName("overlay"); SettingsJson.WriteOverlay(w, _app.Overlay); }));
         }
@@ -987,6 +988,11 @@ namespace XRPerfSensors
             {
                 int side = _app.RenderWatch(_watchPixels);
                 if (side > 0) PostImage("watchImage", Png(_watchPixels, side, side, true), false);
+            }
+            if (_page == "touch")
+            {
+                int height = _app.RenderTouch(_touchPixels);
+                if (height > 0) PostImage("touchImage", Png(_touchPixels, OverlayPreview.TouchWidth, height, true), false);
             }
             // Nouveaux rapports (fin d'une session) : toutes les trois secondes, sur les pages qui les montrent.
             if ((_page == "reports" || _page == "dashboard") && _slowTicks % 3 == 0 && _reports.Refresh(false)) SendReports();

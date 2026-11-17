@@ -28,8 +28,8 @@ enum class UploadResult {
 
 class Gfx {
   public:
-    // Swapchains de la layer : 0 pour le panneau et la montre, 1 pour la fenêtre capturée.
-    static constexpr int kSwapchains = 2;
+    // Swapchains de la layer : 0 pour le panneau et la montre, 1 pour la fenêtre capturée, 2 pour l'écran tactile.
+    static constexpr int kSwapchains = 3;  // panneau et montre, fenêtre capturée, écran tactile
 
     virtual ~Gfx() = default;
     virtual const char* name() const = 0;

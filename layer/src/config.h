@@ -7,6 +7,7 @@
 #include "image_params.h"
 #include "panel.h"
 #include "pose_math.h"
+#include "touch_pad.h"
 
 namespace xrpo {
 
@@ -32,6 +33,22 @@ struct WatchConfig {
     float size = 0.06f;                     // diamètre (m)
     float opacity = 1.f;
     float along = 0.f, lift = 0.f;          // ajustements de position sur la main (m)
+};
+
+// Écran tactile : sur une main (gauche ou droite, jamais devant les yeux), touché du bout de l'autre manette.
+constexpr float kMinTouchSize = 0.06f, kMaxTouchSize = 0.20f;
+constexpr float kMinTouchTip = 0.f, kMaxTouchTip = 0.15f;
+struct TouchConfig {
+    bool enabled = false;
+    Anchor anchor = Anchor::LeftHand;                    // LeftHand ou RightHand (View : main gauche)
+    HandPlacement placement = HandPlacement::WristInside;  // côté paume : comme un téléphone qu'on regarde
+    bool gazeOnly = true;                                 // seulement quand on regarde la main
+    float size = 0.09f;                                   // largeur (m) ; la hauteur suit l'image (portrait)
+    float opacity = 1.f;
+    float along = 0.f, lift = 0.f;                        // ajustements de position sur la main (m)
+    float tip = 0.07f;                                    // point de contact devant la poignée de l'autre manette (m)
+    uint32_t actions = kTouchAllActions;                  // tuiles affichées (bit i = TouchAction i)
+    int hand() const { return anchor == Anchor::RightHand ? 1 : 0; }
 };
 
 // Fenêtre du bureau capturée (un chat...) : sur une main, ou posée dans l'espace (Ctrl+Alt+G la pose
@@ -94,6 +111,7 @@ struct Config {
     float handAlong = 0.f, handLift = 0.f;
     WatchConfig watch;
     WindowConfig window;
+    TouchConfig touch;
     int refreshMs = 250;
     int statsWindowS = 30;
     // Raccourcis : modificateurs << 16 | touche (code de touche virtuelle) ; modificateurs : 1 Alt, 2 Ctrl,
@@ -158,7 +176,7 @@ struct Config {
 // est (ou peut être) accroché à une main.
 // La fenêtre capturée peut être affichée en cours de partie (Ctrl+Alt+F) : son accroche suffit.
 inline bool WantsHandTracking(const Config& c) {
-    return c.anchor != Anchor::View || (c.watch.enabled && c.watch.anchor != Anchor::View) || c.window.anchor != WindowAnchor::World;
+    return c.anchor != Anchor::View || (c.watch.enabled && c.watch.anchor != Anchor::View) || c.window.anchor != WindowAnchor::World || c.touch.enabled;
 }
 // Batterie des manettes demandée pour la montre ou pour la ligne de session du panneau.
 inline bool WantsBattery(const Config& c) {

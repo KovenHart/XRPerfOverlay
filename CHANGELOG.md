@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.16.0
+
+- **Écran tactile au poignet** : une grille de raccourcis, comme sur un téléphone, touchée du bout de l'autre manette. Vidéo, direct, capture d'écran, rapport (mode manuel), filtres d'image, preset d'image suivant, panneau (affiché, emplacement), fenêtre du bureau (affichée, posée devant soi), remise à zéro des statistiques. La liste défile d'un glissé ; un rond montre où la manette va toucher. Aucun bouton de la manette n'est utilisé. Page **Écran tactile** : main, emplacement, taille, opacité, point de contact, tuiles affichées. Jeux OpenXR et SteamVR. Désactivé par défaut.
+
 ## 1.15.0
 
 - **XR Perf Overlay devient XR Perf Studio** : le logiciel fait bien plus qu'afficher des mesures (vidéo, direct, source OBS, filtres d'image, fenêtre du bureau, rapports). Le nouveau nom apparaît dans l'interface, le menu de l'icône, les rapports, OBS et le paquet (`XRPerfStudio-<version>-win64.zip`). Rien ne change pour une installation existante : mêmes réglages (dossier `%LOCALAPPDATA%\XRPerfOverlay`), même layer OpenXR, même application SteamVR, même source OBS dans les scènes, même dossier des vidéos ; les anciens rapports restent lisibles.

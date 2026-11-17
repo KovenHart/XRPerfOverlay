@@ -93,7 +93,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
             // Pause d'environ 20 ms (4 ms pendant un enregistrement vidéo, pour suivre la cadence du casque),
             // interrompue par une demande d'arrêt ou la fin de XRPerfSensors.
             // Pendant un enregistrement, minuterie de Windows à 1 ms (sinon une pause de 4 ms en dure 15).
-            const bool busy = host.videoBusy();
+            const bool busy = host.fastLoop();
             if (busy != fineTimer) {
                 if (busy) timeBeginPeriod(1);
                 else timeEndPeriod(1);

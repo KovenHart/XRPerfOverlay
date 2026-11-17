@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.16.0
+
+- **Touch screen on the wrist**: a grid of shortcuts, like on a phone, touched with the tip of the other controller. Video, live, screenshot, report (manual mode), image filters, next image preset, panel (shown, position), desktop window (shown, placed in front of you), statistics reset. The list scrolls with a swipe; a circle shows where the controller will touch. No controller button is used. **Touch screen** page: hand, placement, size, opacity, contact point, tiles shown. OpenXR and SteamVR games. Off by default.
+
 ## 1.15.0
 
 - **XR Perf Overlay becomes XR Perf Studio**: the software does much more than show measurements (video, live streaming, OBS source, image filters, desktop window, reports). The new name appears in the interface, the tray menu, reports, OBS and the package (`XRPerfStudio-<version>-win64.zip`). Nothing changes for an existing installation: same settings (`%LOCALAPPDATA%\XRPerfOverlay` folder), same OpenXR layer, same SteamVR application, same OBS source in scenes, same video folder; older reports stay readable.

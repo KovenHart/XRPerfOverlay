@@ -155,9 +155,35 @@ With the **"Only when I look at my wrist"** option (on by default), the watch on
 2. when the game attaches its actions to the session, it adds its small set ("XR Perf Studio");
 3. likewise at each action update by the game.
 
-It declares **no button**: it cannot take anything away from the game. It never adds a controller model the game didn't declare itself, so as not to change the one the runtime picks. If one of these calls fails with its addition, it is redone as the game provided it and attaching is abandoned for the session (the watch goes back in front of the eyes); the log says so. This mechanism is only set up if the watch is enabled or the panel is attached to a hand **when the game starts**: turned on mid-game, the game must be restarted. In SteamVR's controller binding screen, the "XR Perf Studio" set and its hand pose may appear.
+It declares **no button**: it cannot take anything away from the game. It never adds a controller model the game didn't declare itself, so as not to change the one the runtime picks. If one of these calls fails with its addition, it is redone as the game provided it and attaching is abandoned for the session (the watch goes back in front of the eyes); the log says so. This mechanism is only set up if the watch or the touch screen is enabled, or the panel is attached to a hand, **when the game starts**: turned on mid-game, the game must be restarted. In SteamVR's controller binding screen, the "XR Perf Studio" set and its hand pose may appear.
 
 **The battery** comes from the brand-new OpenXR extension `XR_EXT_interaction_profile_battery_state_display`: the layer requests it from the runtime only if offered (and if the watch must show the battery). SteamVR provides it; other PC runtimes, such as Pimax OpenXR, not yet: without it, the battery simply doesn't show. In OpenVR games, XRPerfVR reads the battery directly from SteamVR.
+
+## Touch screen on the wrist
+
+Shortcuts in the headset, like on a phone: a grid of tiles on the wrist, touched with the tip of the other controller. **Touch screen** page of XRPerfSensors (or the dashboard switch). OpenXR games (through the layer) and SteamVR games (through XRPerfVR).
+
+**Use.** Turn your hand towards you: the screen appears (by default on the inside of the left wrist, palm side). Bring the front of the other controller close: a circle shows where it will touch, shrinking as it gets closer. Touch a tile then pull the controller back: the tile fires (a flash confirms it). Swipe up or down to scroll the list; a flicked swipe keeps going. A touch that slides off the tile, or a controller passed behind the screen, triggers nothing. No controller button is read: the layer takes nothing away from the game, only the position of both controllers matters.
+
+**Tiles** (chosen on the page, in this order):
+
+| Tile | Effect |
+|---|---|
+| Video | starts or stops recording (`REC 3:12` while recording) |
+| Live | starts or stops the Twitch / YouTube live stream, with the saved key (`LIVE 12:03`) |
+| Screenshot | takes a screenshot |
+| Report | starts or stops a report, in manual mode (like `Ctrl+Alt+S`) |
+| Filters | turns image filters off or back on (like `Ctrl+Alt+I`) |
+| Image preset | switches to the next image preset (none, the built-in presets, then yours); the tile shows the current one |
+| Panel | shows or hides the panel (like `Ctrl+Alt+O`) |
+| Position | next panel position in front of the eyes (like `Ctrl+Alt+P`) |
+| Window | shows or hides the desktop window (like `Ctrl+Alt+F`) |
+| Place window | places the desktop window in front of you (like `Ctrl+Alt+G`) |
+| Statistics | resets the panel statistics (like `Ctrl+Alt+R`) |
+
+A greyed-out tile says why: *Offline* (XRPerfSensors closed), *No key* (live stream without a stream key), *Auto mode* (automatic reports), *None* (no window chosen). Video, live, screenshot and preset go through XRPerfSensors, which must keep running; the other tiles act directly in the game.
+
+**Settings.** The hand (the other one touches the screen), the placement (inside or back of the wrist, above the controller), showing only when you look at your hand, the position, the width (9 cm by default) and the opacity. **Contact point**: distance between the touching controller's grip and the spot that touches (7 cm by default, the front of a typical controller); if the circle is not at the front of your controller, adjust it. As for the watch, controller tracking is set up when the game starts: turned on mid-game, the game must be restarted.
 
 ## SteamVR (OpenVR) games: XRPerfVR
 

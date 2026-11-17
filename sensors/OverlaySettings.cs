@@ -88,6 +88,21 @@ namespace XRPerfSensors
         public float WindowAlong, WindowLift;
         public float WindowDistance = 0.80f;    // distance à laquelle Ctrl+Alt+G la pose devant soi
 
+        // Écran tactile au poignet ([touch]) : raccourcis touchés du bout de l'autre manette.
+        public bool TouchEnabled;
+        public int TouchAnchor = 1;             // AnchorNames : main gauche (jamais devant les yeux)
+        public int TouchPlacement = 1;          // PlacementNames : intérieur du poignet
+        public bool TouchGazeOnly = true;
+        public float TouchSize = 0.09f;
+        public float TouchOpacity = 1f;
+        public float TouchAlong, TouchLift;
+        public float TouchTip = 0.07f;
+        public uint TouchActions = TouchAllActions;
+        // Tuiles, dans l'ordre de TouchAction (layer/src/touch_pad.h) : bit i = tuile i.
+        public static readonly string[] TouchActionNames = { "video", "live", "snapshot", "report", "filters", "preset", "panel", "panelPlace", "window", "windowPlace", "resetStats" };
+        public const uint TouchAllActions = (1u << 11) - 1;
+        public const float MinTouchSize = 0.06f, MaxTouchSize = 0.20f, MinTouchTip = 0f, MaxTouchTip = 0.15f;
+
         // Hors section [overlay] : pris en compte par la layer au lancement d'un jeu seulement.
         public bool GpuTiming;             // [gpu] measure : mesure réelle du temps GPU (sinon estimation)
         public int ReportMode = ReportAuto; // [summary] mode : rapport par session, entre deux Ctrl+Alt+S, ou aucun (changeable en jeu)
@@ -357,6 +372,17 @@ namespace XRPerfSensors
             s.WatchOpacity = ReadFloat(path, "watch", "opacity", s.WatchOpacity, MinWatchOpacity, 1f);
             s.WatchAlong = ReadFloat(path, "watch", "hand_along", s.WatchAlong, MinHandAlong, MaxHandAlong);
             s.WatchLift = ReadFloat(path, "watch", "hand_lift", s.WatchLift, MinHandLift, MaxHandLift);
+            s.TouchEnabled = ReadBool(path, "touch", "enabled", s.TouchEnabled);
+            s.TouchAnchor = ReadName(path, "touch", "anchor", AnchorNames, s.TouchAnchor);
+            if (s.TouchAnchor == 0) s.TouchAnchor = 1;  // toujours sur une main
+            s.TouchPlacement = ReadName(path, "touch", "hand_position", PlacementNames, s.TouchPlacement);
+            s.TouchGazeOnly = ReadBool(path, "touch", "gaze_only", s.TouchGazeOnly);
+            s.TouchSize = ReadFloat(path, "touch", "size", s.TouchSize, MinTouchSize, MaxTouchSize);
+            s.TouchOpacity = ReadFloat(path, "touch", "opacity", s.TouchOpacity, MinWatchOpacity, 1f);
+            s.TouchAlong = ReadFloat(path, "touch", "hand_along", s.TouchAlong, MinHandAlong, MaxHandAlong);
+            s.TouchLift = ReadFloat(path, "touch", "hand_lift", s.TouchLift, MinHandLift, MaxHandLift);
+            s.TouchTip = ReadFloat(path, "touch", "tip", s.TouchTip, MinTouchTip, MaxTouchTip);
+            s.TouchActions = (uint)ReadNumber(path, "touch", "actions", (int)s.TouchActions) & TouchAllActions;
             s.WindowEnabled = ReadBool(path, "window", "enabled", s.WindowEnabled);
             s.WindowAnchor = ReadName(path, "window", "anchor", WindowAnchorNames, s.WindowAnchor);
             s.WindowPlacement = ReadName(path, "window", "hand_position", PlacementNames, s.WindowPlacement);
@@ -475,6 +501,16 @@ namespace XRPerfSensors
             ok &= WritePrivateProfileStringW("watch", "opacity", Number(WatchOpacity), path);
             ok &= WritePrivateProfileStringW("watch", "hand_along", Number(WatchAlong), path);
             ok &= WritePrivateProfileStringW("watch", "hand_lift", Number(WatchLift), path);
+            ok &= WritePrivateProfileStringW("touch", "enabled", TouchEnabled ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW("touch", "anchor", AnchorNames[TouchAnchor], path);
+            ok &= WritePrivateProfileStringW("touch", "hand_position", PlacementNames[TouchPlacement], path);
+            ok &= WritePrivateProfileStringW("touch", "gaze_only", TouchGazeOnly ? "1" : "0", path);
+            ok &= WritePrivateProfileStringW("touch", "size", Number(TouchSize), path);
+            ok &= WritePrivateProfileStringW("touch", "opacity", Number(TouchOpacity), path);
+            ok &= WritePrivateProfileStringW("touch", "hand_along", Number(TouchAlong), path);
+            ok &= WritePrivateProfileStringW("touch", "hand_lift", Number(TouchLift), path);
+            ok &= WritePrivateProfileStringW("touch", "tip", Number(TouchTip), path);
+            ok &= WritePrivateProfileStringW("touch", "actions", TouchActions.ToString(CultureInfo.InvariantCulture), path);
             // La pose dans l'espace (« world ») est écrite par la layer et XRPerfVR (Ctrl+Alt+G) : jamais ici.
             ok &= WritePrivateProfileStringW("window", "enabled", WindowEnabled ? "1" : "0", path);
             ok &= WritePrivateProfileStringW("window", "anchor", WindowAnchorNames[WindowAnchor], path);
@@ -572,6 +608,17 @@ namespace XRPerfSensors
             Put(block, 304, unchecked((uint)ImageBlack));
             Put(block, 308, unchecked((uint)ImageWhite));
             Put(block, 312, unchecked((uint)ImageClarity));
+            // Écran tactile (version 10).
+            Put(block, 316, TouchEnabled ? 1u : 0u);
+            Put(block, 320, (uint)TouchAnchor);
+            Put(block, 324, (uint)TouchPlacement);
+            Put(block, 328, TouchGazeOnly ? 1u : 0u);
+            Put(block, 332, TouchSize);
+            Put(block, 336, TouchOpacity);
+            Put(block, 340, TouchAlong);
+            Put(block, 344, TouchLift);
+            Put(block, 348, TouchTip);
+            Put(block, 352, TouchActions & TouchAllActions);
             return block;
         }
     }
@@ -582,9 +629,9 @@ namespace XRPerfSensors
     /// </summary>
     internal sealed class SettingsShare : IDisposable
     {
-        public const int Size = 320;
+        public const int Size = 360;
         public const uint Magic = 0x53505258; // "XRPS"
-        public const uint Version = 9;
+        public const uint Version = 10;
 
         private const string Name = @"Local\XRPerfOverlay.Settings";
         private const int OffsetSequence = 8;
@@ -724,11 +771,14 @@ namespace XRPerfSensors
 
         /// <summary>Côté de l'image de la montre (WatchFace::kSize dans la layer).</summary>
         public const int WatchSize = 320;
+        /// <summary>Taille de l'image de l'écran tactile (TouchPad::kWidth x kHeight dans la layer).</summary>
+        public const int TouchWidth = 320, TouchHeight = 400;
 
         private readonly string _layerDllPath;
         private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
         private RenderPreview _render;
         private RenderWatchPreview _renderWatch;
+        private RenderWatchPreview _renderTouch;  // même signature : xrpoRenderTouchPreview
         private bool _loadTried;
 
         public OverlayPreview(string layerDllPath)
@@ -749,6 +799,8 @@ namespace XRPerfSensors
                     _render = Marshal.GetDelegateForFunctionPointer<RenderPreview>(function);
                 if (NativeLibrary.TryGetExport(library, "xrpoRenderWatchPreview", out IntPtr watch))
                     _renderWatch = Marshal.GetDelegateForFunctionPointer<RenderWatchPreview>(watch);
+                if (NativeLibrary.TryGetExport(library, "xrpoRenderTouchPreview", out IntPtr touch))
+                    _renderTouch = Marshal.GetDelegateForFunctionPointer<RenderWatchPreview>(touch);
             }
             catch (Exception)
             {
@@ -803,6 +855,23 @@ namespace XRPerfSensors
             {
                 DateTime now = DateTime.Now;
                 return _renderWatch(settings.ToBlock(0, 0), (now.Hour * 60 + now.Minute) * 60 + now.Second, pixels, (uint)pixels.Length);
+            }
+            catch (Exception)
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>Aperçu de l'écran tactile (RGBA, TouchWidth x TouchHeight) ; hauteur dessinée, 0 si indisponible.</summary>
+        public int RenderTouch(OverlaySettings settings, byte[] pixels)
+        {
+            if (settings == null || pixels == null) return 0;
+            if (!_loadTried) Load();
+            if (_renderTouch == null) return 0;
+            try
+            {
+                DateTime now = DateTime.Now;
+                return _renderTouch(settings.ToBlock(0, 0), (now.Hour * 60 + now.Minute) * 60 + now.Second, pixels, (uint)pixels.Length);
             }
             catch (Exception)
             {
