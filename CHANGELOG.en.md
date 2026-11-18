@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.16.2
+
+- **Video and screenshot shortcuts** (`Ctrl+Alt+V`, `Ctrl+Alt+C` by default): they did not react in some games that block Windows global shortcuts while they have the keyboard (Metro Exodus, for example), you had to switch to the desktop. They are now also read straight from the keyboard, like the panel's.
+
 ## 1.16.1
 
 - **Video with a frame generation layer** (OFXR Bridge, for example): the recorded image stayed frozen or stuttered, while the sound was fine. These layers prepare their images ahead of time; the layer now detects this and copies the image when it is submitted to the headset. Generated frames are recorded too.

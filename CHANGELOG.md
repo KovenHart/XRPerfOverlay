@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.16.2
+
+- **Raccourcis de la vidéo et de la capture d'écran** (`Ctrl+Alt+V`, `Ctrl+Alt+C` par défaut) : ils ne réagissaient pas dans certains jeux qui bloquent les raccourcis globaux de Windows quand ils ont le clavier (Metro Exodus, par exemple), il fallait passer sur le bureau. Ils sont maintenant aussi lus directement sur le clavier, comme ceux du panneau.
+
 ## 1.16.1
 
 - **Vidéo avec une layer de génération d'images** (OFXR Bridge, par exemple) : l'image enregistrée restait figée ou saccadée, le son étant bon. Ces layers préparent leurs images en avance ; la layer le détecte et copie alors l'image au moment où elle est soumise au casque. Les images générées sont aussi enregistrées.
