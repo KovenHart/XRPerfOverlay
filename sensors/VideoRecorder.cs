@@ -847,8 +847,21 @@ namespace XRPerfSensors
     }
 
     /// <summary>Raccourci clavier global (modificateurs + touche), reçu même quand un jeu a le clavier.</summary>
+    /// <remarks>
+    /// Deux voies : RegisterHotKey (le jeu ne reçoit pas la touche), et une lecture de l'état du clavier toutes
+    /// les 25 ms (GetAsyncKeyState, comme les raccourcis du panneau dans la layer). Certains jeux bloquent la
+    /// première quand ils ont le clavier (entrée brute avec RIDEV_NOHOTKEYS, Metro Exodus par exemple) ; la
+    /// seconde fonctionne toujours. Un appui déclenche une seule fois, quelle que soit la voie qui le voit d'abord.
+    /// </remarks>
     internal sealed class GlobalHotkey : NativeWindow, IDisposable
     {
+        [DllImport("user32.dll")]
+        private static extern short GetAsyncKeyState(int key);
+
+        private readonly System.Windows.Forms.Timer _poll = new System.Windows.Forms.Timer { Interval = 25 };
+        private bool _wasDown;           // combinaison vue enfoncée à la lecture précédente
+        private long _lastFiredTicks;    // dernier déclenchement (horloge Stopwatch)
+
         private const int WM_HOTKEY = 0x0312;
         private const uint MOD_NOREPEAT = 0x4000;  // modificateurs : mêmes valeurs que Settings.ModAlt...
         private const int Id = 0x5650; // "VP"
@@ -894,6 +907,30 @@ namespace XRPerfSensors
         public GlobalHotkey()
         {
             CreateHandle(new CreateParams());
+            _poll.Tick += (s, e) => Poll();
+        }
+
+        private static bool Down(int key) { return (GetAsyncKeyState(key) & 0x8000) != 0; }
+
+        // Combinaison exacte : la touche et ses modificateurs, sans modificateur de plus (Ctrl+Alt+V ne part pas
+        // sur Ctrl+Alt+Maj+V, comme avec RegisterHotKey).
+        private void Poll()
+        {
+            if (_key == 0) return;
+            bool ctrl = Down(0x11), alt = Down(0x12), shift = Down(0x10), win = Down(0x5B) || Down(0x5C);
+            bool down = Down(_key) && ctrl == ((_mods & Settings.ModCtrl) != 0) && alt == ((_mods & Settings.ModAlt) != 0) &&
+                        shift == ((_mods & Settings.ModShift) != 0) && win == ((_mods & Settings.ModWin) != 0);
+            if (down && !_wasDown) Fire();
+            _wasDown = down;
+        }
+
+        // Un seul déclenchement par appui : la voie qui arrive en second (dans la demi-seconde) est ignorée.
+        private void Fire()
+        {
+            long now = System.Diagnostics.Stopwatch.GetTimestamp();
+            if (_lastFiredTicks != 0 && now - _lastFiredTicks < System.Diagnostics.Stopwatch.Frequency / 2) return;
+            _lastFiredTicks = now;
+            Pressed?.Invoke();
         }
 
         /// <summary>Raccourci voulu (touche 0 : aucun). Retourne false si Windows le refuse (déjà pris par un autre programme).</summary>
@@ -904,6 +941,8 @@ namespace XRPerfSensors
             _registered = false;
             _key = key;
             _mods = mods;
+            _wasDown = true;  // touche peut-être encore enfoncée (saisie du raccourci) : attendre qu'elle soit relâchée
+            _poll.Enabled = key != 0;
             if (key == 0) return true;
             _registered = RegisterHotKey(Handle, Id, (uint)(mods & 0xF) | MOD_NOREPEAT, (uint)key);
             return _registered;
@@ -915,7 +954,7 @@ namespace XRPerfSensors
         {
             if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == Id)
             {
-                Pressed?.Invoke();
+                Fire();
                 return;
             }
             base.WndProc(ref m);
@@ -923,6 +962,8 @@ namespace XRPerfSensors
 
         public void Dispose()
         {
+            _poll.Stop();
+            _poll.Dispose();
             if (_registered) UnregisterHotKey(Handle, Id);
             _registered = false;
             DestroyHandle();
