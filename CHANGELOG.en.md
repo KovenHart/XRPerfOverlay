@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.16.3
+
+- **Frame generation reported by mistake**: the panel and reports could show frame generation (the "With framegen" line) in games that had none, because of momentary spikes (loading, stutters) when another layer was active below XR Perf Studio. The gap now has to last; older reports are also read again with this rule.
+
 ## 1.16.2
 
 - **Video and screenshot shortcuts** (`Ctrl+Alt+V`, `Ctrl+Alt+C` by default): they did not react in some games that block Windows global shortcuts while they have the keyboard (Metro Exodus, for example), you had to switch to the desktop. They are now also read straight from the keyboard, like the panel's.

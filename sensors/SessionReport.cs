@@ -315,7 +315,7 @@ namespace XRPerfSensors
                     else if (label == "1 % low") Low1 = At(v, 0);
                     else if (Is(label, "0,1 % low", "0.1 % low")) Low01 = At(v, 0);
                     else if (Is(label, "Cible", "Target")) { Target = At(v, 0); TargetHeld = At(v, 1); }
-                    else if (Is(label, "Avec framegen", "With framegen")) OutFps = At(v, 0);
+                    else if (Is(label, "Avec framegen", "With framegen")) OutFps = At(v, 0);  // vérifié plus bas avec la moyenne
                     else if (Is(label, "Images rendues", "Frames rendered")) Frames = At(v, 0);
                     else if (Is(label, "Coupures", "Interruptions")) Pauses = At(v, 0);
                     continue;
@@ -356,6 +356,9 @@ namespace XRPerfSensors
                 }
             }
             if (SensorCoverage < 50) DropSensorAverages();
+            // Rapports d'avant la 1.16.3 : la ligne « Avec framegen » pouvait venir de quelques pics d'un instant.
+            // Une vraie génération d'images envoie nettement plus d'images que le jeu n'en rend en moyenne.
+            if (!double.IsNaN(OutFps) && !(OutFps > 1.15 * FpsAvg)) OutFps = double.NaN;
             DetectCaps();
         }
 
