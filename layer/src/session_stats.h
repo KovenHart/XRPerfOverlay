@@ -245,7 +245,9 @@ class SessionStats {
                   100.0 * static_cast<double>(m_targetHeld) / static_cast<double>(m_targetSamples));
         else
             w.put(T("  Cible          : --\r\n", "  Target         : --\r\n"));
-        if (m_outFps.n > 0)
+        // Génération d'images : seulement si elle a été vue au moins un quart du temps et que le casque a
+        // reçu en moyenne nettement plus d'images que le jeu n'en a rendu.
+        if (m_outFps.n > 0 && m_outFps.n * 4 >= m_fps.n && m_outFps.avg() > 1.15f * m_fps.avg())
             w.put(T("  Avec framegen  : %s   (images envoyées au casque, générées comprises ; min %s, max %s)\r\n",
                     "  With framegen  : %s   (frames sent to the headset, generated ones included; min %s, max %s)\r\n"),
                   num(a, m_outFps.avg(), 1), num(b, m_outFps.min(), 0), num(c, m_outFps.max(), 0));

@@ -1124,7 +1124,14 @@ void Overlay::sample(double now) {
         const int64_t period = g_outputTap.periodNs.load(std::memory_order_relaxed);
         const float refresh = period > 0 ? static_cast<float>(1e9 / static_cast<double>(period)) : 0.f;
         const float out = SnapToRefresh(m_outRate.rate(), refresh);
-        if (stats.valid && !std::isnan(out) && out > stats.fps * 1.15f) data.outFps = out;
+        // Il faut que l'écart dure (3 s) : un pic d'un instant, au chargement ou pendant une saccade, ne
+        // fait pas croire à une génération d'images (ni sur le panneau, ni dans le rapport).
+        if (stats.valid && !std::isnan(out) && out > stats.fps * 1.15f) {
+            if (m_outAboveSince < 0.0) m_outAboveSince = now;
+            if (now - m_outAboveSince >= 3.0) data.outFps = out;
+        } else {
+            m_outAboveSince = -1.0;
+        }
     }
     if (m_config.clock) data.clockMinutes = LocalClockMinutes();
 

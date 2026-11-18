@@ -232,6 +232,7 @@ class Overlay {
     bool m_hasLastBlock = false;
 
     RateMeter m_outRate;  // cadence des images reçues par le runtime (après génération d'images)
+    double m_outAboveSince = -1.0;  // depuis quand le casque reçoit nettement plus d'images que le jeu n'en rend
     double m_lastOutSample = -1.0;
 
     // Copie du panneau pour la fenêtre du bureau (seulement quand XRPerfSensors la demande).

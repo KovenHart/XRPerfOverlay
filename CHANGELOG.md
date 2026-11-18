@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.16.3
+
+- **Génération d'images signalée à tort** : le panneau et les rapports pouvaient indiquer une génération d'images (ligne « Avec framegen ») dans des jeux qui n'en avaient pas, à cause de pics d'un instant (chargements, saccades) quand une autre layer était active sous XR Perf Studio. Il faut maintenant que l'écart dure ; les anciens rapports sont aussi relus avec cette règle.
+
 ## 1.16.2
 
 - **Raccourcis de la vidéo et de la capture d'écran** (`Ctrl+Alt+V`, `Ctrl+Alt+C` par défaut) : ils ne réagissaient pas dans certains jeux qui bloquent les raccourcis globaux de Windows quand ils ont le clavier (Metro Exodus, par exemple), il fallait passer sur le bureau. Ils sont maintenant aussi lus directement sur le clavier, comme ceux du panneau.
