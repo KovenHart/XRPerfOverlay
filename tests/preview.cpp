@@ -1018,9 +1018,7 @@ static void testImageFilters() {
         return FilterPixel(a, b, c, d, e, f, g, h, i, e, e, e, e, 0.f, e, e, sharpen, amount, limit, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f);
     };
     // Réglages neutres : image inchangée (y compris des couleurs extrêmes).
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 samples[] = {{0.f, 0.f, 0.f}, {1.f, 1.f, 1.f}, {0.2f, 0.5f, 0.9f}, {0.73f, 0.11f, 0.04f}, {0.5f, 0.5f, 0.5f}};
-    std::printf("  . %d\n", __LINE__);  // TEMP
     for (const float3& s : samples) {
         const float3 n(0.3f, 0.6f, 0.1f);
         assert(near(identity(n, n, n, n, s, n, n, n, n, 0.f, 1.f), s, 1e-6f));
@@ -1028,39 +1026,26 @@ static void testImageFilters() {
         for (float mode = 1.f; mode <= 3.f; mode += 1.f) assert(near(identity(s, s, s, s, s, s, s, s, s, mode, 1.f), s, 1e-4f));
     }
     // sRGB : aller-retour.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     for (float v = 0.f; v <= 1.f; v += 0.05f) assert(near(ToGamma(ToLinear(float3(v, v, v))), float3(v, v, v), 1e-4f));
     // Point plus clair que ses voisins : chaque netteté l'accentue, RCAS sans sortir des valeurs voisines.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 dark(0.4f, 0.4f, 0.4f), bright(0.6f, 0.6f, 0.6f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 cas = identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 0.5f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 rcas = identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 2.f, 1.f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 luma = identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 3.f, 1.f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(cas.x > 0.6f && rcas.x > 0.6f && luma.x > 0.6f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(rcas.x <= 1.f && luma.x <= 0.6f + 0.035f + 1e-6f);  // LumaSharpen : écart borné
     // Plus de force, plus d'effet ; force nulle de RCAS : rien.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 1.f).x > cas.x);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(near(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 2.f, 0.f), bright, 1e-6f));
     // Au-delà de 100 % : CAS et RCAS accentuent davantage ; LumaSharpen va jusqu'à sa limite (ici 0,1, celle
     // d'un réglage ReShade courant), ni plus.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 2.f).x > identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 1.f, 1.f).x);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     {
         const float3 grey(0.5f, 0.5f, 0.5f), light(0.52f, 0.52f, 0.52f);
         assert(identity(grey, grey, grey, grey, light, grey, grey, grey, grey, 2.f, 2.f).x >
                identity(grey, grey, grey, grey, light, grey, grey, grey, grey, 2.f, 1.f).x);
     }
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(near(identity(dark, dark, dark, dark, bright, dark, dark, dark, dark, 3.f, 2.f, 0.1f), float3(0.7f, 0.7f, 0.7f), 1e-5f));
-    std::printf("  . %d\n", __LINE__);  // TEMP
     {
         ImageSettings strong;
         strong.sharpness = 250;
@@ -1070,72 +1055,47 @@ static void testImageFilters() {
         assert(sp.sharpenAmount == 2.f && std::fabs(sp.sharpenLimit - 0.01f) < 1e-6f && sp.sharpenRadius == 3.f);
     }
     // LumaSharpen ne change pas la teinte : les trois composantes bougent ensemble.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 tinted(0.5f, 0.3f, 0.2f), around(0.4f, 0.2f, 0.1f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 lumaTint = identity(around, around, around, around, tinted, around, around, around, around, 3.f, 1.f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(std::fabs((lumaTint.x - tinted.x) - (lumaTint.z - tinted.z)) < 1e-6f);
     // Débandage : zone presque unie, le pixel prend la moyenne ; vrai bord, il reste.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 flat(0.500f, 0.500f, 0.500f), step(0.504f, 0.504f, 0.504f), edge(0.8f, 0.8f, 0.8f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(near(Deband(flat, flat, step, step, flat, flat, 0.5f), float3(0.502f, 0.502f, 0.502f), 1e-5f));
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(near(Deband(flat, flat, edge, step, flat, flat, 0.5f), flat, 1e-6f));
     // Ombres : le noir et le blanc restent, les tons sombres remontent, sans inversion de l'ordre.
     const auto color = [](float v, float brightness, float contrast, float saturation, float vibrance, float gamma, float shadows, float temperature) {
         return AdjustColor(float3(v, v, v), brightness, contrast, saturation, vibrance, 1.f / gamma, shadows, temperature);
     };
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(near(color(0.f, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f), float3(0.f, 0.f, 0.f), 1e-6f));
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(near(color(1.f, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f), float3(1.f, 1.f, 1.f), 1e-6f));
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(color(0.2f, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f).x > 0.3f);
     float last = -1.f;
-    std::printf("  . %d\n", __LINE__);  // TEMP
     for (float v = 0.f; v <= 1.f; v += 0.01f) {
         const float out = color(v, 0.f, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f).x;
         assert(out >= last);
         last = out;
     }
     // Luminosité, contraste, gamma : dans le bon sens.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(color(0.5f, 0.1f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f).x > 0.55f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(color(0.7f, 0.f, 0.3f, 0.f, 0.f, 1.f, 0.f, 0.f).x > 0.75f && color(0.3f, 0.f, 0.3f, 0.f, 0.f, 1.f, 0.f, 0.f).x < 0.25f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(color(0.5f, 0.f, 0.f, 0.f, 0.f, 1.5f, 0.f, 0.f).x > 0.55f);
     // Saturation, vibrance : un gris reste gris ; une couleur terne s'écarte du gris, -100 % donne du gris.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(near(color(0.5f, 0.f, 0.f, 0.8f, 1.f, 1.f, 0.f, 0.f), float3(0.5f, 0.5f, 0.5f), 1e-6f));
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 dull(0.5f, 0.45f, 0.4f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 vivid = AdjustColor(dull, 0.f, 0.f, 0.f, 1.f, 1.f, 0.f, 0.f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(vivid.x - vivid.z > dull.x - dull.z);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 gray = AdjustColor(dull, 0.f, 0.f, -1.f, 0.f, 1.f, 0.f, 0.f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(std::fabs(gray.x - gray.z) < 1e-6f);
     // Température : plus chaud = plus de rouge, moins de bleu.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 warm = AdjustColor(float3(0.5f, 0.5f, 0.5f), 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 1.f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(warm.x > 0.5f && warm.z < 0.5f);
     // Mode daltonien : un gris bouge à peine ; rouge et vert, confondus en deutéranopie, s'écartent.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     for (float mode = 1.f; mode <= 3.f; mode += 1.f) assert(near(Daltonize(float3(0.5f, 0.5f, 0.5f), mode), float3(0.5f, 0.5f, 0.5f), 0.03f));
-    std::printf("  . %d\n", __LINE__);  // TEMP
     const float3 red = Daltonize(float3(0.8f, 0.2f, 0.2f), 2.f), green = Daltonize(float3(0.2f, 0.6f, 0.2f), 2.f);
-    std::printf("  . %d\n", __LINE__);  // TEMP
     assert(std::fabs(red.z - green.z) > 0.1f);
     // Faux HDR : force nulle, rien ; un pixel plus clair que son entourage s'éclaircit davantage qu'en zone
     // unie, un plus sombre s'assombrit davantage ; noir et blanc gardés ; ombres plus profondes, couleurs
     // plus riches.
-    std::printf("  . %d\n", __LINE__);  // TEMP
     {
         const float3 mid(0.6f, 0.6f, 0.6f), lower(0.4f, 0.4f, 0.4f), higher(0.8f, 0.8f, 0.8f);
         assert(near(FilterPixel(mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, mid, 0.f, lower, lower, 0.f, 0.f, 0.035f, 0.f, 0.f, 0.f, 0.f, 1.f, 0.f, 0.f, 0.f,
