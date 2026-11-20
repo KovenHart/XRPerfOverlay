@@ -4,6 +4,10 @@
 
 What's new in each version of XR Perf Overlay, most recent first.
 
+## 1.16.4
+
+- **Image filters with no effect in some games** (the GTAVXR mod, for example): when the image sent to the headset is never the one the game has just rendered (the game changes image or swapchain each time), the filters were not applied. The layer now detects this and filters the image when it is submitted to the headset.
+
 ## 1.16.3
 
 - **Frame generation reported by mistake**: the panel and reports could show frame generation (the "With framegen" line) in games that had none, because of momentary spikes (loading, stutters) when another layer was active below XR Perf Studio. The gap now has to last; older reports are also read again with this rule.
