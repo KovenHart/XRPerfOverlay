@@ -1457,6 +1457,7 @@ static void testVideo() {
 }
 
 int main(int argc, char** argv) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);  // sans tampon : la sortie reste visible même si un test plante
     testImageFilters();
     testVideo();
     testStats();
