@@ -1456,23 +1456,27 @@ static void testVideo() {
     std::printf("tests de l'enregistrement video : OK\n");
 }
 
+// Nom de chaque test avant de le lancer : en cas de plantage, la sortie dit lequel.
+#define RUN(test) (std::printf("> %s\n", #test), test())
+
 int main(int argc, char** argv) {
     std::setvbuf(stdout, nullptr, _IONBF, 0);  // sans tampon : la sortie reste visible même si un test plante
-    testImageFilters();
-    testVideo();
-    testStats();
-    testAsciiText();
-    testInfoLine();
-    testFrameHistory();
-    testSettings();
-    testPreviewApi();
-    testLayouts();
-    testRateMeter();
-    testFrameTimer();
+    std::printf("> demarrage\n");
+    RUN(testImageFilters);
+    RUN(testVideo);
+    RUN(testStats);
+    RUN(testAsciiText);
+    RUN(testInfoLine);
+    RUN(testFrameHistory);
+    RUN(testSettings);
+    RUN(testPreviewApi);
+    RUN(testLayouts);
+    RUN(testRateMeter);
+    RUN(testFrameTimer);
     testSessionStats(argc > 1 ? argv[1] : ".");
-    testPoseMath();
-    testVrMath();
-    testWindow();
+    RUN(testPoseMath);
+    RUN(testVrMath);
+    RUN(testWindow);
     testLanguage(argc > 1 ? argv[1] : ".");
     testReportControl(argc > 1 ? argv[1] : ".");
     const std::string dir = argc > 1 ? argv[1] : ".";
