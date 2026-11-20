@@ -314,6 +314,12 @@ class Overlay {
     int m_imageLoggedState = -1;
     bool m_imageLoggedNoZone = false, m_imageLoggedApplied = false, m_imageLoggedFailed = false, m_imageLoggedMiss = false;
     uint32_t m_imageMisses = 0;
+    // Filtrage à la soumission plutôt qu'à la libération : quand aucune image libérée ne correspond aux zones
+    // soumises (le jeu change de swapchain à chaque image, ou prépare ses images en avance), on filtre à
+    // xrEndFrame la dernière image libérée de chaque swapchain soumise, celle que le runtime affiche.
+    std::atomic<bool> m_imageAtSubmit{false};
+    bool m_imageAppliedSinceEnd = false;  // une image a été filtrée à sa libération depuis le dernier xrEndFrame
+    int m_imageNoApply = 0;               // xrEndFrame d'affilée avec des zones mais sans image filtrée
     // Panneau dans la vidéo (jeu OpenXR : le runtime l'ajoute après l'image du jeu, l'enregistreur le dessine).
     std::unique_ptr<Panel> m_videoPanel;  // même dessin que dans le casque, préparé au relevé
     struct VideoQuad {

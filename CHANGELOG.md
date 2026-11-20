@@ -4,6 +4,10 @@
 
 Les nouveautés de chaque version d'XR Perf Overlay, la plus récente en premier.
 
+## 1.16.4
+
+- **Filtres d'image sans effet dans certains jeux** (mod GTAVXR, par exemple) : quand l'image envoyée au casque n'est jamais celle que le jeu vient de rendre (le jeu change d'image ou de swapchain à chaque fois), les filtres ne s'appliquaient pas. La layer le détecte maintenant et filtre l'image au moment où elle est soumise au casque.
+
 ## 1.16.3
 
 - **Génération d'images signalée à tort** : le panneau et les rapports pouvaient indiquer une génération d'images (ligne « Avec framegen ») dans des jeux qui n'en avaient pas, à cause de pics d'un instant (chargements, saccades) quand une autre layer était active sous XR Perf Studio. Il faut maintenant que l'écart dure ; les anciens rapports sont aussi relus avec cette règle.

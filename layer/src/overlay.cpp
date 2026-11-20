@@ -131,6 +131,9 @@ void Overlay::onSessionCreated(XrSession session, const XrSessionCreateInfo* cre
         m_imageLoggedState = -1;
         m_imageLoggedNoZone = m_imageLoggedApplied = m_imageLoggedFailed = m_imageLoggedMiss = false;
         m_imageMisses = 0;
+        m_imageAtSubmit.store(false, std::memory_order_relaxed);
+        m_imageAppliedSinceEnd = false;
+        m_imageNoApply = 0;
         m_bindingD3D12 = false;
         m_bindingDevice11 = nullptr;
         m_bindingDevice12 = nullptr;
@@ -652,11 +655,66 @@ void Overlay::imageEndFrame(const XrFrameEndInfo& frameEndInfo, SwapchainRegistr
             projections, views, unknown, multisampled, unreadable, tooSmall);
     }
     m_imageZones.swap(zones);
+    if (m_imageZones.empty()) return;
+
+    // Les zones de l'image précédente n'ont jamais trouvé d'image libérée (90 images d'affilée) : filtrage
+    // à la soumission désormais.
+    if (!m_imageAtSubmit.load(std::memory_order_relaxed)) {
+        if (m_imageAppliedSinceEnd) m_imageNoApply = 0;
+        else if (++m_imageNoApply >= 90) {
+            m_imageAtSubmit.store(true, std::memory_order_relaxed);
+            Log("Filtres d'image : l'image soumise n'est pas celle rendue juste avant (swapchain changee a chaque image ?) ; filtrage a la soumission.");
+        }
+        m_imageAppliedSinceEnd = false;
+        if (!m_imageAtSubmit.load(std::memory_order_relaxed)) return;
+    }
+    // Filtrage à la soumission : la dernière image libérée de chaque swapchain soumise, avant de la passer
+    // au runtime (Direct3D 11 : on est sur le fil qui soumet, celui du contexte immédiat).
+    bool done[8] = {};
+    for (size_t i = 0; i < m_imageZones.size(); ++i) {
+        if (done[i]) continue;
+        const XrSwapchain swapchain = m_imageZones[i].swapchain;
+        SwapchainRegistry::Info info;
+        if (!swapchains.lookup(swapchain, info) || info.released < 0 || static_cast<size_t>(info.released) >= info.images.size() ||
+            !info.images[static_cast<size_t>(info.released)])
+            continue;
+        const uint32_t index = static_cast<uint32_t>(info.released);
+        ImageFilterTarget targets[4];
+        int count = 0;
+        for (size_t j = i; j < m_imageZones.size(); ++j) {
+            const ImageZone& z = m_imageZones[j];
+            if (z.swapchain != swapchain || count >= 4) continue;
+            done[j] = true;
+            ImageFilterTarget& t = targets[count++];
+            t.texture = info.images[index];
+            t.slice = z.slice;
+            t.x = z.x;
+            t.y = z.y;
+            t.width = std::min(z.width, info.width > z.x ? info.width - z.x : 0u);
+            t.height = std::min(z.height, info.height > z.y ? info.height - z.y : 0u);
+            if (t.width == 0 || t.height == 0) --count;
+        }
+        if (count == 0) continue;
+        ImageFilterParams params = ImageParamsFrom(m_imageSettings);
+        params.seed = static_cast<float>((m_imageFrame++ % 997u) * 7u % 997u);
+        if (m_imageFilter->apply(targets, count, m_imageZones[i].format, m_imageZones[i].mipCount, params)) {
+            m_imageLastSwapchain = swapchain;
+            m_imageLastIndex = index;
+            if (!m_imageLoggedApplied) {
+                m_imageLoggedApplied = true;
+                Log("Filtres d'image : premiere image filtree a la soumission (texture %ux%u, %d zone(s)).", info.width, info.height, count);
+            }
+        } else if (!m_imageLoggedFailed) {
+            m_imageLoggedFailed = true;
+            Log("Filtres d'image : image non filtree (texture %ux%u, format %lld).", info.width, info.height, static_cast<long long>(m_imageZones[i].format));
+        }
+    }
 }
 
 void Overlay::imageRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains) {
     // Direct3D 11 : le contexte immédiat du jeu, seulement depuis le fil qui soumet les images.
     if (!m_bindingD3D12 && GetCurrentThreadId() != m_imageThread.load(std::memory_order_relaxed)) return;
+    if (m_imageAtSubmit.load(std::memory_order_relaxed)) return;  // filtrage fait à xrEndFrame
     std::lock_guard<std::mutex> lock(m_imageMutex);
     if (!m_imageActive || !m_imageFilter || m_imageFilter->failed() || m_imageZones.empty()) return;
     ImageFilterTarget targets[4];
@@ -695,6 +753,7 @@ void Overlay::imageRelease(XrSwapchain swapchain, SwapchainRegistry& swapchains)
     if (m_imageFilter->apply(targets, count, format, mipCount, params)) {
         m_imageLastSwapchain = swapchain;
         m_imageLastIndex = index;
+        m_imageAppliedSinceEnd = true;
         if (!m_imageLoggedApplied) {
             m_imageLoggedApplied = true;
             Log("Filtres d'image : premiere image filtree (texture %ux%u, %u tranche(s), format %lld, %d zone(s), la premiere %u,%u %ux%u).", info.width,
